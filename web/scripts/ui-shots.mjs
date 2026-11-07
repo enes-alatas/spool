@@ -984,5 +984,84 @@ await page.route('**/api/loops/gardener', async (route) => {
 await shootOwner('owner-linked')
 await page.unroute('**/api/loops/gardener')
 
+// New loop's skills from an imported bot (#1395): the hub's draft (#1364)
+// served from a fixture, since the fixture hub fetches nothing from
+// prompts.chat. Two skills it carries files for, one opened to a file's
+// text, and one it doesn't install, with the hub's reason.
+await page.setViewportSize({ width: 1180, height: 1400 })
+const skillDraft = {
+  name: 'site-auditor',
+  mission:
+    "You audit the team's public sites for security headers and broken links, and report what to fix.\n",
+  runtime: '',
+  egress: [],
+  source: 'https://prompts.chat/bots/cmw1v3sdl000iku08cwqfm4zu_dead-code-detector',
+  skills: [
+    {
+      name: 'http-security-headers-checker',
+      description: "Checks a site's security headers.",
+      installed: true,
+      reason: '',
+      source: 'https://prompts.chat/prompts/cmvw320te0001l3089ivvu448_http-security-headers-checker',
+      dir: 'http-security-headers-checker',
+      files: [
+        {
+          path: 'SKILL.md',
+          content:
+            "---\nname: http-security-headers-checker\ndescription: Checks a site's security headers.\n---\n\n# HTTP security headers\n\nFetch the page with `curl -sI <url>` and compare the headers with\n[the rules](references/header-rules.md). Report each missing or weak\nheader with the value to set.\n",
+        },
+        {
+          path: 'references/header-rules.md',
+          content:
+            '# Header rules\n\n- Strict-Transport-Security: max-age of at least 31536000\n- Content-Security-Policy: present, no unsafe-inline in script-src\n- X-Content-Type-Options: nosniff\n- Referrer-Policy: strict-origin-when-cross-origin or stricter\n',
+        },
+      ],
+    },
+    {
+      name: 'link-checker',
+      description: 'Finds broken links on a page.',
+      installed: true,
+      reason: '',
+      source: 'https://prompts.chat/prompts/cmvx81k2a0004l308h2c1wq9e_link-checker',
+      dir: 'link-checker',
+      files: [
+        {
+          path: 'SKILL.md',
+          content:
+            '---\nname: link-checker\ndescription: Finds broken links on a page.\n---\n\nList every link on the page and report those that answer 4xx or 5xx.\n',
+        },
+      ],
+    },
+    {
+      name: 'github',
+      description: 'Read PRs, checks and logs through the GitHub CLI.',
+      installed: false,
+      reason: 'prompts.chat publishes no files for it',
+      source: '',
+      dir: '',
+      files: [],
+    },
+  ],
+}
+await page.route('**/api/import/prompts-chat?*', (route) => route.fulfill({ json: skillDraft }))
+await page.goto(base + '/new', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: /^Import a bot/ }).click()
+await page
+  .locator('#nl-import')
+  .fill('https://prompts.chat/bots/cmw1v3sdl000iku08cwqfm4zu_dead-code-detector')
+await page.getByRole('button', { name: 'Import', exact: true }).click()
+const skillList = page.locator('.skill-hints')
+await skillList.waitFor({ timeout: 15000 })
+// the first skill's files opened, and its rules file's text
+await skillList.locator('.skill-files > summary').first().click()
+await skillList.locator('.skill-file > summary', { hasText: 'references/header-rules.md' }).click()
+// the second left out
+await page.getByRole('checkbox', { name: 'Install link-checker' }).uncheck()
+const skillField = page.locator('.field').filter({ has: skillList })
+const skillFile = `${outDir}/new-loop-skills.png`
+await skillField.screenshot({ path: skillFile })
+taken.push(skillFile)
+await page.unroute('**/api/import/prompts-chat?*')
+
 await browser.close()
 for (const file of taken) console.log(file)

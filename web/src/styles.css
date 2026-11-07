@@ -2926,6 +2926,48 @@ button.panel-link {
 .skill-hint-state.installed {
   color: var(--ready);
 }
+/* An installable skill (#1395): its tick, and its files folded away, each
+   one click from its text, shown as written. */
+.field .skill-hint-tick {
+  width: auto;
+  flex: none;
+  accent-color: var(--ready);
+  align-self: flex-start;
+  margin-top: 3px;
+}
+.skill-files {
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+.skill-files summary,
+.skill-file summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.skill-files summary:hover,
+.skill-file summary:hover {
+  color: var(--text);
+}
+.skill-file {
+  margin: 4px 0 0 14px;
+}
+.skill-file summary {
+  font-family: var(--mono);
+}
+.skill-file pre {
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
 .team-loop-skills {
   margin-top: 8px;
 }

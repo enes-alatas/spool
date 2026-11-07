@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type PromptsChatDraft, type PromptsChatSkill, type PromptsChatTeam } from '../api'
+import { installable, skillSize } from '../skills'
 import { isTeamAddress } from '../team'
 import { egressAllows } from '../egress'
 import { PromptsChatLogo } from './PromptsChatLogo'
@@ -212,29 +213,78 @@ export function EgressHints({ hints }: { hints: PromptsChatDraft['egress'] }) {
   )
 }
 
-// The skills a bot was built to use (#1365), each said to be installed or
-// not, and why not in the hub's words. An import installs none yet (#1364),
-// so today every one is marked not installed. Nothing here is sent: the
-// create takes no skills.
-export function SkillHints({ skills }: { skills: PromptsChatSkill[] }) {
+// The skills a bot was built to use (#1365, #1395). One the draft carries
+// files for is ticked to install, and its files open to be read first: as
+// plain text, exactly the bytes create writes, never rendered, since they
+// are someone else's writing. Unticking leaves the whole skill out, never a
+// file, as a SKILL.md can refer to the files beside it. One that isn't
+// installed says why, in the hub's words. refused says why this loop
+// can't take skills at all; then none is ticked.
+export function SkillHints({
+  skills,
+  leftOut,
+  onToggle,
+  refused = '',
+}: {
+  skills: PromptsChatSkill[]
+  leftOut: ReadonlySet<string>
+  onToggle: (dir: string) => void
+  refused?: string
+}) {
   if (skills.length === 0) return null
   return (
-    <ul className="skill-hints" aria-label="Skills the bot was built to use">
-      {/* keyed by place too: the hub keeps a name a bot repeats */}
-      {skills.map((skill, i) => (
-        <li key={`${i}:${skill.name}`}>
-          <span className="skill-hint-text">
-            <span className="skill-hint-name">{skill.name}</span>
-            {skill.description && <span className="skill-hint-description">{skill.description}</span>}
-            {!skill.installed && skill.reason && <span className="skill-hint-reason">{skill.reason}</span>}
-          </span>
-          {skill.installed ? (
-            <span className="skill-hint-state installed">installed</span>
-          ) : (
-            <span className="skill-hint-state">not installed</span>
-          )}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="skill-hints" aria-label="Skills the bot was built to use">
+        {/* keyed by place too: the hub keeps a name a bot repeats */}
+        {skills.map((skill, i) => {
+          const files = installable(skill) && !refused
+          const kept = files && !leftOut.has(skill.dir ?? '')
+          return (
+            <li key={`${i}:${skill.name}`}>
+              {files && (
+                <input
+                  type="checkbox"
+                  className="skill-hint-tick"
+                  aria-label={`Install ${skill.name}`}
+                  checked={kept}
+                  onChange={() => onToggle(skill.dir ?? '')}
+                />
+              )}
+              <span className="skill-hint-text">
+                <span className="skill-hint-name">{skill.name}</span>
+                {skill.description && <span className="skill-hint-description">{skill.description}</span>}
+                {!skill.installed && skill.reason && (
+                  <span className="skill-hint-reason">{skill.reason}</span>
+                )}
+                {files && (
+                  <details className="skill-files">
+                    <summary>{skillSize(skill)}</summary>
+                    {(skill.files ?? []).map((f) => (
+                      <details key={f.path} className="skill-file">
+                        <summary>{f.path}</summary>
+                        <pre>{f.content}</pre>
+                      </details>
+                    ))}
+                  </details>
+                )}
+              </span>
+              {kept ? (
+                <span className="skill-hint-state installed">installs</span>
+              ) : files ? (
+                <span className="skill-hint-state">left out</span>
+              ) : (
+                <span className="skill-hint-state">not installed</span>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {skills.some(installable) && (
+        <div className="hint">
+          {refused ||
+            "Create writes each ticked skill's files into the loop's .claude/skills/. They are the bot author's text: read them first."}
+        </div>
+      )}
+    </>
   )
 }

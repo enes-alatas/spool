@@ -719,7 +719,8 @@ export interface EgressGroup {
 // is fixed, each with the connector that named it; nothing is allowed
 // until the operator adds a host. source is the bot's page. skills are the
 // skills the bot names, in its order, [] for none (#1332); the mission says
-// in words which aren't installed, and the create takes none of them.
+// in words which aren't installed, and create takes the installed ones the
+// operator keeps (#1364).
 export interface PromptsChatDraft {
   name: string
   mission: string
@@ -729,14 +730,34 @@ export interface PromptsChatDraft {
   source: string
 }
 
-// A skill a bot was built to use (#1332). installed is false for every
-// skill until skills are installed on import (#1364); reason says why one
-// isn't, in the hub's words. Mirrors promptschat.SkillHint.
+// A skill a bot was built to use (#1332). installed is true when the draft
+// carries the skill's files from prompts.chat (#1364), which create installs
+// unless the operator leaves the skill out; false with reason, a fixed
+// sentence in the hub's words, saying why not, and no files. source is the
+// skill's prompts.chat page as the hub rebuilt it, '' for any other; dir its
+// folder under .claude/skills/; files SKILL.md first, each exactly the text
+// that will be written. The last three are absent from a hub before #1364.
+// Mirrors promptschat.SkillHint.
 export interface PromptsChatSkill {
   name: string
   description: string
   installed: boolean
   reason: string
+  source?: string
+  dir?: string
+  files?: SkillFile[]
+}
+
+// One file of a skill: a relative path using /, and its text.
+export interface SkillFile {
+  path: string
+  content: string
+}
+
+// A skill create installs (#1364): a ticked skill as the draft gave it.
+export interface SkillInstall {
+  dir: string
+  files: SkillFile[]
 }
 
 // A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to
@@ -1244,6 +1265,11 @@ export interface CreateLoopReq {
   // `default` for the default. A bare or cloud loop naming another is
   // refused 409 `claude_login`, and a login the hub doesn't hold 400.
   claude_login?: string
+  // Create-only: the imported skills to install in the loop's workdir
+  // (#1364), as the draft gave them. Refused 400 naming the rule a skill
+  // breaks, or skills_unsupported for a cloud loop or a bare loop working
+  // in a plain directory.
+  skills?: SkillInstall[]
 }
 
 // The answer to a rehome: the host workspace the move leaves behind ('' for
@@ -1771,7 +1797,7 @@ export const api = {
     channel: string
     description: string
     runtime: string
-    loops: { name: string; mission: string }[]
+    loops: { name: string; mission: string; skills?: SkillInstall[] }[]
   }) => req<CreatedTeam>('/api/import/prompts-chat/team', { method: 'POST', body: JSON.stringify(team) }),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes

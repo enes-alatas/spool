@@ -25,6 +25,7 @@ import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
 import { EgressHints, ImportedFrom, PromptsChatFill, SkillHints } from '../components/PromptsChatImport'
+import { skillsRefused, skillsToInstall } from '../skills'
 import { TeamDraft } from '../components/TeamDraft'
 import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
 
@@ -97,6 +98,8 @@ export function NewLoopForm({
   // The prompts.chat draft the fields were last filled from (#1264), for the
   // note on where the mission came from and the egress it suggests.
   const [imported, setImported] = useState<PromptsChatDraft | null>(null)
+  // The imported skills the operator unticked, by dir (#1395).
+  const [leftOut, setLeftOut] = useState<ReadonlySet<string>>(new Set())
 
   // What the hub was started as, and whether it will accept an uncontained
   // loop at all. Both are constants under a running server; the form reads
@@ -146,12 +149,24 @@ export function NewLoopForm({
   const chosenLogin = logins?.logins.find((l) => l.name === login)
   const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
   const cloudReady = cloudStep === 'done'
+  // Why this loop can't take the imported skills, or '' (#1364): a cloud
+  // loop, or a bare one working in a plain directory.
+  const plainDirectory = !wsLocked && wsPath.trim() !== '' && !!wsInfo?.exists && !wsInfo.is_git
+  const skillsNote = skillsRefused(chosenRuntime, plainDirectory)
+  const toggleSkill = (dir: string) =>
+    setLeftOut((prev) => {
+      const next = new Set(prev)
+      if (next.has(dir)) next.delete(dir)
+      else next.add(dir)
+      return next
+    })
 
   // A draft fills the fields it has and leaves the rest as they are. Its
   // runtime is set without chooseRuntime's step into cloud setup: the field
   // already says when the hub isn't set up, and the operator didn't pick it.
   const fill = (draft: PromptsChatDraft) => {
     setImported(draft)
+    setLeftOut(new Set())
     setName(draft.name)
     setMission(draft.mission)
     if (runtimeChoices.some((o) => o.value === draft.runtime)) {
@@ -234,6 +249,9 @@ export function NewLoopForm({
         // Omitted for the default, which a loop that names none runs on, so
         // a hub too old to know the field creates the same loop.
         claude_login: pickLogin && login !== 'default' ? login : undefined,
+        // The ticked skills, as the draft gave them; none where this loop
+        // can't take them, or the hub would refuse the whole create.
+        skills: imported && !skillsNote ? skillsToInstall(imported.skills, leftOut) : undefined,
         ...(cloud && {
           cloud_repo: cloudRepo.trim() || undefined,
           cloud_branch: cloudRepo.trim() ? cloudBranch.trim() || undefined : undefined,
@@ -290,7 +308,12 @@ export function NewLoopForm({
       {imported && imported.skills.length > 0 && (
         <div className="field">
           <label>Skills the bot was built to use</label>
-          <SkillHints skills={imported.skills} />
+          <SkillHints
+            skills={imported.skills}
+            leftOut={leftOut}
+            onToggle={toggleSkill}
+            refused={skillsNote}
+          />
         </div>
       )}
 

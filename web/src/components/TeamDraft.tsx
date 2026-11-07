@@ -5,6 +5,9 @@ import { api, type PromptsChatTeam, type PromptsChatTeamLoop } from '../api'
 import { channelHash } from '../channels'
 import { handoffLine } from '../team'
 import { SkillHints } from './PromptsChatImport'
+import { skillsToInstall } from '../skills'
+
+const NONE: ReadonlySet<string> = new Set()
 
 // A team read from prompts.chat (#1266, ADR-0063), shown on New loop in
 // place of the form: what Create makes, read before anything exists.
@@ -18,6 +21,18 @@ export function TeamDraft({ team, onCancel }: { team: PromptsChatTeam; onCancel:
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Each loop's unticked skills, by dir (#1395): every drafted loop carries
+  // the same skills, and each is kept or left out on its own.
+  const [leftOut, setLeftOut] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map())
+  const toggle = (loop: string, dir: string) =>
+    setLeftOut((prev) => {
+      const next = new Map(prev)
+      const dirs = new Set(prev.get(loop))
+      if (dirs.has(dir)) dirs.delete(dir)
+      else dirs.add(dir)
+      next.set(loop, dirs)
+      return next
+    })
 
   const create = async () => {
     setBusy(true)
@@ -27,7 +42,11 @@ export function TeamDraft({ team, onCancel }: { team: PromptsChatTeam; onCancel:
         channel: team.channel,
         description: team.description,
         runtime: '',
-        loops: team.loops.map(({ name, mission }) => ({ name, mission })),
+        loops: team.loops.map(({ name, mission, skills }) => ({
+          name,
+          mission,
+          skills: skillsToInstall(skills, leftOut.get(name) ?? NONE),
+        })),
       })
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['loops'] }),
@@ -42,7 +61,7 @@ export function TeamDraft({ team, onCancel }: { team: PromptsChatTeam; onCancel:
 
   const count = `${team.loops.length} loop${team.loops.length === 1 ? '' : 's'}`
   return (
-    <TeamPreview team={team} count={count}>
+    <TeamPreview team={team} count={count} leftOut={leftOut} onToggle={toggle}>
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -66,10 +85,14 @@ export function TeamDraft({ team, onCancel }: { team: PromptsChatTeam; onCancel:
 function TeamPreview({
   team,
   count,
+  leftOut,
+  onToggle,
   children,
 }: {
   team: PromptsChatTeam
   count: string
+  leftOut: ReadonlyMap<string, ReadonlySet<string>>
+  onToggle: (loop: string, dir: string) => void
   children: ReactNode
 }) {
   return (
@@ -81,7 +104,12 @@ function TeamPreview({
       </div>
       <ul className="team-loops">
         {team.loops.map((loop) => (
-          <TeamMember key={loop.name} loop={loop} />
+          <TeamMember
+            key={loop.name}
+            loop={loop}
+            leftOut={leftOut.get(loop.name) ?? NONE}
+            onToggle={(dir) => onToggle(loop.name, dir)}
+          />
         ))}
       </ul>
       <div className="hint">
@@ -97,7 +125,15 @@ function TeamPreview({
   )
 }
 
-function TeamMember({ loop }: { loop: PromptsChatTeamLoop }) {
+function TeamMember({
+  loop,
+  leftOut,
+  onToggle,
+}: {
+  loop: PromptsChatTeamLoop
+  leftOut: ReadonlySet<string>
+  onToggle: (dir: string) => void
+}) {
   return (
     <li className="team-loop">
       <div className="team-loop-head">
@@ -108,7 +144,7 @@ function TeamMember({ loop }: { loop: PromptsChatTeamLoop }) {
       {loop.skills.length > 0 && (
         <div className="team-loop-skills">
           <div className="team-loop-skills-label">Skills it was built to use</div>
-          <SkillHints skills={loop.skills} />
+          <SkillHints skills={loop.skills} leftOut={leftOut} onToggle={onToggle} />
         </div>
       )}
       <details className="team-loop-mission">
