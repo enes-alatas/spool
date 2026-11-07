@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230); 2026-11-07 (item 3: a turn the API fails posts too, #1280) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -261,6 +261,24 @@ real hub behind the allowlist is checked at #1181's first live start:
    again (run S), so the script starts no process the session relies
    on. The script changes only with the hub's public address, and a
    change shows on every cloud loop's setup view, to paste again.
+
+   **Amendment (2026-11-07, #1280): a turn the API fails posts too.** A
+   turn the API fails ends without `Stop`: the CLI runs `StopFailure`
+   instead, so the hub heard nothing and held the turn for the two quiet
+   hours of ADR-0059 item 3. A zero-token probe of CLI 2.1.318 recorded
+   that, on a local run (FIDELITY.md). The script now writes a
+   `StopFailure` hook beside `Stop`, running the same command, and the
+   hook route takes its post as a `Stop` post, under the same session
+   check and bounds. The turn reads back as an error: its text is the
+   hook's `last_assistant_message`, the CLI's own sentence, or, with
+   none, the `error` it names. The CLI's own transcript line (model
+   `<synthetic>`) is no API call and costs nothing. The quiet bound stays
+   the backstop for any other end that posts nothing.
+   - **An environment set up before this keeps the old script** until
+     the operator pastes the setup view's script again. The setup check
+     doesn't cover the script's text, so its pass stays current, and
+     that loop's failed turns still wait out the quiet bound. Telling an
+     outdated script apart is #1381.
 
 4. **The loop's hub token is a network secret, long-lived, and refused
    while the loop isn't running.**

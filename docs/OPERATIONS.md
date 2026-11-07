@@ -499,9 +499,15 @@ hook posts the session's id. The hub takes the post only from the session
 the CLI printed it had created, answers it with the loop's prompt, and ends
 the local CLI. The loop's page links the session, which you can open on
 claude.ai. When the turn ends, the `Stop` hook posts it back, and the
-loop's reply lands in its rooms as any loop's does. Each later wake is
-sent into the same session with `claude -p --cloud`. Anthropic idles the
-session's machine between turns, and the next message brings it back.
+loop's reply lands in its rooms as any loop's does. A turn the API fails,
+on a rate limit or a server error, ends with `StopFailure` instead, which
+the setup script hooks too: the turn shows as an error at once. An
+environment whose script predates that hook still waits two hours with
+no post on such a turn: paste the setup view's script into it again. The
+setup check stays green either way, so it won't tell you (#1381). Each
+later wake is sent into the same session with `claude -p --cloud`.
+Anthropic idles the session's machine between turns, and the next
+message brings it back.
 Changing the public address takes one more step: paste the new setup
 script into each loop's environment, and its host into the allowed
 domains, then stop and start each cloud loop, which drops its session, and

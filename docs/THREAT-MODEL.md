@@ -539,9 +539,12 @@ cloud listener (ADR-0059).
 - **What the hooks post is untrusted** and read under bounds, on the cloud
   listener's hook route: a `Stop` post over its bound ends the turn as an
   error, and so do a transcript line the hub can't read and two hours
-  with no post. The lines go through the same redaction as a contained
-  turn's. The hook script retries a post lost to a timeout, a refused
-  connection, or a 408, 429 or 5xx, and never one the hub refused.
+  with no post. A `StopFailure` post, for a turn the API failed, is read
+  as a `Stop` post under the same checks and ends the turn as an error
+  (#1280): the loop can mark its own turn failed, and nothing more. The
+  lines go through the same redaction as a contained turn's. The hook
+  script retries a post lost to a timeout, a refused connection, or a
+  408, 429 or 5xx, and never one the hub refused.
 - **A cloud loop made under ADR-0056 starts a new session** at its next
   wake, through the CLI, on a token of its own: the hub never resumes a
   session the sessions client created.
@@ -799,11 +802,12 @@ cloud listener (ADR-0059).
 - **A cloud turn's cost is the session's own count.** The hub prices the
   token counts the transcript reports (ADR-0059), and the loop has a
   shell where the transcript is written, so a loop can understate its
-  own spend. A negative count is refused as an unreadable line, but a
-  low one is believed. The figure is shown, and a loop's daily USD cap
-  counts it (ADR-0047, #652), so the cap stops a runaway loop but not
-  one that understates its spend. The account's usage page on claude.ai
-  is the record.
+  own spend, or label an assistant line `<synthetic>`, which counts as
+  no call and no cost (#1280). A negative count is refused as an
+  unreadable line, but a low one is believed. The figure is shown, and
+  a loop's daily USD cap counts it (ADR-0047, #652), so the cap stops a
+  runaway loop but not one that understates its spend. The account's
+  usage page on claude.ai is the record.
 
 ### Workstation: the docker runtime
 
