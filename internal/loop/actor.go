@@ -1019,6 +1019,7 @@ func (actor *Actor) wake() {
 		return
 	}
 	actor.carryMemory(ctx, loopRuntime)
+	actor.carrySkills(ctx, loopRuntime, spec.WorkDir)
 	proc, err := loopRuntime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)

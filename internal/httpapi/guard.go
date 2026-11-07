@@ -88,12 +88,18 @@ func (server *Server) guard(next *http.ServeMux) http.Handler {
 		}
 		// Bounded before any credential is read, the sign-in's included; an
 		// upload keeps its own, larger cap.
+		// A create takes the skills an import carries, so its cap is larger
+		// (#1364).
 		if !isUpload(r) {
-			if r.ContentLength > maxAPIBody {
-				server.jsonErr(w, http.StatusRequestEntityTooLarge, "a request body is at most %d bytes", maxAPIBody)
+			limit := int64(maxAPIBody)
+			if createRoute(r.Method, r.URL.Path) {
+				limit = maxCreateBody
+			}
+			if r.ContentLength > limit {
+				server.jsonErr(w, http.StatusRequestEntityTooLarge, "a request body is at most %d bytes", limit)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, maxAPIBody)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		// The session routes are registered on the mux like everything else,
 		// so the route list stays the route list; what they skip is the

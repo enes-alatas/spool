@@ -26,6 +26,9 @@ type createTeamReq struct {
 type createTeamLoop struct {
 	Name    string `json:"name"`
 	Mission string `json:"mission"`
+	// Skills are the ones the operator ticked, as the draft carried them
+	// (#1364).
+	Skills []promptschat.Skill `json:"skills"`
 }
 
 // maxTeamLoops bounds the loops one team create makes, as a team import
@@ -101,7 +104,7 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	named := map[string]bool{}
 	for _, member := range req.Loops {
 		loopRecord, refusal := server.prepareLoop(r.Context(), &createLoopReq{
-			Name: member.Name, Mission: member.Mission, Runtime: req.Runtime,
+			Name: member.Name, Mission: member.Mission, Runtime: req.Runtime, Skills: member.Skills,
 		})
 		if refusal != nil {
 			server.refuse(w, refusal)
@@ -114,8 +117,21 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		named[loopRecord.Name] = true
 		loops = append(loops, loopRecord)
 	}
+	unstage := func() {
+		for _, loopRecord := range loops {
+			server.unstageSkills(loopRecord)
+		}
+	}
+	for index, loopRecord := range loops {
+		if err := server.stageSkills(loopRecord, req.Loops[index].Skills); err != nil {
+			unstage()
+			server.jsonErr(w, 500, "skills not staged: %v", err)
+			return
+		}
+	}
 	team := &store.Channel{Name: req.Channel, Description: req.Description}
 	if failed := server.storeTeam(r.Context(), team, loops); failed != nil {
+		unstage()
 		server.refuse(w, failed)
 		return
 	}

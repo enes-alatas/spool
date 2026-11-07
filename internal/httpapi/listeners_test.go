@@ -126,6 +126,9 @@ func TestAPIBodiesAreBounded(t *testing.T) {
 	var readErr error
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", server.handleLogin)
+	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
+		read, readErr = io.Copy(io.Discard, r.Body)
+	})
 	mux.HandleFunc("POST /api/loops", func(w http.ResponseWriter, r *http.Request) {
 		read, readErr = io.Copy(io.Discard, r.Body)
 	})
@@ -141,7 +144,7 @@ func TestAPIBodiesAreBounded(t *testing.T) {
 		t.Errorf("a sign-in body over the bound = %d %s; want 413", rec.Code, rec.Body)
 	}
 
-	req = httptest.NewRequest("POST", "/api/loops", io.LimitReader(endless{}, 4*maxAPIBody))
+	req = httptest.NewRequest("PUT", "/api/settings", io.LimitReader(endless{}, 4*maxAPIBody))
 	req.Host = "127.0.0.1:8080"
 	req.ContentLength = -1
 	req.Header.Set("Content-Type", "application/json")
@@ -150,6 +153,18 @@ func TestAPIBodiesAreBounded(t *testing.T) {
 	var tooLarge *http.MaxBytesError
 	if read > maxAPIBody || !errors.As(readErr, &tooLarge) {
 		t.Errorf("an undeclared body four times the bound read %d bytes, %v; want it stopped at %d", read, readErr, maxAPIBody)
+	}
+
+	// a create takes the skills an import carries, under its own larger
+	// bound (#1364)
+	req = httptest.NewRequest("POST", "/api/loops", io.LimitReader(endless{}, 2*maxCreateBody))
+	req.Host = "127.0.0.1:8080"
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	if read != maxCreateBody || !errors.As(readErr, &tooLarge) {
+		t.Errorf("an undeclared create body twice its bound read %d bytes, %v; want it stopped at %d", read, readErr, maxCreateBody)
 	}
 }
 

@@ -784,6 +784,10 @@ type createLoopReq struct {
 	// InFleetChannel places the new loop in the fleet channel or outside
 	// it; absent, the server decides (defaultInFleetChannel).
 	InFleetChannel *bool `json:"in_fleet_channel"`
+	// Skills are the skills of an imported bot the operator ticked, as its
+	// draft carried them, installed in the loop's workdir with no fetch
+	// (#1364).
+	Skills []promptschat.Skill `json:"skills"`
 	// cloud only: the repos and environment its sessions start from
 	// (ADR-0061)
 	cloudSetupReq
@@ -836,7 +840,12 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.refuse(w, refusal)
 		return
 	}
+	if err := server.stageSkills(loopRecord, req.Skills); err != nil {
+		server.jsonErr(w, 500, "skills not staged: %v", err)
+		return
+	}
 	if refusal := server.storeLoop(r.Context(), loopRecord); refusal != nil {
+		server.unstageSkills(loopRecord)
 		server.refuse(w, refusal)
 		return
 	}
@@ -1005,6 +1014,9 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 		loopRecord.SlackTeamID, loopRecord.SlackTeamName = identity.TeamID, identity.TeamName
 	}
 
+	if refusal := checkSkillRules(loopRecord, req.Skills); refusal != nil {
+		return nil, refusal
+	}
 	if loopRecord.Runtime == store.RuntimeDocker {
 		// The workstation is the workspace (ADR-0017): claude's cwd is the
 		// volume-backed home inside the container, stable across wakes.
@@ -1012,6 +1024,15 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 		loopRecord.WorkspacePath = runtime.WorkstationHome
 	} else if err := server.resolveWorkspace(loopRecord, req.WorkspacePath, req.WorkspaceMode); err != nil {
 		return nil, refusalf(400, "", "%v", err)
+	}
+	if refusal := checkSkillPlace(loopRecord, req.Skills); refusal != nil {
+		if loopRecord.WorkspaceMode == store.WorkspaceWorktree {
+			// made for this loop a moment ago, and the loop won't exist
+			if err := gitws.Remove(loopRecord.RepoPath, loopRecord.WorktreePath); err != nil {
+				server.Log.Warn("a refused create's worktree was not removed", "worktree", loopRecord.WorktreePath, "err", err)
+			}
+		}
+		return nil, refusal
 	}
 
 	// A new loop starts owned by the same person as the rest of the fleet:

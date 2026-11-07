@@ -93,6 +93,7 @@ func TestDockerRows(t *testing.T) {
 		{"ARehomedLoopIsNotProvisionedUntilItWakes", aRehomedLoopIsNotProvisionedUntilItWakes},
 		{"APendingRehomeShowsOnTheLoop", aPendingRehomeShowsOnTheLoop},
 		{"DockerSignInRunsInTheImage", dockerSignInRunsInTheImage},
+		{"DockerLoopGetsItsImportedSkills", dockerLoopGetsItsImportedSkills},
 	} {
 		t.Run(row.name, row.run)
 	}
