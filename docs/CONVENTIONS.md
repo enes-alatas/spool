@@ -47,7 +47,8 @@ ADR instead.*
   `fleet-mention`, its author takes the @ out, and whoever sees it fixed
   removes the label. The same hook runs two of pr-guards' checks before the
   call (#1371): the commit rules at `git push` (over `origin/main..` what is
-  pushed), and a feat PR's other half at `gh pr create`/`edit` with a title.
+  pushed, unless it goes to a `loop/` branch, which is never a PR, #1390),
+  and a feat PR's other half at `gh pr create`/`edit` with a title.
   It runs CI's own scripts, so the rules have one text. It is the early
   copy: pr-guards stays the check that gates.
 - **The board sweep reads the pinned "CI health" issue** (#216, #210): each

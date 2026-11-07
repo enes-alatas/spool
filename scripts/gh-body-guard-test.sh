@@ -179,6 +179,15 @@ check 0 "push: -C into another directory" "git -C $work push"
 check 0 "push: a deletion" "git push origin :old-branch"
 check 0 "push: --delete" "git push origin --delete old-branch"
 check 0 "push: a range the clone can't resolve" "git push origin no-such-branch"
+# A loop's own branch is never a PR, so its ledger isn't checked (#1390).
+check 0 "push: HEAD to a loop/ branch" "git push origin HEAD:loop/milo"
+check 0 "push: to refs/heads/loop/" "git -c a.b=1 push origin HEAD:refs/heads/loop/milo"
+check 2 "push: loop/ further into the destination is still checked" "git push origin HEAD:feat/loop/x" "" "pr-guards will refuse"
+gitw switch -q -c loop/milo
+check 0 "push: the loop's branch checked out" "git push -u origin HEAD"
+check 0 "push: the loop's branch by name" "git push origin loop/milo"
+check 2 "push: the loop's branch to a PR branch is checked" "git push origin loop/milo:feat/y" "" "pr-guards will refuse"
+gitw switch -q -
 gitw remote set-url origin https://example.invalid/someone/else.git
 check 0 "push: another project's clone" "git push"
 cwd_dir=

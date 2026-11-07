@@ -64,8 +64,9 @@ this_repo() {
 # A push, found among the call's words (quotes kept together), after any
 # `-c <key=value>` and `-C <dir>`: the credential-helper push is
 # `git -c credential.helper='!gh auth git-credential' push` (#1372). It
-# prints the -C directory and what is pushed: the refspec's source after
-# the remote, empty for HEAD, `-` for a deletion.
+# prints the -C directory, what is pushed: the refspec's source after
+# the remote, empty for HEAD, `-` for a deletion, and where to: its
+# destination, or the source again when it names none.
 pushed=$(printf '%s\n' "$command" | LC_ALL=C awk '
 { s = s $0 "\n" }
 END {
@@ -86,24 +87,26 @@ END {
 			j += 2
 		}
 		if (words[j] != "push") continue
-		m = 0; src = ""
+		m = 0; src = ""; dst = ""
 		for (j = j + 1; j <= n; j++) {
 			x = words[j]
 			if (x ~ /^(&&|\|\|?|;)$/ || x ~ /^[0-9]*>/) break
 			if (x == "--delete" || x == "-d") { src = "-"; break }
 			if (x ~ /^-/) continue
 			if (++m == 2) {
-				sub(/;$/, "", x); sub(/^\+/, "", x); sub(/:.*/, "", x)
+				sub(/;$/, "", x); sub(/^\+/, "", x)
+				dst = x; sub(/^[^:]*:/, "", dst); sub(/:.*/, "", x)
 				src = (x == "" ? "-" : x); break
 			}
 		}
-		printf "push\t%s\t%s\n", dir, src
+		printf "push\t%s\t%s\t%s\n", dir, src, dst
 		exit
 	}
 }')
 if [ -n "$pushed" ]; then
 	dir=$(printf '%s\n' "$pushed" | cut -f2)
 	src=$(printf '%s\n' "$pushed" | cut -f3)
+	dst=$(printf '%s\n' "$pushed" | cut -f4)
 	[ -n "$src" ] || src=HEAD
 	# In the clone the push runs in; another project's clone, or a -C
 	# directory that isn't there, goes through.
@@ -111,6 +114,11 @@ if [ -n "$pushed" ]; then
 		[ "$src" != - ] || exit 0
 		if [ -n "$dir" ]; then cd "$dir" 2>/dev/null || exit 0; fi
 		this_repo || exit 0
+		# A loop's own `loop/<name>` branch is never a PR (CONVENTIONS.md,
+		# "Branches"), so pr-guards never reads its commits: a ledger of
+		# hundreds goes through (#1390).
+		case $dst in "" | HEAD) dst=$(git rev-parse --abbrev-ref "$src" 2>/dev/null) ;; esac
+		case ${dst#refs/heads/} in loop/*) exit 0 ;; esac
 		repo_file scripts/commit-subjects.sh | bash -s -- --git "origin/main..$src" 2>/dev/null
 		[ $? -eq 1 ] && exit 3
 		exit 0
