@@ -14,6 +14,11 @@ import (
 // with the reason as the message for the form to show.
 const codeLangfuseInvalid = "langfuse_invalid"
 
+// codeLangfuseFromFile refuses a change to Langfuse settings the hub's
+// Langfuse file sets (#1388): the hub reads the file again at its
+// next start, which would undo the change.
+const codeLangfuseFromFile = "langfuse_from_file"
+
 // langfuseUnsupported is a cloud loop's Langfuse on its view.
 const langfuseUnsupported = "unsupported"
 
@@ -35,6 +40,9 @@ type langfuseView struct {
 	// for the form to offer. It is never applied unasked: an empty
 	// upstream is export off.
 	DefaultRelayUpstream string `json:"default_relay_upstream"`
+	// File is the hub's Langfuse file the settings come from,
+	// "" when they were stored here (#1388).
+	File string `json:"file"`
 }
 
 func newLangfuseView(langfuse store.Langfuse) langfuseView {
@@ -45,6 +53,7 @@ func newLangfuseView(langfuse store.Langfuse) langfuseView {
 		ReadKeySet:           langfuse.ReadKey != "",
 		Exporting:            loop.LangfuseExports(langfuse),
 		DefaultRelayUpstream: egress.ComposeLangfuseUpstream,
+		File:                 langfuse.File,
 	}
 }
 
@@ -109,6 +118,11 @@ func (server *Server) handlePutLangfuse(w http.ResponseWriter, r *http.Request) 
 	langfuse, err := loop.LoadLangfuse(r.Context(), server.Store.Settings())
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if langfuse.File != "" {
+		server.jsonErrCode(w, 409, codeLangfuseFromFile,
+			"the Langfuse settings come from %s; edit or remove it and restart the hub", langfuse.File)
 		return
 	}
 	before := langfuse

@@ -134,6 +134,10 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
 		"--partial-messages=false",
+		// never the checkout's own Langfuse file, which a
+		// developer who ran the setup script has (#1388); a test that
+		// wants one passes its own, and the last flag wins
+		"--langfuse-env", filepath.Join(dataDir, "no-langfuse.env"),
 	)
 	args = append(args, extraArgs...)
 	cmd := exec.Command(spoolBin, args...)

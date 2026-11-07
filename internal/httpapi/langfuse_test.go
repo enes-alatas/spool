@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -80,5 +81,42 @@ func TestPutLangfuseHandsTheRelayItsSettings(t *testing.T) {
 	want.IngestKey, want.Retired = "", []string{"pk-lf-a:sk-lf-a", "pk-lf-b:sk-lf-b"}
 	if len(handed) != 5 || !reflect.DeepEqual(handed[4], want) || secretsChanged != 4 {
 		t.Errorf("after two key changes and a clear: handed %+v with %d secret changes, want %+v and 4", handed[len(handed)-1], secretsChanged, want)
+	}
+}
+
+// Settings the hub's Langfuse file set are the file's: a PUT is
+// refused, naming the file, and changes nothing (#1388).
+func TestPutLangfuseRefusesTheFilesSettings(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	fromFile := store.Langfuse{RelayUpstream: "http://langfuse-web", IngestKey: "pk-lf-a:sk-lf-a",
+		ReadKey: "pk-lf-a:sk-lf-a", File: "/opt/spool/docker/langfuse/hub.env"}
+	if err := loop.StoreLangfuse(context.Background(), db.Settings(), fromFile); err != nil {
+		t.Fatal(err)
+	}
+	handed := 0
+	server := &Server{
+		Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		TraceRelay: func(context.Context, store.Langfuse) error { handed++; return nil },
+	}
+	recorder := httptest.NewRecorder()
+	server.handlePutLangfuse(recorder, httptest.NewRequest("PUT", "/api/settings/langfuse",
+		strings.NewReader(`{"relay_upstream":""}`)))
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), codeLangfuseFromFile) ||
+		!strings.Contains(recorder.Body.String(), fromFile.File) {
+		t.Fatalf("PUT over the file's settings = %d %s, want 409 naming the file", recorder.Code, recorder.Body)
+	}
+	stored, err := loop.LoadLangfuse(context.Background(), db.Settings())
+	if err != nil || !reflect.DeepEqual(stored, fromFile) || handed != 0 {
+		t.Fatalf("a refused PUT stored %+v (%v) and handed the relay %d times", stored, err, handed)
+	}
+
+	recorder = httptest.NewRecorder()
+	server.handleGetLangfuse(recorder, httptest.NewRequest("GET", "/api/settings/langfuse", nil))
+	if !strings.Contains(recorder.Body.String(), `"file":"`+fromFile.File+`"`) {
+		t.Fatalf("GET = %s, want the file named", recorder.Body)
 	}
 }

@@ -285,7 +285,7 @@ func (up *upgrader) argvOfDefault(ctx context.Context, pid int) ([]string, error
 var (
 	hubValueFlags = []string{
 		"listen", "mcp-listen", "mcp-port", "cloud-listen", "trusted-host", "data-dir",
-		"claude-bin", "hook-bin", "github-bin", "runtime", "workstation-image", "egress-image",
+		"claude-bin", "hook-bin", "langfuse-env", "github-bin", "runtime", "workstation-image", "egress-image",
 		"egress-allow", "workstation-health-sec", "problem-down-grace-sec", "exit-grace-sec",
 		"telegram-api-base", "slack-api-base", "cloud-api-base", "github-api-base",
 		"prompts-chat-base", "cloud-start-within-sec", "telegram-answer-timeout-sec",
