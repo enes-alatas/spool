@@ -486,6 +486,11 @@ type Loop struct {
 	CloudAllowlistConfirmedAt int64  `json:"-"`
 	// CloudCheck is the cloud loop's last setup check, nil for none.
 	CloudCheck *CloudCheck `json:"-"`
+	// CloudScriptDigest is the digest of the setup script the cloud loop's
+	// environment last reported running, from a SessionStart post the hub
+	// took: "" before any, CloudScriptNone for a script from before the
+	// script reported one (#1381). The VM says it, so it only ever warns.
+	CloudScriptDigest string `json:"-"`
 	// WorkstationOff records that the operator switched this loop's
 	// workstation off. Intent, not observation: a health poll cannot tell a
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
@@ -1088,6 +1093,10 @@ type LoopStore interface {
 	// SetCloudCheck records the cloud loop's last setup check, nil to
 	// forget it.
 	SetCloudCheck(ctx context.Context, id string, check *CloudCheck) error
+	// SetCloudScriptDigest records the digest of the setup script the cloud
+	// loop's environment reported running, CloudScriptNone for a script
+	// that reports none (#1381).
+	SetCloudScriptDigest(ctx context.Context, id, digest string) error
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 	// SetRotation persists a rotation in progress: whether the current session
 	// has been retired by a handoff turn, why the rotation was taken, and the

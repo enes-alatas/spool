@@ -1,7 +1,9 @@
 package cloud
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -84,7 +86,42 @@ func deniedTools() []string {
 // A file already there is merged into with python3, which the cloud image
 // has, keeping what it holds: a list is joined, not replaced. One that
 // isn't is written whole.
+//
+// The hook script carries the script's own digest (ScriptDigest) and
+// sends it with each SessionStart post, so the hub can tell an
+// environment still running an older script (#1381).
 func SetupScript(mcpURL string) (string, error) {
+	template, err := setupTemplate(mcpURL)
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(template, scriptDigestBlank, templateDigest(template), 1), nil
+}
+
+// ScriptDigest is the digest SetupScript(mcpURL) carries: the SHA-256 of
+// the script with the digest's own place blank, in hex. A hub upgrade
+// that leaves the script's text as it was leaves its digest as it was
+// (#1381).
+func ScriptDigest(mcpURL string) (string, error) {
+	template, err := setupTemplate(mcpURL)
+	if err != nil {
+		return "", err
+	}
+	return templateDigest(template), nil
+}
+
+// scriptDigestBlank holds the digest's place in the script's template,
+// the same length as the digest, and appears in it once.
+var scriptDigestBlank = strings.Repeat("0", sha256.Size*2)
+
+func templateDigest(template string) string {
+	sum := sha256.Sum256([]byte(template))
+	return hex.EncodeToString(sum[:])
+}
+
+// setupTemplate is SetupScript's text with scriptDigestBlank in the
+// digest's place.
+func setupTemplate(mcpURL string) (string, error) {
 	hooksURL, ok := strings.CutSuffix(mcpURL, "/mcp")
 	if parsed, err := url.Parse(mcpURL); !ok || err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return "", fmt.Errorf("cloud: a setup script needs the hub's /mcp address, not %q", mcpURL)
@@ -183,6 +220,8 @@ func hookScript(hooksURL string) string {
 	return `#!/bin/sh
 # Spool's hooks for this loop (ADR-0061): sh, sed, base64 and curl.
 url=` + shellQuote(hooksURL) + `
+# the digest of the setup script that wrote this file (#1381)
+digest=` + scriptDigestBlank + `
 # A lost post is tried again and a refused one is not: --retry covers
 # timeouts, 408, 429 and 5xx, never the hub's 400 or 409.
 retry="--retry 4 --retry-connrefused --retry-max-time 30"
@@ -208,7 +247,7 @@ case "$1" in
 ` + HookSessionStart + `)
   # the connections are written only once the answer all came: a refusal
   # never truncates the env file or puts an error page in it
-  curl -sf -o "$tmp/answer" $retry -F "hook=<$tmp/hook" --form-string "session=$CLAUDE_CODE_REMOTE_SESSION_ID" "$url" >/dev/null 2>&1 || exit 0
+  curl -sf -o "$tmp/answer" $retry -F "hook=<$tmp/hook" --form-string "session=$CLAUDE_CODE_REMOTE_SESSION_ID" --form-string "script=$digest" "$url" >/dev/null 2>&1 || exit 0
   if head -n 1 "$tmp/answer" | base64 -d > "$tmp/env" 2>/dev/null && [ -s "$tmp/env" ] && [ -n "$CLAUDE_ENV_FILE" ]; then
     cat "$tmp/env" >> "$CLAUDE_ENV_FILE" 2>/dev/null
   fi

@@ -104,6 +104,10 @@ func (hooks *recordingHooks) SetupScript(mcpURL string) (string, error) {
 	return "#!/bin/sh\n# setup for " + mcpURL + "\n", nil
 }
 
+func (hooks *recordingHooks) ScriptDigest(mcpURL string) (string, error) {
+	return fakeScriptDigest, nil
+}
+
 func (hooks *recordingHooks) taken() []hookCall {
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
@@ -125,6 +129,13 @@ func hookServer(t *testing.T, hooks CloudHooks) http.Handler {
 // redacted.
 func hookServerRedacting(t *testing.T, hooks CloudHooks, redacted func(http.Handler) http.Handler) http.Handler {
 	t.Helper()
+	handler, _ := hookServerStore(t, hooks, redacted)
+	return handler
+}
+
+// hookServerStore is hookServerRedacting, with the store it serves.
+func hookServerStore(t *testing.T, hooks CloudHooks, redacted func(http.Handler) http.Handler) (http.Handler, store.Store) {
+	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +153,7 @@ func hookServerRedacting(t *testing.T, hooks CloudHooks, redacted func(http.Hand
 		}
 	}
 	server := &Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CloudHooks: hooks}
-	return server.CloudHandler(redacted)
+	return server.CloudHandler(redacted), db
 }
 
 // hookForm is a hook post's body as curl -F sends it, and its content type.

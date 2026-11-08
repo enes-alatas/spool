@@ -189,3 +189,8 @@ func (loopRecord *Loop) CloudCheckPassed() bool {
 	check := loopRecord.CloudCheck
 	return check != nil && check.State == CloudCheckOK && check.For == CloudCheckFor(loopRecord)
 }
+
+// CloudScriptNone is the CloudScriptDigest of an environment whose setup
+// script reported no digest: one pasted before scripts carried one
+// (#1381), which is never the script the hub serves now.
+const CloudScriptNone = "none"

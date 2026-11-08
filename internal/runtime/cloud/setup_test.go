@@ -17,7 +17,7 @@ import (
 // hookPost is one post the session's hook script made, as the hub's
 // route would read it.
 type hookPost struct {
-	auth, hook, session, lines string
+	auth, hook, session, lines, script string
 }
 
 // hookInbox is a stand-in for the cloud listener's hook route that keeps
@@ -43,6 +43,7 @@ func (inbox *hookInbox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hook:    r.FormValue("hook"),
 		session: r.FormValue("session"),
 		lines:   r.FormValue("lines"),
+		script:  r.FormValue("script"),
 	})
 	if len(inbox.answers) > 0 {
 		answer := inbox.answers[0]
@@ -230,6 +231,9 @@ func TestHooksPostTheSessionAndEachTurnsNewLines(t *testing.T) {
 	}
 	if posts[0].session != "session_01synthetic" || !strings.Contains(posts[0].hook, `"source":"startup"`) {
 		t.Errorf("SessionStart posted %+v, want the session id and the hook's input", posts[0])
+	}
+	if digest, err := ScriptDigest(hub.URL + "/mcp"); err != nil || posts[0].script != digest || posts[1].script != "" {
+		t.Errorf("SessionStart sent script %q and Stop %q, want the setup script's digest %q (%v) on SessionStart alone", posts[0].script, posts[1].script, digest, err)
 	}
 	if posts[1].lines != "{\"n\":1}\n{\"n\":2}\n" || posts[1].hook != stopInput {
 		t.Errorf("the first Stop posted lines %q and input %q, want the transcript so far and the hook's input", posts[1].lines, posts[1].hook)
@@ -474,5 +478,33 @@ func TestAddRepoGuardGoesAheadOnlyOnTheHubsWord(t *testing.T) {
 	hub.Close()
 	if code, errOut := guard(t, home, addRepoInput, "cse_01Synthetic"); code != 2 || !strings.Contains(errOut, "can't be reached") {
 		t.Errorf("with the hub down the guard exited %d: %q, want 2 saying so", code, errOut)
+	}
+}
+
+// The setup script carries its own digest: the SHA-256 of its text with
+// the digest's place blank. It is the same for the same text, so a hub
+// upgrade that leaves the script as it was flags no loop, and it differs
+// for another script (#1381).
+func TestSetupScriptCarriesItsOwnDigest(t *testing.T) {
+	script, err := SetupScript("https://hub.example.test/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := ScriptDigest("https://hub.example.test/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(script, digest) != 1 || strings.Contains(script, scriptDigestBlank) {
+		t.Fatalf("the script carries its digest %d times, or still its blank", strings.Count(script, digest))
+	}
+	if blanked := strings.Replace(script, digest, scriptDigestBlank, 1); templateDigest(blanked) != digest {
+		t.Error("the digest isn't the SHA-256 of the script with its place blank")
+	}
+	again, _ := SetupScript("https://hub.example.test/mcp")
+	if again != script {
+		t.Error("the same hub's script differs between two calls")
+	}
+	if other, _ := ScriptDigest("https://other.example.test/mcp"); other == digest {
+		t.Error("another hub's script has the same digest")
 	}
 }

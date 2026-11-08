@@ -356,7 +356,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"RotateHubMCPToken": false,
 			"RevokeHubMCPToken": false,
 			// a digest and a time; a check's detail quotes the CLI
-			"ConfirmCloudAllowlist": false, "SetCloudCheck": true,
+			"ConfirmCloudAllowlist": false, "SetCloudCheck": true, "SetCloudScriptDigest": false,
 			// a fixed path and the workstation's size
 			"Rehome": false,
 			// Slack ids and a timestamp, the counterparts of the two

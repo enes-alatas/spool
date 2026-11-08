@@ -69,6 +69,9 @@ type CloudHooks interface {
 	// SetupScript is the setup script every cloud loop's environment runs,
 	// for a hub whose cloud listener's /mcp is at mcpURL (ADR-0061).
 	SetupScript(mcpURL string) (string, error)
+	// ScriptDigest is the digest the setup script for mcpURL carries and
+	// its hook sends with each SessionStart post (#1381).
+	ScriptDigest(mcpURL string) (string, error)
 }
 
 // cloudSessionHeader is the header a cloud session's MCP client sends its
@@ -137,6 +140,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 		// written past the redactor on purpose: the values are the answer
 		var exports []byte
 		if exports, err = server.CloudHooks.SessionStart(r.Context(), caller.ID, post.session, post.hook); err == nil {
+			server.recordCloudScript(r.Context(), caller, post.script)
 			handOff.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			handOff.Header().Set("Cache-Control", "no-store")
 			handOff.WriteHeader(http.StatusOK)
@@ -169,7 +173,10 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 // hook's hook_event_name, read once the hook field is in.
 type hookPost struct {
 	event, session string
-	hook, lines    []byte
+	// script is the digest the setup script that wrote the hook carries,
+	// "" from a script before it carried one (#1381).
+	script      string
+	hook, lines []byte
 }
 
 // readHookPost reads a hook post's parts. A part over its bound fails with
@@ -210,6 +217,12 @@ func readHookPost(r *http.Request) (hookPost, error) {
 				return post, err
 			}
 			post.session = string(session)
+		case "script":
+			script, err := readPart(part, cloudMaxHookInput)
+			if err != nil {
+				return post, err
+			}
+			post.script = string(script)
 		case "lines":
 			if post.lines, err = readPart(part, cloudMaxHookBody); err != nil {
 				return post, err
@@ -262,4 +275,27 @@ func attachableRepo(caller *store.Loop, hook []byte) error {
 		}
 	}
 	return fmt.Errorf("%s is not one of this loop's repos", named)
+}
+
+// scriptDigestShape is the shape of a setup script's digest: SHA-256 in
+// lowercase hex.
+var scriptDigestShape = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// recordCloudScript records the digest of the setup script a SessionStart
+// post the runtime took was sent under: only a taken post, from the
+// loop's own session, since anything in the VM can post with the token
+// (ADR-0061). A post with none, or with anything but a digest's shape,
+// records store.CloudScriptNone. It only ever feeds a warning, so a
+// failed write is logged and the post still answered (#1381).
+func (server *Server) recordCloudScript(ctx context.Context, caller *store.Loop, reported string) {
+	digest := store.CloudScriptNone
+	if scriptDigestShape.MatchString(reported) {
+		digest = reported
+	}
+	if caller.CloudScriptDigest == digest {
+		return
+	}
+	if err := server.Store.Loops().SetCloudScriptDigest(ctx, caller.ID, digest); err != nil {
+		server.Log.Warn("cloud: the setup script's digest wasn't recorded", "loop", caller.Name, "err", err)
+	}
 }

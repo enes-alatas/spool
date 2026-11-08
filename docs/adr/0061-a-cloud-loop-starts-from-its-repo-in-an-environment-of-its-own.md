@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230); 2026-11-07 (item 3: a turn the API fails posts too, #1280) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230); 2026-11-07 (item 3: a turn the API fails posts too, #1280); 2026-11-08 (item 3: the setup view tells an outdated script apart, #1381) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -279,6 +279,22 @@ real hub behind the allowlist is checked at #1181's first live start:
      doesn't cover the script's text, so its pass stays current, and
      that loop's failed turns still wait out the quiet bound. Telling an
      outdated script apart is #1381.
+
+   **Amendment (2026-11-08, #1381): the setup view tells an outdated
+   script apart.** The script carries a digest of itself: the SHA-256
+   of its text with the digest's own place blank, so the same text
+   always has the same digest. The hook sends it with each
+   `SessionStart` post, as one more form field. The hub records it on
+   the loop only from a post it takes (a setup check's session, or the
+   loop's own), since anything in the VM can post with the token. The
+   setup view's `script_state` compares it with the digest of the
+   script it serves now: `current`, `outdated` (another digest, or a
+   script from before this one, which sends none), or `unheard` before
+   any session start has reported. `outdated` only warns, with the
+   script to paste again. It never holds the loop, since an older
+   script still runs turns. A hub upgrade that leaves the script's text
+   as it was flags no loop. The VM reports the digest, so it is a hint
+   and never a guard: a session that lies only hides its own warning.
 
 4. **The loop's hub token is a network secret, long-lived, and refused
    while the loop isn't running.**

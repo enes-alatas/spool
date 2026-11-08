@@ -278,3 +278,6 @@ func (waits *hookWaits) checkSession(loopID, sessionID string) bool {
 // SetupScript is the package's SetupScript, for a hub that holds the
 // runtime and not the package.
 func (cloud *Runtime) SetupScript(mcpURL string) (string, error) { return SetupScript(mcpURL) }
+
+// ScriptDigest is the digest SetupScript(mcpURL) carries (#1381).
+func (cloud *Runtime) ScriptDigest(mcpURL string) (string, error) { return ScriptDigest(mcpURL) }

@@ -197,7 +197,7 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
 	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
-	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check`
+	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -218,7 +218,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
-		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck)
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -505,6 +505,10 @@ func (table loops) RevokeHubMCPToken(ctx context.Context, id string) error {
 
 func (table loops) ConfirmCloudAllowlist(ctx context.Context, id, digest string, at int64) error {
 	return table.setOne(ctx, `UPDATE loops SET cloud_allowlist_digest=?, cloud_allowlist_confirmed_at=? WHERE id=?`, digest, at, id)
+}
+
+func (table loops) SetCloudScriptDigest(ctx context.Context, id, digest string) error {
+	return table.setOne(ctx, `UPDATE loops SET cloud_script_digest=? WHERE id=?`, digest, id)
 }
 
 func (table loops) SetCloudCheck(ctx context.Context, id string, check *store.CloudCheck) error {

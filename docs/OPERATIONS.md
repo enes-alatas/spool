@@ -504,7 +504,9 @@ on a rate limit or a server error, ends with `StopFailure` instead, which
 the setup script hooks too: the turn shows as an error at once. An
 environment whose script predates that hook still waits two hours with
 no post on such a turn: paste the setup view's script into it again. The
-setup check stays green either way, so it won't tell you (#1381). Each
+setup check stays green either way, but the setup view says the script is
+out of date once a session has started under it, and the loop keeps
+running meanwhile (#1381). Each
 later wake is sent into the same session with `claude -p --cloud`.
 Anthropic idles the session's machine between turns, and the next
 message brings it back.
@@ -1001,6 +1003,13 @@ it holds the same credentials as the live directory.
 The restore runs from `/usr/local/sbin`, so it works whatever the previous
 build is, including one from before the scripts existed. Don't refresh the
 installed copy during a rollback.
+
+A rollback to a build from before #1381 refuses the session start of every
+cloud loop whose environment was given the newer setup script, which sends
+a field the older hub doesn't take. Those loops then don't run until you
+paste the setup view's script into each environment again. A rollback that
+`spool upgrade` makes on its own, when the new build doesn't answer,
+happens before anyone could paste the newer script, so it needs nothing.
 
 If the new hub never started (a failed build, or a stop before `systemctl
 start`), the database was not migrated. Putting `bin/spool.previous` back

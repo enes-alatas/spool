@@ -235,11 +235,12 @@ func setUpCloudEnvironment(t *testing.T, hub *server, environment, token string)
 
 // cloudLoopSetup is a cloud loop's setup view, as the tests read it.
 type cloudLoopSetup struct {
-	Steps      []string `json:"steps"`
-	Settings   string   `json:"settings"`
-	Script     string   `json:"script"`
-	SecretHost string   `json:"secret_host"`
-	Token      struct {
+	Steps       []string `json:"steps"`
+	Settings    string   `json:"settings"`
+	Script      string   `json:"script"`
+	ScriptState string   `json:"script_state"`
+	SecretHost  string   `json:"secret_host"`
+	Token       struct {
 		Set bool `json:"set"`
 	} `json:"token"`
 	Allowlist struct {

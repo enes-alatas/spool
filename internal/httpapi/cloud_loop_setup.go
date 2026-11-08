@@ -61,6 +61,12 @@ type cloudLoopSetupView struct {
 	// text for every cloud loop of the hub, holding no secret. "" while the
 	// hub has no public address.
 	Script string `json:"script"`
+	// ScriptState says whether the loop's environment runs Script (#1381):
+	// current, outdated for another script or one that reports none, and
+	// unheard before any session start reported, or while the hub serves
+	// no script. Outdated is a warning: the loop isn't held for it, as an
+	// older script still runs turns.
+	ScriptState string `json:"script_state"`
 	// SecretHost is the host the loop's hub token is set for as the
 	// environment's network secret: the public address's host.
 	SecretHost string `json:"secret_host"`
@@ -159,7 +165,7 @@ func (server *Server) handleGetCloudLoopSetup(w http.ResponseWriter, r *http.Req
 // cloudLoopSetup is the loop's setup view as the store and the hub's
 // settings hold it now, with its check shown under way when running.
 func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop, running bool) (cloudLoopSetupView, error) {
-	view := cloudLoopSetupView{Steps: []string{}, Token: cloudLoopTokenView{Set: loopRecord.HasHubToken}}
+	view := cloudLoopSetupView{Steps: []string{}, Token: cloudLoopTokenView{Set: loopRecord.HasHubToken}, ScriptState: cloudScriptUnheard}
 	address, err := server.storedCloudAddress(ctx)
 	if err != nil {
 		return view, err
@@ -168,6 +174,11 @@ func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop
 		if view.Script, err = server.CloudHooks.SetupScript(address + "/mcp"); err != nil {
 			return view, err
 		}
+		digest, err := server.CloudHooks.ScriptDigest(address + "/mcp")
+		if err != nil {
+			return view, err
+		}
+		view.ScriptState = cloudScriptState(loopRecord.CloudScriptDigest, digest)
 		if parsed, err := url.Parse(address); err == nil {
 			view.SecretHost = parsed.Host
 		}
@@ -394,4 +405,24 @@ func (server *Server) answerCloudLoopSetup(w http.ResponseWriter, r *http.Reques
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, status, view)
+}
+
+// The setup view's script states (#1381).
+const (
+	cloudScriptCurrent  = "current"
+	cloudScriptOutdated = "outdated"
+	cloudScriptUnheard  = "unheard"
+)
+
+// cloudScriptState compares the digest a loop's environment last reported,
+// "" for none yet, with the digest of the script the hub serves now.
+func cloudScriptState(reported, serving string) string {
+	switch reported {
+	case "":
+		return cloudScriptUnheard
+	case serving:
+		return cloudScriptCurrent
+	default:
+		return cloudScriptOutdated
+	}
 }
