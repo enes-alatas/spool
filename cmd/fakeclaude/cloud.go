@@ -70,7 +70,11 @@ package main
 // once it has printed the session's address, as CLI 2.1.310 does, and
 // holds the VM's SessionStart until it has.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
-// transcript says it ran on, claude-opus-5-5 without one.
+// transcript says it ran on, claude-opus-5-5 without one. A start's
+// --model wins over it for every turn of the session it creates, written
+// to the session's model file as given: the real CLI fixes the model when
+// it creates the session, and resolves an alias first, which the fake
+// doesn't (#1281).
 // A "gone" file in an environment's directory makes the account not have
 // it: `--cloud` falls back to the first environment that isn't gone, as
 // CLI 2.1.310 does, and logs both its fallback and its pick to the
@@ -120,7 +124,7 @@ func cloudMain(args []string) int {
 	if len(args) == 4 && args[0] == cloudVMArg {
 		return cloudTurn(args[1], args[2], args[3] == "startup")
 	}
-	var message, session, settings, ref, debugFile string
+	var message, session, settings, ref, debugFile, model string
 	sending := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -154,19 +158,24 @@ func cloudMain(args []string) int {
 				i++
 				settings = args[i]
 			}
-		case "--permission-mode", "--output-format", "--model":
+		case "--model":
+			if i+1 < len(args) {
+				i++
+				model = args[i]
+			}
+		case "--permission-mode", "--output-format":
 			i++
 		}
 	}
 	if sending {
 		return cloudSend(session, message)
 	}
-	return cloudStart(message, settings, ref, debugFile)
+	return cloudStart(message, settings, ref, debugFile, model)
 }
 
 var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]+$`)
 
-func cloudStart(message, settings, ref, debugFile string) int {
+func cloudStart(message, settings, ref, debugFile, model string) int {
 	if !isTerminal(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "Error: --cloud needs an interactive terminal")
 		return 1
@@ -214,6 +223,13 @@ func cloudStart(message, settings, ref, debugFile string) int {
 	if err := os.WriteFile(filepath.Join(vm, "cli-args"), []byte(strings.Join(os.Args[1:], "\n")+"\n"), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	// the model the session is created on, which its turns run on
+	if model != "" {
+		if err := os.WriteFile(filepath.Join(vm, "model"), []byte(model), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	if err := recordAccount(vm); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -401,6 +417,9 @@ func cloudTurn(session, message string, first bool) int {
 	model := "claude-opus-5-5"
 	if named, err := os.ReadFile(filepath.Join(filepath.Dir(cloudRoot()), "cloud-model")); err == nil {
 		model = strings.TrimSpace(string(named))
+	}
+	if created, err := os.ReadFile(filepath.Join(vm, "model")); err == nil {
+		model = string(created)
 	}
 	lines := []map[string]any{
 		{"type": "user", "uuid": fmt.Sprintf("u%d", turn), "sessionId": "local-" + session,
