@@ -53,6 +53,10 @@ var memberRoutes = []string{
 	"GET /api/claude-logins", "POST /api/claude-logins", "DELETE /api/claude-logins/{name}",
 	"POST /api/claude-logins/{name}/sign-in", "POST /api/claude-logins/{name}/sign-in/code",
 	"POST /api/claude-logins/{name}/check", "POST /api/claude-logins/{name}/sign-out",
+
+	// A token's owner may revoke it though no longer an admin (ADR-0067); the
+	// handler asks whether the caller is its owner or an admin.
+	"DELETE " + managementTokensPath + "/{id}",
 }
 
 // adminRoutes are the routes that create, change, remove or operate
@@ -94,6 +98,7 @@ var adminRoutes = []string{
 	"DELETE /api/slack/senders/{id}",
 	"GET " + linkChangesPath,
 	"GET /api/strangers", "DELETE /api/strangers/{surface}/pause",
+	"GET " + managementTokensPath, "POST " + managementTokensPath,
 }
 
 // ownerRoutes manage the hub's users, which is where an owner differs

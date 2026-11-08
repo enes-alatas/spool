@@ -354,6 +354,27 @@ and a passed check before it runs again (#1228).
   only with that user's say-so: nothing enforces it until loops have
   owners (#100).
 
+## Management tokens
+
+An *management token* is the credential an operator's own agent holds to look
+after the hub, in place of the operator token (ADR-0067). It opens only
+the management MCP, which lands with #1404, and Settings will mint one
+too (#1403). Until then an admin manages them over the API:
+
+- `POST /api/management-tokens` with `{"name": "watcher"}` mints one and
+  answers with it once, as plain text. Copy it then: the hub keeps only
+  its hash and can't show it again. It ends in 90 days; send
+  `"expires_at"` as a Unix time in milliseconds for another end, or `0`
+  for none.
+- `GET /api/management-tokens` lists them by name, owner, when each was made,
+  when it ends and when it was last used, never by value.
+- `DELETE /api/management-tokens/<id>` revokes one at once: its owner may,
+  even once no longer an admin, and so may any admin. Removing a user
+  revokes the tokens they minted.
+
+The operator API refuses a management token on every route (401): it is not
+a second operator token.
+
 ## Cloud loops
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's

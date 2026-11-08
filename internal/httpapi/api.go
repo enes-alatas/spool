@@ -342,6 +342,10 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("PATCH /api/users/{name}", server.handleSetUserRole)
 	mux.HandleFunc("DELETE /api/users/{name}", server.handleRemoveUser)
 	mux.HandleFunc("DELETE /api/users/{name}/links/{surface}", server.handleRemoveUserLink)
+	// The tokens an operator's agent holds (ADR-0067), an admin's to manage.
+	mux.HandleFunc("GET "+managementTokensPath, server.handleListManagementTokens)
+	mux.HandleFunc("POST "+managementTokensPath, server.handleMintManagementToken)
+	mux.HandleFunc("DELETE "+managementTokensPath+"/{id}", server.handleRevokeManagementToken)
 	mux.HandleFunc("POST /api/users/{name}/block", server.handleUserSenders(store.SenderBlocked))
 	mux.HandleFunc("POST /api/users/{name}/unblock", server.handleUserSenders(store.SenderAllowed))
 	mux.HandleFunc("GET /api/strangers", server.handleIgnoredStrangers)

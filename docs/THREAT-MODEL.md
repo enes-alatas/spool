@@ -134,6 +134,19 @@ control room's stream. At most four password hashes run at once,
 hub-wide, so sign-ins can't take every core, and one whose request is
 gone leaves the queue without hashing.
 
+**Management tokens** (ADR-0067, #1402) are the tokens an operator's agent
+holds, at `/api/management-tokens`: an admin mints and lists them, and a
+token's owner or an admin revokes one.
+- A token is shown once, `text/plain` and `no-store`, and is kept only as
+  its SHA-256. No list, log or later answer holds it.
+- It is refused as a bearer on every `/api` route (401), its own
+  included, since the credential step above takes only the operator
+  token. What it does open, `/manage/mcp`, lands with #1404.
+- It ends 90 days after it is minted unless its minter picks another
+  date or none, and a removed user's tokens go with them.
+- It is masked by its shape, `spool_manage_` and 43 base64url characters,
+  wherever the redactor runs, and the secret scan fails a committed one.
+
 **Sessions and passwords:**
 - Sessions are revocable, and expire after 14 days idle or 30 days.
   Ending a session ends the streams opened under it from their next item,
@@ -1026,6 +1039,8 @@ the CLI (ADR-0018).
 **Holds:**
 - **`spool.db` alone yields no credential:** every secret in it is sealed
   under `hub.key`.
+- **Management tokens are kept as hashes:** `spool.db` holds each one's
+  SHA-256 and no value, so a copy holds no usable management token (ADR-0067).
 - **A wrong or missing key stops the hub from starting.** It doesn't run
   on a key it can't use (ADR-0046).
 - **Redaction:** known secrets, in plain and encoded forms, are redacted
