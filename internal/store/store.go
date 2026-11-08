@@ -582,6 +582,11 @@ type Loop struct {
 	// neither.
 	CreatedBy string `json:"created_by"`
 	UpdatedBy string `json:"updated_by"`
+	// PausedBy names who paused the loop, as UpdatedBy does, while it is
+	// paused: the first pause's, kept until a resume clears it, and ""
+	// for a loop paused before the hub kept it (ADR-0067). A management
+	// token resumes only a loop whose PausedBy is one's.
+	PausedBy string `json:"paused_by"`
 }
 
 // Surface names the platform the loop has an identity on, or "" when it has
@@ -1132,8 +1137,17 @@ type LoopStore interface {
 	SetSlackOwner(ctx context.Context, id, userID, dmChannel string, updatedAt int64) error
 	// SetSlackOwnerDM records the DM channel the bot opened with its owner.
 	SetSlackOwnerDM(ctx context.Context, id, dmChannel string, updatedAt int64) error
-	// SetStatus records whether a loop is active, paused or archived.
-	SetStatus(ctx context.Context, id, status string, updatedAt int64) error
+	// Pause records the loop as paused by by: a user's name, "operator"
+	// for the operator token, or a management token's actor, and reports
+	// whether it did. A loop already paused is left as it is, its pauser
+	// kept, so a second pause, anyone's, can't take over the first
+	// (ADR-0067).
+	Pause(ctx context.Context, id, by string, updatedAt int64) (bool, error)
+	// Resume records the loop as active and forgets its pauser. A
+	// non-empty pausedBy resumes it only while it is paused by an actor
+	// starting with that, as a management token's resume does, and
+	// reports whether it did. With "" it always does.
+	Resume(ctx context.Context, id, pausedBy string, updatedAt int64) (bool, error)
 	// SetWorkstationOff records the operator's power intent for a loop's
 	// workstation. Written from the actor goroutine, which runs alongside the
 	// Telegram poller — the same reason the columns above are narrow.

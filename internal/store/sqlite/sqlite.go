@@ -200,7 +200,7 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
 	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
-	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest`
+	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -221,7 +221,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
-		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest)
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -600,10 +600,31 @@ func (table loops) SetSlackOwnerDM(ctx context.Context, id, dmChannel string, up
 	return err
 }
 
-func (table loops) SetStatus(ctx context.Context, id, status string, updatedAt int64) error {
-	_, err := table.db.ExecContext(ctx,
-		`UPDATE loops SET status=?, updated_at=? WHERE id=?`, status, updatedAt, id)
-	return err
+func (table loops) Pause(ctx context.Context, id, by string, updatedAt int64) (bool, error) {
+	// a loop already paused is left as it is, its pauser kept
+	result, err := table.db.ExecContext(ctx,
+		`UPDATE loops SET status=?, paused_by=?, updated_at=? WHERE id=? AND status<>?`,
+		store.StatusPaused, by, updatedAt, id, store.StatusPaused)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
+}
+
+func (table loops) Resume(ctx context.Context, id, pausedBy string, updatedAt int64) (bool, error) {
+	query := `UPDATE loops SET status=?, paused_by='', updated_at=? WHERE id=?`
+	args := []any{store.StatusActive, updatedAt, id}
+	if pausedBy != "" {
+		query += ` AND status=? AND substr(paused_by, 1, ?)=?`
+		args = append(args, store.StatusPaused, len(pausedBy), pausedBy)
+	}
+	result, err := table.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows > 0, err
 }
 
 func (table loops) SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error {

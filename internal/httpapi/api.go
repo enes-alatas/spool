@@ -1462,7 +1462,7 @@ func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	if stored := server.pauseLoop(r.Context(), loopRecord); stored != nil && loopRecord.Runtime == store.RuntimeCloud {
+	if _, stored := server.pauseLoop(r.Context(), loopRecord, authorOf(r, "")); stored != nil && loopRecord.Runtime == store.RuntimeCloud {
 		server.jsonErr(w, http.StatusInternalServerError, "the loop is paused, but its pause was not stored, so its cloud session can still reach the hub; pausing it again retries: %v", stored)
 		return
 	}
@@ -1470,18 +1470,29 @@ func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 }
 
 // pauseLoop stops the loop: its status, then its actor and its schedule.
-// The error is the status's write, which the rest goes on without. A
-// cloud loop's token is refused by that status (ADR-0061), so a write
-// that failed leaves its session able to reach the hub.
-func (server *Server) pauseLoop(ctx context.Context, loopRecord *store.Loop) error {
+// by is who paused it, the record's actor, and it reports whether this
+// call paused it: a loop already paused keeps the pauser it has
+// (ADR-0067). The error is the status's write, which the rest goes on
+// without. A cloud loop's token is refused by that status (ADR-0061), so
+// a write that failed leaves its session able to reach the hub.
+func (server *Server) pauseLoop(ctx context.Context, loopRecord *store.Loop, by string) (bool, error) {
+	at := time.Now().UnixMilli()
+	paused, stored := server.Store.Loops().Pause(ctx, loopRecord.ID, by, at)
+	switch {
+	case paused:
+		loopRecord.PausedBy, loopRecord.UpdatedAt = by, at
+	case stored == nil:
+		// already paused, maybe since loopRecord was read: its pauser stands
+		if fresh, err := server.Store.Loops().Get(ctx, loopRecord.ID); err == nil {
+			loopRecord.PausedBy, loopRecord.UpdatedAt = fresh.PausedBy, fresh.UpdatedAt
+		}
+	}
 	loopRecord.Status = store.StatusPaused
-	loopRecord.UpdatedAt = time.Now().UnixMilli()
-	stored := server.Store.Loops().SetStatus(ctx, loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		_ = actor.Pause()
 	}
 	server.Sched.Suspend(loopRecord.ID)
-	return stored
+	return paused, stored
 }
 
 // handlePower runs one of the operator's power controls on a loop's
@@ -1559,9 +1570,9 @@ func (server *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	loopRecord.Status = store.StatusActive
+	loopRecord.Status, loopRecord.PausedBy = store.StatusActive, ""
 	loopRecord.UpdatedAt = time.Now().UnixMilli()
-	_ = server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
+	_, _ = server.Store.Loops().Resume(r.Context(), loopRecord.ID, "", loopRecord.UpdatedAt)
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.Resume()
 	}

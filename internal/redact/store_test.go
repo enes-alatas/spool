@@ -351,7 +351,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Delete": false, "Get": false, "GetByHubMCPToken": false,
 			"GetByName": false, "List": false,
 			"SetOwner": false, "AdoptOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
-			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
+			"SetRuntime": false, "SetWorkstationOff": false,
+			// the pauser is a user's name, "operator" or a token's actor, never text
+			"Pause": false, "Resume": false,
 			// mints the hub token itself, which is the secret, from no text
 			"RotateHubMCPToken": false,
 			"RevokeHubMCPToken": false,

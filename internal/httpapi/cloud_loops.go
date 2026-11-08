@@ -140,7 +140,7 @@ func (server *Server) handleRotateCloudToken(w http.ResponseWriter, r *http.Requ
 		server.jsonErr(w, http.StatusBadRequest, "loop %s runs on the %s runtime: only a cloud loop's token is set by hand", loopRecord.Name, loopRecord.Runtime)
 		return
 	}
-	if err := server.pauseLoop(r.Context(), loopRecord); err != nil {
+	if _, err := server.pauseLoop(r.Context(), loopRecord, authorOf(r, "")); err != nil {
 		server.jsonErr(w, http.StatusInternalServerError, "stop the loop: %v", err)
 		return
 	}

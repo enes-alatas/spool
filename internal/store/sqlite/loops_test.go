@@ -405,6 +405,88 @@ func TestLoopModelRefusal(t *testing.T) {
 	}
 }
 
+// TestLoopPausedBy pins who a paused loop keeps as its pauser: the first,
+// whoever pauses it again, until a resume forgets it. A resume that names a
+// pauser's prefix, a management token's, takes only a loop paused by one
+// (ADR-0067).
+func TestLoopPausedBy(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "held", Mission: "m", Model: "haiku", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: 1, UpdatedAt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read := func() *store.Loop {
+		t.Helper()
+		got, err := db.Loops().Get(ctx, "l1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	resume := func(pausedBy string) bool {
+		t.Helper()
+		resumed, err := db.Loops().Resume(ctx, "l1", pausedBy, 9)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resumed
+	}
+
+	if got := read(); got.PausedBy != "" {
+		t.Fatalf("a new loop's pauser = %q, want none", got.PausedBy)
+	}
+	// ada first, then a token: only the first pause takes
+	for _, pause := range []struct {
+		by   string
+		want bool
+	}{{"ada", true}, {"manage:watcher#t1", false}} {
+		paused, err := db.Loops().Pause(ctx, "l1", pause.by, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if paused != pause.want {
+			t.Fatalf("%s's pause reported %v, want %v", pause.by, paused, pause.want)
+		}
+	}
+	if got := read(); got.Status != store.StatusPaused || got.PausedBy != "ada" {
+		t.Fatalf("paused by ada, then by a token: %s by %q, want paused by ada", got.Status, got.PausedBy)
+	}
+	if resume("manage:") {
+		t.Fatal("a token's resume took a loop ada paused")
+	}
+	if got := read(); got.Status != store.StatusPaused || got.PausedBy != "ada" {
+		t.Fatalf("a refused resume changed the loop: %s by %q", got.Status, got.PausedBy)
+	}
+	if !resume("") {
+		t.Fatal("a person's resume did not take")
+	}
+	if got := read(); got.Status != store.StatusActive || got.PausedBy != "" {
+		t.Fatalf("resumed: %s by %q, want active with no pauser", got.Status, got.PausedBy)
+	}
+
+	if paused, err := db.Loops().Pause(ctx, "l1", "manage:watcher#t1", 3); err != nil || !paused {
+		t.Fatalf("a token's pause of an active loop = %v, %v", paused, err)
+	}
+	if !resume("manage:") {
+		t.Fatal("a token's resume did not take a loop a token paused")
+	}
+	if resume("manage:") {
+		t.Fatal("a token's resume took a loop that was not paused")
+	}
+	if got := read(); got.Status != store.StatusActive || got.PausedBy != "" {
+		t.Fatalf("resumed by a token: %s by %q, want active with no pauser", got.Status, got.PausedBy)
+	}
+}
+
 // A doing is cut to MaxDoing characters here, after the redact decorator has
 // seen it whole, and the same doing again keeps the time it was first set
 // (#751).
@@ -547,7 +629,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	// Pausing a loop and switching its workstation off are the other two
 	// single-field writers, and they run from the hub and the actor goroutine
 	// while the poller is writing the columns above.
-	if err := db.Loops().SetStatus(ctx, "l1", store.StatusPaused, now+6); err != nil {
+	if _, err := db.Loops().Pause(ctx, "l1", "ada", now+6); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Loops().SetWorkstationOff(ctx, "l1", true, now+7); err != nil {
