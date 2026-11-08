@@ -1,6 +1,6 @@
 # ADR-0067: An operator's agent manages the hub through Spool's MCP server, with a scoped token
 
-Date: 2026-11-08 · Status: accepted (the operator decided on 2026-11-07 that Spool is manageable by agents through an MCP server of its own, with a first cut in 1.0, #1400; he answered the four open questions on 2026-11-08, in a direct message to Milo, recorded on #1408: items 2 and 5 as written, item 4's operator listener, item 2's narrower resume and item 3's 90-day default; he accepts the whole on merge of #1408, per the 2026-11-08 thread there) · Relates to: ADR-0026, ADR-0030, ADR-0046, ADR-0048, ADR-0056, ADR-0061
+Date: 2026-11-08 · Status: accepted (the operator decided on 2026-11-07 that Spool is manageable by agents through an MCP server of its own, with a first cut in 1.0, #1400; he answered the four open questions on 2026-11-08, in a direct message to Milo, recorded on #1408: items 2 and 5 as written, item 4's operator listener, item 2's narrower resume and item 3's 90-day default; he accepts the whole on merge of #1408, per the 2026-11-08 thread there) · Amended: 2026-11-08 (renamed: agent token → management token, `/agent/mcp` → `/manage/mcp`, the operator's decision on #1400) · Relates to: ADR-0026, ADR-0030, ADR-0046, ADR-0048, ADR-0056, ADR-0061
 
 ## Context
 
@@ -23,11 +23,11 @@ the token it holds, and where it is served.
 
 ## Decision
 
-1. **An agent token is a credential of its own, never the master key.**
+1. **A management token is a credential of its own, never the master key.**
    - An admin mints one under a name, under the loop-name rule and
      unique on the hub. The token belongs to the user who minted it,
      its *owner*.
-   - It is 32 bytes from `crypto/rand`, written as `spool_agent_` and
+   - It is 32 bytes from `crypto/rand`, written as `spool_manage_` and
      43 characters of unpadded base64url.
    - The hub keeps only its SHA-256, as it does for sessions
      (ADR-0048 item 4) and loop tokens (ADR-0061 item 4). A backup or a
@@ -42,8 +42,8 @@ the token it holds, and where it is served.
      and no log carries it. After that it is listed by name, owner,
      when it was made and when it was last used, never by value.
    - **The two credentials never stand in for each other.** The
-     operator listener's API refuses an agent token on every route
-     (401), and the agent's MCP server refuses the operator token, a
+     operator listener's API refuses a management token on every route
+     (401), and the management MCP refuses the operator token, a
      user's session and every loop token. Tests hold both directions.
 
 2. **Its scope is fixed: list the loops, pause one, resume one.**
@@ -62,7 +62,7 @@ the token it holds, and where it is served.
      pick when minting, since 1.0 has one.
    - Pause and resume are on the loop's change record as any change is,
      naming the token as the actor by its name and its id
-     (`agent:<name>#<id>`), so a token minted later under a revoked
+     (`manage:<name>#<id>`), so a token minted later under a revoked
      one's name is told apart. Reads are not recorded. A full per-call
      audit is out of scope (#1400).
    - **An agent resumes only what an agent paused** (operator decision
@@ -84,7 +84,7 @@ the token it holds, and where it is served.
    - Its owner or an admin revokes it. The next call with it is refused
      (401), whichever listener it arrives on, and a session already open
      on the server is refused at its next call.
-   - Removing a user revokes every agent token they own, as it signs
+   - Removing a user revokes every management token they own, as it signs
      out their Claude logins (ADR-0060's #1148 amendment).
    - **A token ends 90 days after it is minted** unless its owner picks
      another date or none at mint (operator decision of 2026-11-08). A
@@ -99,7 +99,7 @@ the token it holds, and where it is served.
 
 4. **The server is served on the cloud listener, and on the operator
    listener for an agent on the same machine.**
-   - The path is `/agent/mcp` on both, speaking the same streamable
+   - The path is `/manage/mcp` on both, speaking the same streamable
      HTTP as the loops' `/mcp` (ADR-0026), stdlib only.
    - **On the cloud listener** it reaches an agent in a Claude Code
      cloud session, the case #1282 reports. It sits under ADR-0056
@@ -118,9 +118,9 @@ the token it holds, and where it is served.
      operator token in the data directory today (THREAT-MODEL.md: a
      bare loop is uncontained). This ADR doesn't change that.
    - A contained loop reaches the loop listener and its allowlist's
-     hosts (ADR-0028), not the operator's files, and holds no agent
+     hosts (ADR-0028), not the operator's files, and holds no management
      token. A cloud loop reaches the cloud listener,
-     but the token its proxy adds is a loop token, which `/agent/mcp`
+     but the token its proxy adds is a loop token, which `/manage/mcp`
      refuses (item 1).
 
 5. **What stays out until after 1.0, and why.**
@@ -143,7 +143,7 @@ the token it holds, and where it is served.
    this ADR, with a security read.
 
 6. **It ships in three slices, as children of #1400.**
-   1. #1402, hub: mint, list and revoke agent tokens, and the refusal
+   1. #1402, hub: mint, list and revoke management tokens, and the refusal
       on the operator API.
    2. #1403, web: Settings mints a token, shows it once, lists and
       revokes them.
@@ -176,13 +176,13 @@ the token it holds, and where it is served.
 ## Consequences
 
 - An operator's agent can watch the fleet and pause or resume a loop
-  without the master key. A leaked agent token pauses loops until it is
+  without the master key. A leaked management token pauses loops until it is
   revoked or ends, and does nothing else.
 - The hub has a third kind of bearer token, beside the operator token
   and loop tokens. Each listener's auth names which kinds it takes.
 - The cloud listener serves one more path. Its "nothing else" rule
-  (ADR-0056 item 4) gains `/agent/mcp`, which takes agent tokens only.
-- THREAT-MODEL.md gains the agent token: what it reaches, and that a
+  (ADR-0056 item 4) gains `/manage/mcp`, which takes management tokens only.
+- THREAT-MODEL.md gains the management token: what it reaches, and that a
   bare loop can read a local agent's copy.
 - An agent can't edit a mission, rotate a token or touch users,
   connections or secrets until a later ADR scopes each.
