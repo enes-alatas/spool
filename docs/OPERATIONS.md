@@ -1010,6 +1010,8 @@ a field the older hub doesn't take. Those loops then don't run until you
 paste the setup view's script into each environment again. A rollback that
 `spool upgrade` makes on its own, when the new build doesn't answer,
 happens before anyone could paste the newer script, so it needs nothing.
+A build with #1414 drops a hook field it doesn't know, so a rollback to it
+or a later build needs no paste for a field a newer script adds.
 
 If the new hub never started (a failed build, or a stop before `systemctl
 start`), the database was not migrated. Putting `bin/spool.previous` back

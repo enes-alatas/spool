@@ -181,7 +181,8 @@ type hookPost struct {
 
 // readHookPost reads a hook post's parts. A part over its bound fails with
 // the *http.MaxBytesError, and whatever was read before it is kept, so an
-// over-bound Stop post is still known as one.
+// over-bound Stop post is still known as one. A part it doesn't know is
+// read under cloudMaxHookInput and dropped (#1414).
 func readHookPost(r *http.Request) (hookPost, error) {
 	var post hookPost
 	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "multipart/form-data" {
@@ -228,7 +229,13 @@ func readHookPost(r *http.Request) (hookPost, error) {
 				return post, err
 			}
 		default:
-			return post, errors.New("an unknown part")
+			// A part the hub doesn't know is read under the per-part bound
+			// and dropped: nothing of it is kept, logged or echoed. A field
+			// a newer setup script adds then doesn't break a rollback to
+			// this build (#1414).
+			if _, err := readPart(part, cloudMaxHookInput); err != nil {
+				return post, err
+			}
 		}
 	}
 }

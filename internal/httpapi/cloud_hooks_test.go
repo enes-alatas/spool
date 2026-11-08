@@ -234,9 +234,6 @@ func TestCloudHookRouteRefusesWhatIsNotACloudLoopsPost(t *testing.T) {
 		"a hook input that isn't JSON": {cloudLoopToken, func() (*bytes.Buffer, string) {
 			return hookForm(t, [2]string{"hook", `nope`})
 		}, http.StatusBadRequest},
-		"an unknown part": {cloudLoopToken, func() (*bytes.Buffer, string) {
-			return hookForm(t, [2]string{"hook", stopInput}, [2]string{"result", "forged"})
-		}, http.StatusBadRequest},
 		"not a form": {cloudLoopToken, func() (*bytes.Buffer, string) {
 			return bytes.NewBufferString(stopInput), "application/json"
 		}, http.StatusBadRequest},
@@ -550,5 +547,32 @@ func TestCloudMCPTellsTheRuntimeOfASessionRefusedForItsToken(t *testing.T) {
 	defer hooks.mu.Unlock()
 	if !slices.Equal(hooks.refusedTokens, []string{"cse_01Synthetic"}) {
 		t.Errorf("TokenRefused was told %q, want the one session of a session's shape", hooks.refusedTokens)
+	}
+}
+
+// A part the route doesn't know, under its bound, is dropped and the post
+// handled as if it weren't there: a field a newer setup script adds
+// doesn't break a rollback (#1414). Nothing of it reaches the runtime. One
+// over the per-part bound is refused as over its bound, as any part is.
+func TestCloudHookRouteDropsAPartItDoesntKnow(t *testing.T) {
+	hooks := &recordingHooks{}
+	handler := hookServer(t, hooks)
+	body, contentType := hookForm(t, [2]string{"hook", stopInput}, [2]string{"session", "cse_01Synthetic"},
+		[2]string{"result", "forged"}, [2]string{"lines", "{\"type\":\"user\"}\n"})
+	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusNoContent {
+		t.Fatalf("a Stop post with an unknown part: %d, want 204", code)
+	}
+	want := hookCall{event: "Stop", loopID: "l-cloud", session: "cse_01Synthetic", hook: stopInput, lines: "{\"type\":\"user\"}\n"}
+	if calls := hooks.taken(); len(calls) != 1 || calls[0] != want {
+		t.Errorf("the route made %+v, want only %+v", calls, want)
+	}
+
+	body, contentType = hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "cse_01Synthetic"},
+		[2]string{"result", strings.Repeat("x", cloudMaxHookInput+1)})
+	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusRequestEntityTooLarge {
+		t.Errorf("an unknown part over its bound: %d, want 413", code)
+	}
+	if calls := hooks.taken(); len(calls) != 1 {
+		t.Errorf("the over-bound post reached the runtime: %+v", calls)
 	}
 }
