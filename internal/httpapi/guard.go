@@ -74,12 +74,8 @@ func (server *Server) guard(next *http.ServeMux) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-			server.jsonErr(w, http.StatusForbidden, "cross-site request refused")
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" && !server.originAllowed(origin) {
-			server.jsonErr(w, http.StatusForbidden, "cross-origin request refused")
+		if refusal := server.crossSiteRefusal(r); refusal != "" {
+			server.jsonErr(w, http.StatusForbidden, "%s", refusal)
 			return
 		}
 		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) && !isUpload(r) {
@@ -186,6 +182,21 @@ func (server *Server) identify(r *http.Request) (*caller, error) {
 		return nil, err
 	}
 	return &caller{user: user, session: cookie.Value}, nil
+}
+
+// crossSiteRefusal is why the guard refuses r as a browser's cross-site
+// request (ADR-0030), or "" when it doesn't: a Sec-Fetch-Site other than
+// same-origin or none, or an Origin this hub doesn't answer to. The
+// management MCP, which this listener serves outside the guard, asks it
+// too, so its checks can't drift from the guard's.
+func (server *Server) crossSiteRefusal(r *http.Request) string {
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return "cross-site request refused"
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && !server.originAllowed(origin) {
+		return "cross-origin request refused"
+	}
+	return ""
 }
 
 // hostAllowed answers whether a request was addressed to this hub by a name

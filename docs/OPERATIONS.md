@@ -356,10 +356,10 @@ and a passed check before it runs again (#1228).
 
 ## Management tokens
 
-An *management token* is the credential an operator's own agent holds to look
+A *management token* is the credential an operator's own agent holds to look
 after the hub, in place of the operator token (ADR-0067). It opens only
-the management MCP, which lands with #1404, and Settings will mint one
-too (#1403). Until then an admin manages them over the API:
+the management MCP, below, and Settings will mint one too (#1403).
+Until then an admin manages them over the API:
 
 - `POST /api/management-tokens` with `{"name": "watcher"}` mints one and
   answers with it once, as plain text. Copy it then: the hub keeps only
@@ -375,6 +375,39 @@ too (#1403). Until then an admin manages them over the API:
 The operator API refuses a management token on every route (401): it is not
 a second operator token.
 
+### Pointing an agent at the hub
+
+The management MCP is `/manage/mcp`, streamable HTTP, with the token as a
+bearer. It has three tools (ADR-0067):
+
+- `list_loops`: each loop's name, runtime, state, whether it is paused
+  and whether `resume_loop` can resume it, its health (`ok`, `warning`
+  or `failing`) and when its latest turn started. No mission, message or
+  secret.
+- `pause_loop` and `resume_loop`, by the loop's name, as the control
+  room's Pause and Resume. An agent resumes only a loop an agent paused:
+  a person's pause, from the control room or the API, stays theirs to
+  lift, and an agent pausing it again doesn't change whose it is.
+
+Each pause and resume is on the loop's change record as
+`manage:<token name>#<token id>`.
+
+An agent on the hub's own machine, such as Claude Code in a terminal,
+uses the operator listener:
+
+```sh
+claude mcp add --transport http spool-manage http://127.0.0.1:8080/manage/mcp \
+  --header "Authorization: Bearer spool_manage_…"
+```
+
+An agent in a Claude Code cloud session uses the cloud listener's public
+address instead, `https://<your address>/manage/mcp`, with the cloud
+listener on (see Cloud loops). The loop listener doesn't serve it.
+
+A token revoked or past its end is refused at the agent's next call. A
+bare loop can read a token a local agent keeps in your files, as it can
+read the operator token (THREAT-MODEL.md).
+
 ## Cloud loops
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
@@ -385,8 +418,8 @@ order. Each step the hub checks before the next opens. The hub needs the
 
 1. **Cloud listener.** Switch it on. On Spool's side, the hub opens the
    cloud listener on `127.0.0.1:8090`, the one listener a cloud session can
-   reach. It serves only the cloud loops' MCP and the posts their sessions'
-   hooks make. Nothing changes on claude.ai.
+   reach. It serves only the cloud loops' MCP, the posts their sessions'
+   hooks make, and the management MCP. Nothing changes on claude.ai.
 2. **Public address.** Put a tunnel or a TLS proxy in front of the
    listener ([TLS with Caddy](#tls-with-caddy),
    [the control room's name](#the-cloud-listener-on-the-control-rooms-name),

@@ -358,6 +358,10 @@ func (server *Server) routes() *routeMux {
 	// endpoints would look moved in tests and alive in production.
 	mux.HandleFunc("/mcp", http.NotFound)
 	mux.HandleFunc("/mcp/", http.NotFound)
+	// The management MCP (ADR-0067) is served here for an agent on the
+	// operator's machine, outside the guard's token check: it takes a
+	// management token, which every /api route refuses.
+	mux.HandleFunc(manageMCPPath, server.manageOnOperatorListener())
 
 	// Registered in every build, not just one that embeds the control
 	// room, so tier 2 sees what the shipped binary answers (#245).
@@ -1570,14 +1574,29 @@ func (server *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	loopRecord.Status, loopRecord.PausedBy = store.StatusActive, ""
-	loopRecord.UpdatedAt = time.Now().UnixMilli()
-	_, _ = server.Store.Loops().Resume(r.Context(), loopRecord.ID, "", loopRecord.UpdatedAt)
+	if _, err := server.resumeLoop(r.Context(), loopRecord, ""); err != nil {
+		server.Log.Error("resume: store the status", "loop", loopRecord.Name, "err", err)
+	}
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
+}
+
+// resumeLoop starts the loop again: its status, then its actor and its
+// schedule. A non-empty pausedBy resumes it only while its pauser starts
+// with that, checked in the status's write, and reports whether it did
+// (ADR-0067). With "" the actor and the schedule resume even when the
+// status's write fails, as the control room's Resume always has.
+func (server *Server) resumeLoop(ctx context.Context, loopRecord *store.Loop, pausedBy string) (bool, error) {
+	at := time.Now().UnixMilli()
+	resumed, err := server.Store.Loops().Resume(ctx, loopRecord.ID, pausedBy, at)
+	if pausedBy != "" && !resumed {
+		return false, err
+	}
+	loopRecord.Status, loopRecord.PausedBy, loopRecord.UpdatedAt = store.StatusActive, "", at
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.Resume()
 	}
 	server.Sched.Resume(loopRecord.ID)
-	writeJSON(w, 200, server.view(r.Context(), loopRecord))
+	return true, err
 }
 
 func (server *Server) handleWake(w http.ResponseWriter, r *http.Request) {

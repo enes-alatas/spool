@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952); 2026-10-24 (item 6: what green means, and the session's verdict, #1093) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952); 2026-10-24 (item 6: what green means, and the session's verdict, #1093); 2026-11-08 (item 4: the cloud listener serves the management MCP, ADR-0067, #1404) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -188,6 +188,16 @@ the bar for setup: it has to be really simple.
      it: only a restart without the flag does;
    - switching it changes nothing it serves or admits. Every bullet above
      holds for a listener the page opened.
+
+   **Amendment (2026-11-08, #1404): the cloud listener serves the
+   management MCP.** ADR-0067 item 4 puts the management MCP,
+   `/manage/mcp`, on this listener for an operator's agent in a cloud
+   session. It is a second exception to "nothing else":
+   - it takes a management token alone, and refuses every loop's token,
+     a cloud loop's included, the operator token and a session;
+   - it sits under the same bounds as `/mcp`, applied before the token is
+     read, and its answers pass the same response redactor;
+   - it is there only while the listener is on, as `/mcp` is.
 
 5. **Each cloud loop gets its own environment, which the hub creates and
    keeps.** A Custom environment is where the allowlist and the secrets

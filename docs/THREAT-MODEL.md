@@ -141,11 +141,31 @@ token's owner or an admin revokes one.
   its SHA-256. No list, log or later answer holds it.
 - It is refused as a bearer on every `/api` route (401), its own
   included, since the credential step above takes only the operator
-  token. What it does open, `/manage/mcp`, lands with #1404.
+  token.
 - It ends 90 days after it is minted unless its minter picks another
   date or none, and a removed user's tokens go with them.
 - It is masked by its shape, `spool_manage_` and 43 base64url characters,
   wherever the redactor runs, and the secret scan fails a committed one.
+
+**The management MCP** (ADR-0067, #1404) is what a management token
+opens: `/manage/mcp`, on this listener and the cloud listener, never the
+loop listener.
+- It takes a management token alone. The operator token, a session and
+  every loop's token are refused alike (401), and so is a token revoked
+  or past its end, at its next call: the server keeps no session, so
+  every call shows its token.
+- On this listener it sits outside the `/api` middleware's token check,
+  but under its `Host`, cross-site and body-size checks, before the
+  token is read.
+- It has three tools, `list_loops`, `pause_loop` and `resume_loop`, and
+  no other. The list carries a loop's name, runtime, state, pause and
+  health, and no mission, message, problem text, secret or token.
+- A token resumes only a loop a token paused. The hub keeps a loop's
+  first pauser until it is resumed, so a token pausing a person's pause
+  again doesn't make it its own. The worst a stolen token does is pause
+  loops, which a person undoes and revoking the token ends.
+- A pause and a resume are on the loop's change record under the token's
+  name and id; reads are not recorded.
 
 **Sessions and passwords:**
 - Sessions are revocable, and expire after 14 days idle or 30 days.
@@ -366,8 +386,9 @@ ADR-0043), a contained loop's model requests under `/claude`
 
 **What crosses:** a cloud loop's MCP calls and its session's hook posts,
 from its Claude Code cloud session over the internet, through the tunnel
-or TLS proxy the operator puts in front of the listener; and the hub's
-own address check (ADR-0056, ADR-0059).
+or TLS proxy the operator puts in front of the listener; an operator's
+agent's management MCP calls (ADR-0067); and the hub's own address check
+(ADR-0056, ADR-0059).
 
 **Holds:**
 - **It is off** unless the hub is started with `--cloud-listen` or an
@@ -388,6 +409,9 @@ own address check (ADR-0056, ADR-0059).
   so nothing an outsider sends grows it.
   `/hooks` is where a cloud session's hooks post its id and each turn
   (ADR-0059). It takes a cloud loop's token alone, as `/mcp` does.
+  `/manage/mcp` is the management MCP (ADR-0067, #1404). It takes a
+  management token alone, and refuses every loop's token, a cloud loop's
+  included, as an unknown one.
 - **A request refused for its token is read for one thing:** the session
   it names, in `X-Spool-Session` on `/mcp` or the `session` field of a
   `/hooks` post, inside the same bounds, checked against a session's shape,
@@ -893,6 +917,8 @@ the CLI (ADR-0018).
 - **A bare loop is uncontained.** It is a host process that can read
   everything the operator can, the data directory included (ADR-0017,
   SECURITY.md).
+  That includes a management token a local agent keeps in the operator's
+  files, as it includes the operator token (ADR-0067).
 
 ### Egress wall
 

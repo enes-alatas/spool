@@ -15,9 +15,10 @@ import (
 // The cloud listener (ADR-0056) is how a loop in a Claude Code cloud
 // session reaches the hub: over the internet, through the tunnel or proxy
 // the operator puts in front of it. It serves /mcp for cloud loops' tokens,
-// the address check, and the hooks' route when the hub takes hook posts
-// (ADR-0059), and nothing else. Any host on the internet can
-// reach its parser, so every bound below applies before a token is read.
+// the management MCP for management tokens (ADR-0067), the address check,
+// and the hooks' route when the hub takes hook posts (ADR-0059), and
+// nothing else. Any host on the internet can reach its parser, so every
+// bound below applies before a token is read.
 
 // Bounds on a cloud listener request, all applied before authentication.
 const (
@@ -52,8 +53,9 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 }
 
 // CloudHandler serves the cloud listener: the loop listener's /mcp for a
-// cloud loop's token alone, the address check, and the hooks' route while
-// CloudHooks is set. Every response goes through redacted, the hub's
+// cloud loop's token alone, the management MCP for a management token
+// alone, the address check, and the hooks' route while CloudHooks is set.
+// Every response goes through redacted, the hub's
 // response redactor, which rewrites JSON and event-stream bodies, but one:
 // the SessionStart answer, the connections and the prompt as text/plain,
 // which the hooks' route writes past it on purpose (ADR-0059). The
@@ -63,6 +65,7 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 // decision of its own.
 func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) http.Handler {
 	mcpHandler := server.mcpHandler(server.cloudMCPCall)
+	manageHandler := server.manageMCPHandler()
 	return http.HandlerFunc(func(unredacted http.ResponseWriter, r *http.Request) {
 		limit := int64(cloudMaxBody)
 		if r.URL.Path == cloudHooksPath {
@@ -74,6 +77,8 @@ func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) htt
 			switch {
 			case r.URL.Path == "/mcp":
 				mcpHandler.ServeHTTP(w, r)
+			case r.URL.Path == manageMCPPath:
+				manageHandler.ServeHTTP(w, r)
 			case r.URL.Path == cloudHooksPath:
 				server.handleCloudHook(w, unredacted, r)
 			case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, cloudCheckPrefix):
