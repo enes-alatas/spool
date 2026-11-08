@@ -142,10 +142,13 @@ func (database *DB) Models() store.ModelStore                   { return models{
 func (database *DB) Users() store.UserStore                     { return users{database.db} }
 func (database *DB) UserSessions() store.UserSessionStore       { return userSessions{database.db} }
 func (database *DB) SignInThrottles() store.SignInThrottleStore { return signInThrottles{database.db} }
-func (database *DB) LoopChanges() store.LoopChangeStore         { return loopChanges{database.db} }
-func (database *DB) PrivateChats() store.PrivateChatStore       { return privateChats{database.db} }
-func (database *DB) Problems() store.ProblemStore               { return problems{database.db} }
-func (database *DB) UserLinks() store.UserLinkStore             { return userLinks{database.db} }
+func (database *DB) ManagementTokens() store.ManagementTokenStore {
+	return managementTokens{database.db}
+}
+func (database *DB) LoopChanges() store.LoopChangeStore   { return loopChanges{database.db} }
+func (database *DB) PrivateChats() store.PrivateChatStore { return privateChats{database.db} }
+func (database *DB) Problems() store.ProblemStore         { return problems{database.db} }
+func (database *DB) UserLinks() store.UserLinkStore       { return userLinks{database.db} }
 
 func (database *DB) ClaudeLogins() store.ClaudeLoginStore {
 	return claudeLogins{database.db, database.sealer}

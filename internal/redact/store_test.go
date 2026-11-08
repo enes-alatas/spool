@@ -539,6 +539,13 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Fail": false, "Lock": false, "Clear": false,
 			"Get": false, "DeleteBefore": false,
 		},
+		"ManagementTokenStore": {
+			// A token's name under the loop-name rule, a user id, times
+			// and the token's SHA-256; the value itself is never stored,
+			// and no loop's output reaches any of it (ADR-0067).
+			"Mint": false, "List": false, "Get": false, "GetByToken": false,
+			"Touch": false, "Delete": false,
+		},
 	}
 
 	seam := reflect.TypeOf((*store.Store)(nil)).Elem()

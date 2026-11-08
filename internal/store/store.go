@@ -1652,6 +1652,7 @@ type Store interface {
 	Users() UserStore
 	UserSessions() UserSessionStore
 	SignInThrottles() SignInThrottleStore
+	ManagementTokens() ManagementTokenStore
 	Close() error
 }
 
