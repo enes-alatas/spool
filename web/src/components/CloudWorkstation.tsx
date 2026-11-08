@@ -5,6 +5,7 @@ import {
   cloudHold,
   cloudSessionCondition,
   holdIsLoops,
+  scriptOutdated,
   stepsLeft,
   useCloudSettings,
 } from '../cloudLoop'
@@ -71,6 +72,12 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
         <div className="row">
           <span className="k">check</span>
           <span className={`v ${check.tone}`}>{check.text}</span>
+        </div>
+      )}
+      {setup && scriptOutdated(setup) && (
+        <div className="row">
+          <span className="k">script</span>
+          <span className="v warn">out of date, see Setup</span>
         </div>
       )}
       <div className="row">

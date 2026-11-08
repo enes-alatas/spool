@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type CloudLoopSetup, type CloudLoopStep, type LoopView } from '../api'
 import { environmentOptions, type Tone } from '../cloud'
-import { checkSays, reposOf } from '../cloudLoop'
+import { checkSays, reposOf, scriptOutdated } from '../cloudLoop'
 import { loginAccount } from '../claudeLogins'
 import { formatAgo } from '../format'
 import { CheckIcon, RefreshIcon } from './Icons'
@@ -346,7 +346,9 @@ function EnvironmentStep({
         <li>
           Paste this as its <strong>Setup script</strong>. It connects each session to this hub and holds no
           secret; it is the same for every cloud loop.
-          {setup.script ? (
+          {scriptOutdated(setup) ? (
+            <ScriptOutdated script={setup.script} />
+          ) : setup.script ? (
             <Copyable text={setup.script} label="the setup script" />
           ) : (
             <div className="cloud-small">It shows once Settings → Cloud has a public address.</div>
@@ -630,5 +632,21 @@ function CheckState({
       {said.text}
       {at ? ` · ${formatAgo(at, now)}` : ''}
     </p>
+  )
+}
+
+// The walk's setup-script line while the environment runs an older script
+// (#1412): the newer one to paste over it, and where. A warning only: the
+// hub never holds the loop for it.
+export function ScriptOutdated({ script }: { script: string }) {
+  return (
+    <div className="cloud-warning" role="status">
+      The environment runs an older setup script. The loop keeps working, but paste this one over it: on{' '}
+      <a href="https://claude.ai/code" target="_blank" rel="noreferrer">
+        claude.ai/code
+      </a>
+      , open the environment's settings and replace its <strong>Setup script</strong>.
+      <Copyable text={script} label="the new setup script" />
+    </div>
   )
 }

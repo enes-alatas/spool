@@ -10,6 +10,7 @@ import {
   killHint,
   killQuestion,
   reposOf,
+  scriptOutdated,
   stepsLeft,
   turnUntil,
   unnamedCloudHold,
@@ -165,6 +166,15 @@ describe('cloud turn', () => {
   it('kills unasked with no turn, or one past its bound', () => {
     expect(killQuestion({ name: 'nimbus' }, 5_000)).toBeUndefined()
     expect(killQuestion({ name: 'nimbus', cloud_turn: turn }, 7_201_000)).toBeUndefined()
+  })
+})
+
+describe('scriptOutdated', () => {
+  it('warns only of an outdated script it can offer in its place', () => {
+    expect(scriptOutdated({ script: 'curl …', script_state: 'outdated' })).toBe(true)
+    expect(scriptOutdated({ script: 'curl …', script_state: 'current' })).toBe(false)
+    expect(scriptOutdated({ script: 'curl …', script_state: 'unheard' })).toBe(false)
+    expect(scriptOutdated({ script: '', script_state: 'outdated' })).toBe(false)
   })
 })
 

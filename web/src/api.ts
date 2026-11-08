@@ -603,6 +603,10 @@ export interface CloudLoopSetup {
   // The setup script to paste, the same for every cloud loop of the hub
   // and holding no secret; '' while the hub has no public address.
   script: string
+  // Whether the loop's environment runs that script (#1381): the digest its
+  // last session start reported, against the script's own. 'unheard' before
+  // any report, or while the hub serves no script.
+  script_state: CloudScriptState
   // The host the loop's hub token is the environment's network secret for.
   secret_host: string
   token: { set: boolean }
@@ -610,6 +614,10 @@ export interface CloudLoopSetup {
   // The last check, absent before the first.
   check?: CloudLoopCheck
 }
+
+// Outdated is a warning only: an older script still runs turns, so the hub
+// never holds the loop for it.
+export type CloudScriptState = 'current' | 'outdated' | 'unheard'
 
 // `settings` first, then the loop's own, in the order the view lists them.
 export type CloudLoopStep = 'settings' | 'repo' | 'environment' | 'token' | 'allowlist' | 'check'

@@ -129,6 +129,13 @@ export function killQuestion(loop: Pick<LoopView, 'name' | 'cloud_turn'>, now: n
   )
 }
 
+// Whether the loop's environment runs an older setup script than the one
+// the hub serves (#1412). A warning, never a hold: the older script still
+// runs turns. False with no script to offer in its place.
+export function scriptOutdated(setup: Pick<CloudLoopSetup, 'script' | 'script_state'>): boolean {
+  return setup.script_state === 'outdated' && setup.script !== ''
+}
+
 // What a cloud loop's setup check says (ADR-0061, #1182): its state as the
 // card and the walk show it, and on a failure where it stopped and what to
 // try. A pass of an earlier setup or address holds the loop as no check
