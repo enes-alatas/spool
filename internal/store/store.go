@@ -1827,6 +1827,12 @@ type RoomStore interface {
 	// channel it already carries keeps its BoundAt. ErrRoomInUse when
 	// another loop's row binds the room to another channel.
 	Bind(ctx context.Context, loopID, surface, roomID, channel string, at int64) (*Room, error)
+	// BindTogether binds each of loopIDs' rooms for roomID to channel, at
+	// once: the loops that carry a room move it together (#1424). Each
+	// loop's room for that channel, if another, goes back to unbound.
+	// ErrRoomInUse when a loop not among them binds the room to another
+	// channel.
+	BindTogether(ctx context.Context, loopIDs []string, surface, roomID, channel string, at int64) error
 	// Forget removes a loop's room; ErrNotFound if it had none.
 	Forget(ctx context.Context, loopID, surface, roomID string) error
 	// Move carries every loop's room for a chat over to the chat's new id,

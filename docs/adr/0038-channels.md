@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424)
 
 ## Context
 
@@ -214,6 +214,21 @@ something it leaves open.
    - **A removal changes no room.** The bot leaving or being removed is
      logged; forgetting a room stays the operator's act.
    - **Slack is unchanged** until an issue of its own.
+
+   **Amendment (2026-11-08, #1424): a loop outside the fleet channel, and
+   moving a shared room.**
+   - **A loop outside the fleet channel binds no first room.** The operator
+     took it out, so it has no fleet channel whose room is missing. The
+     first group or Slack channel it hears from, or is added to, is
+     recorded unbound like any other, for the operator to bind from the
+     loop page. A loop in the fleet channel binds its first room as before.
+   - **Loops that share a room move it together.** When the operator binds
+     a room for a loop that already binds it to one channel, along with
+     every other loop that binds it, the room moves to the new channel for
+     all of them at once. A room still carries one channel. If a loop that
+     carries the room isn't in the new channel, the move is refused (409
+     `not_in_channel`, naming that loop). A room this loop doesn't carry
+     with them is refused as before (`room_in_use`).
 
 6. **Deleting a channel removes it and its membership, not its history.**
    Messages said in it keep its name. A channel created later under the same

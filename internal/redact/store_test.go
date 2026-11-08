@@ -478,7 +478,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// Ids, channel names and timestamps, and a chat's title as the
 			// surface reports it: a name people chose for a room, written
 			// by no loop.
-			"Sight": false, "Bind": false, "Forget": false, "Move": false, "List": false, "ListByRoom": false,
+			"Sight": false, "Bind": false, "BindTogether": false, "Forget": false, "Move": false, "List": false, "ListByRoom": false,
 		},
 		"SessionStore": {
 			"Create": false, "End": false, "EndDangling": false, "ListByLoop": false,

@@ -77,34 +77,57 @@ func (table rooms) Sight(ctx context.Context, room *store.Room) (*store.Room, bo
 }
 
 func (table rooms) Bind(ctx context.Context, loopID, surface, roomID, channel string, at int64) (*store.Room, error) {
+	return table.bindTogether(ctx, []string{loopID}, surface, roomID, channel, at)
+}
+
+func (table rooms) BindTogether(ctx context.Context, loopIDs []string, surface, roomID, channel string, at int64) error {
+	if len(loopIDs) == 0 {
+		return nil
+	}
+	_, err := table.bindTogether(ctx, loopIDs, surface, roomID, channel, at)
+	return err
+}
+
+// bindTogether binds each of loopIDs' rooms for roomID to channel in one
+// transaction, and returns the first loop's room. Only another loop's
+// binding to another channel refuses it, so loops that carry the room
+// together move it together.
+func (table rooms) bindTogether(ctx context.Context, loopIDs []string, surface, roomID, channel string, at int64) (*store.Room, error) {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+	marks := strings.TrimSuffix(strings.Repeat("?,", len(loopIDs)), ",")
+	args := []any{surface, roomID, channel}
+	for _, loopID := range loopIDs {
+		args = append(args, loopID)
+	}
 	var other int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM rooms WHERE surface=? AND room_id=?
-		AND loop_id<>? AND channel<>'' AND channel<>?`, surface, roomID, loopID, channel).Scan(&other); err != nil {
+		AND channel<>'' AND channel<>? AND loop_id NOT IN (`+marks+`)`, args...).Scan(&other); err != nil {
 		return nil, err
 	}
 	if other > 0 {
 		return nil, store.ErrRoomInUse
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0
-		WHERE loop_id=? AND channel=? AND NOT (surface=? AND room_id=?)`, loopID, channel, surface, roomID); err != nil {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO rooms (loop_id, surface, room_id, channel, first_seen_at, bound_at)
-		VALUES (?,?,?,?,?,?) ON CONFLICT (loop_id, surface, room_id) DO UPDATE SET
-		bound_at = CASE WHEN rooms.channel = excluded.channel THEN rooms.bound_at ELSE excluded.bound_at END,
-		channel = excluded.channel`, loopID, surface, roomID, channel, at, at)
-	if err != nil {
-		if strings.Contains(err.Error(), "FOREIGN KEY") {
-			return nil, store.ErrNotFound
+	for _, loopID := range loopIDs {
+		if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0
+			WHERE loop_id=? AND channel=? AND NOT (surface=? AND room_id=?)`, loopID, channel, surface, roomID); err != nil {
+			return nil, err
 		}
-		return nil, err
+		_, err = tx.ExecContext(ctx, `INSERT INTO rooms (loop_id, surface, room_id, channel, first_seen_at, bound_at)
+			VALUES (?,?,?,?,?,?) ON CONFLICT (loop_id, surface, room_id) DO UPDATE SET
+			bound_at = CASE WHEN rooms.channel = excluded.channel THEN rooms.bound_at ELSE excluded.bound_at END,
+			channel = excluded.channel`, loopID, surface, roomID, channel, at, at)
+		if err != nil {
+			if strings.Contains(err.Error(), "FOREIGN KEY") {
+				return nil, store.ErrNotFound
+			}
+			return nil, err
+		}
 	}
-	room, err := table.get(ctx, tx, loopID, surface, roomID)
+	room, err := table.get(ctx, tx, loopIDs[0], surface, roomID)
 	if err != nil {
 		return nil, err
 	}

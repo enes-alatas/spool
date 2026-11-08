@@ -105,7 +105,7 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 	room, err := server.Store.Rooms().Bind(r.Context(), loopRecord.ID, body.Surface, roomID,
 		channel.Name, time.Now().UnixMilli())
 	if errors.Is(err, store.ErrRoomInUse) {
-		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
+		server.moveRoom(w, r, loopRecord, channel, body.Surface, roomID)
 		return
 	}
 	if err != nil {
@@ -114,6 +114,81 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	server.roomsChanged(r, loopRecord.ID)
 	writeJSON(w, 200, viewOfRoom(room))
+}
+
+// moveRoom binds a room that loopRecord and other loops carry for one
+// channel to another, for all of them in one step (#1424): a room carries
+// one channel, so binding it for one loop alone could never get past the
+// others. It moves only when every loop that binds it binds it to that one
+// channel, loopRecord among them, and each is in the new channel;
+// otherwise the room stays where it is.
+func (server *Server) moveRoom(w http.ResponseWriter, r *http.Request, loopRecord *store.Loop, channel *store.Channel, surface, roomID string) {
+	rows, err := server.Store.Rooms().ListByRoom(r.Context(), surface, roomID)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	own, carried := "", ""
+	together := []string{loopRecord.ID}
+	for _, row := range rows {
+		if row.LoopID == loopRecord.ID {
+			own = row.Channel
+			continue
+		}
+		if row.Channel == "" || row.Channel == channel.Name {
+			continue
+		}
+		if carried != "" && row.Channel != carried {
+			carried = "" // the room carries two channels: nothing to move together
+			break
+		}
+		carried = row.Channel
+		together = append(together, row.LoopID)
+	}
+	// Only a room this loop carries along with the others, for the same
+	// channel, moves with them: a loop's page binds no room away from
+	// loops it doesn't share it with.
+	if carried == "" || own != carried {
+		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
+		return
+	}
+	for _, loopID := range together[1:] {
+		if slices.Contains(channel.LoopIDs, loopID) {
+			continue
+		}
+		name := loopID
+		if other, err := server.Store.Loops().Get(r.Context(), loopID); err == nil {
+			name = other.Name
+		}
+		server.jsonErrCode(w, 409, codeNotInChannel, "%s carries that room for channel %q and is not in channel %q; add it there first, or forget the room on it",
+			name, carried, channel.Name)
+		return
+	}
+	err = server.Store.Rooms().BindTogether(r.Context(), together, surface, roomID, channel.Name, time.Now().UnixMilli())
+	if errors.Is(err, store.ErrRoomInUse) {
+		// bound elsewhere meanwhile, by a sighting or another request
+		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
+		return
+	}
+	if err != nil {
+		server.storeErr(w, err, "loop")
+		return
+	}
+	for _, loopID := range together {
+		server.roomsChanged(r, loopID)
+	}
+	rooms, err := server.Store.Rooms().List(r.Context(), loopRecord.ID)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	for _, room := range rooms {
+		if room.Surface == surface && room.RoomID == roomID {
+			writeJSON(w, 200, viewOfRoom(room))
+			return
+		}
+	}
+	server.jsonErr(w, 500, "the room moved but is not on %s", loopRecord.Name)
 }
 
 // slackChannelID is a Slack channel's id as Slack spells it: C for a

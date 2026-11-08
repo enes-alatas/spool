@@ -347,3 +347,43 @@ func TestRoomsMigrationKeepsTheSlackChannel(t *testing.T) {
 		}
 	}
 }
+
+// The loops that carry a room for one channel move it to another together,
+// each loop's old room for the new channel going back to unbound; a loop
+// left out that binds the room elsewhere refuses the move (#1424).
+func TestBindTogetherMovesARoomTheLoopsShare(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	createLoops(t, db, "l1", "l2", "l3")
+	if err := db.Channels().Create(ctx, &store.Channel{Name: "backend", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, loopID := range []string{"l1", "l2", "l3"} {
+		if _, err := db.Rooms().Bind(ctx, loopID, store.SurfaceTelegram, "-1001", store.FleetChannel, 100); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-1002", "backend", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Rooms().BindTogether(ctx, []string{"l1", "l2"}, store.SurfaceTelegram, "-1001", "backend", 200); !errors.Is(err, store.ErrRoomInUse) {
+		t.Fatalf("moving it without l3, which binds it to group: err=%v, want ErrRoomInUse", err)
+	}
+	if room := roomOf(t, db, "l1", "-1001"); room.Channel != store.FleetChannel {
+		t.Fatalf("a refused move changed l1's room to %+v", room)
+	}
+	if err := db.Rooms().BindTogether(ctx, []string{"l1", "l2", "l3"}, store.SurfaceTelegram, "-1001", "backend", 200); err != nil {
+		t.Fatal(err)
+	}
+	for _, loopID := range []string{"l1", "l2", "l3"} {
+		if room := roomOf(t, db, loopID, "-1001"); room.Channel != "backend" || room.BoundAt != 200 {
+			t.Fatalf("%s's room after the move = %+v, want it bound to backend at 200", loopID, room)
+		}
+	}
+	if room := roomOf(t, db, "l1", "-1002"); room.Channel != "" {
+		t.Fatalf("l1's old backend room = %+v, want it unbound", room)
+	}
+	if err := db.Rooms().BindTogether(ctx, nil, store.SurfaceTelegram, "-1001", "backend", 300); err != nil {
+		t.Fatalf("no loops: %v", err)
+	}
+}
