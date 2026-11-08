@@ -1287,11 +1287,12 @@ textarea {
   align-items: start;
   gap: 16px;
 }
+/* The heads sit at the rows' own face and size, in sentence case and with no
+   tracking (#1406): at 10.5px in spaced capitals they read smaller than the
+   figures they name. */
 .fleet-cols {
   font-family: var(--mono);
-  font-size: 0.65625rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
   color: var(--text-muted);
   padding-bottom: 10px;
   border-bottom: 1px solid var(--hairline);
@@ -1412,15 +1413,11 @@ textarea {
   color: var(--text-muted);
 }
 /* A cost lines up on its decimal point, so the column is right-aligned, and
-   its heading with it: a left-aligned TODAY sat a column's slack away from
-   the figures it names (#395). The heading's letter-spacing trails its last
-   letter too, so it is taken back to meet the figures' edge. */
+   its heading with it: a left-aligned heading sat a column's slack away from
+   the figures it names (#395). */
 .fleet-row .f-today,
 .fleet-cols .f-today {
   text-align: right;
-}
-.fleet-cols .f-today {
-  margin-right: -0.12em;
 }
 /* The share's bar is the row's part of the fleet's day, drawn to the width of
    a fixed track so the bars compare down the column. It takes the share's

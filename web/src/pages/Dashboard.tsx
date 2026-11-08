@@ -20,6 +20,7 @@ import { PlanUsageStrip } from '../components/PlanUsage'
 import { Doing } from '../components/Doing'
 import { HealthNote } from '../components/Health'
 import { useMay } from '../components/Session'
+import { FleetColumns } from '../components/FleetColumns'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
 import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
@@ -326,16 +327,7 @@ export default function Dashboard() {
 
           {loops && loops.length > 0 && (
             <div className="fleet-list">
-              <div className="fleet-cols" aria-hidden>
-                <span>loop</span>
-                <span className="f-state">state</span>
-                <div className="f-meta">
-                  <span className="f-next">next wake</span>
-                  <span className="f-ctx">context</span>
-                  <span className="f-share">share</span>
-                  <span className="f-today">today</span>
-                </div>
-              </div>
+              <FleetColumns />
               {loops.map((fleetLoop) => (
                 <FleetRow
                   key={fleetLoop.id}
