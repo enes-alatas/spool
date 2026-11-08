@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on); 2026-10-30 (item 5: a crashed turn's batch is said again, three attempts at most)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on); 2026-10-30 (item 5: a crashed turn's batch is said again, three attempts at most); 2026-11-08 (item 3: a fresh session starts with no doing, #1284)
 
 ## Context
 
@@ -121,6 +121,14 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    note it comes from, it is redacted before it is stored, and cut only
    after, so a long secret is never split before it can match. Enes chose a
    trailer over a field on a tool on 2026-10-12 (#750).
+
+   **Amendment (2026-11-08, #1284): a fresh session starts with no doing.**
+   A doing belongs to the session that set it. When the loop begins a
+   fresh session (a rotation, a reset, or a session lost and begun again),
+   the hub clears the doing, so the row shows none until the new session
+   sets its own. A session resumed across a hub restart is the same
+   session and keeps its doing. Within a session, a note without the
+   trailer still leaves it as it was.
 
 4. **One session per loop; one turn per conversation.** The loop keeps its
    single persistent session (a loop is one coworker brain; ADR-0022 rotation

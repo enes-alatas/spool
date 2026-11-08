@@ -1050,7 +1050,9 @@ func (actor *Actor) wake() {
 
 // mintSession gives the loop a fresh claude session id. The id is ours to
 // choose (claude accepts --session-id), so it is recorded before the process
-// exists and survives a spawn failure.
+// exists and survives a spawn failure. A fresh session starts with no
+// doing: the one standing was the last session's, and the row shows none
+// until this one sets its own (#1284).
 func (actor *Actor) mintSession(ctx context.Context) {
 	sessionID := newUUID()
 	actor.loop.CurrentSessionID = sessionID
@@ -1059,6 +1061,7 @@ func (actor *Actor) mintSession(ctx context.Context) {
 		LoopID:    actor.loop.ID,
 		StartedAt: now(),
 	})
+	actor.setDoing("")
 }
 
 // renderPrompt resolves this wake's system prompt, falling back to an empty

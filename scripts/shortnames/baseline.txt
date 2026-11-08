@@ -69,7 +69,6 @@
 14 itest/docker_engine_test.go
 2 itest/docker_rebuild_test.go
 1 itest/docker_signin_test.go
-2 itest/doing_test.go
 1 itest/edits_test.go
 2 itest/egress_settings_test.go
 30 itest/engine_test.go
