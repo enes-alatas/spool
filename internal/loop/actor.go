@@ -2049,7 +2049,11 @@ func (actor *Actor) handleProcExit() {
 		_ = actor.deps.Store.Turns().Finish(context.Background(), turn)
 		actor.turn = nil
 		actor.unwatchTurn()
-		actor.noteTurnEnd(true, turn.EndedAt)
+		// a turn the operator ended is no evidence either way: it neither
+		// counts toward turn_errors nor clears it (#1420)
+		if !operatorEnded {
+			actor.noteTurnEnd(true, turn.EndedAt)
+		}
 		actor.watchSends()
 	}
 

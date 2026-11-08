@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260); 2026-11-08 (item 3: an operator-ended turn is not counted, #1420)
 
 ## Context
 
@@ -41,6 +41,12 @@ an amendment here.
    row opens the problem, dated from the first of them, and a turn that
    ends well clears it. N is the setting `health_error_turns`, 0 to 100
    with 0 for off, and defaults to **3** (decided on #764).
+
+   **Amendment (2026-11-08, #1420):** a process the operator ended mid-turn
+   (a kill, a cloud pause or a power verb) is not one that dies: its turn
+   neither counts toward the N nor clears the problem, since it is no
+   evidence either way (#1302). A process that dies mid-turn on its own
+   still counts.
 
 4. **`workstation_down`: down past a grace period.** A workstation down
    for any reason but these starts a grace period:
