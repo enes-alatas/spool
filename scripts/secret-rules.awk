@@ -78,7 +78,12 @@ BEGIN {
   # the week. Redacting handles in code or docs is out of scope on #249.
   name[6] = "loop-bot-handle";    regex[6] = "@?[a-z0-9_]+_spool_bot";  only[6] = "body"
   name[7] = "telegram-group-id";  regex[7] = "-100[0-9]{7,}";           only[7] = "body"
-  patterns = 7
+
+  # An operator's management token (ADR-0067): the prefix and 43 characters of
+  # unpadded base64url. After the fleet identifiers only so their numbers
+  # stay put; it is a credential, and applies everywhere.
+  name[8] = "management-token";   regex[8] = "spool_manage_[a-z0-9_-]{43}"
+  patterns = 8
 
   # An assigned-secret whose value reads the environment, see envReference().
   # Written with [.] rather than an escape so the hook's copy can be the same

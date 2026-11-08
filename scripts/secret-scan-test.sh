@@ -66,6 +66,14 @@ check 'bearer header is caught' 1 'bearer-header' \
 check 'assigned secret is caught' 1 'assigned-secret' \
   "$(diff_adding internal/loop/env.go 7 'password = "BQFgtZmKcrudPwvbxNhelisoq"')"
 
+# A management token in a line no other shape would catch: no assignment word,
+# no bearer, just the value in an argument list (ADR-0067).
+check 'management token is caught' 1 'management-token' \
+  "$(diff_adding docs/OPERATIONS.md 5 'claude mcp add spool spool_manage_BQFgtZmKcrudPwvbxNhelisoqWTLGDMYjxAe3Rk9Hp7')"
+
+check 'a synthetic management token passes' 0 '' \
+  "$(diff_adding internal/redact/redact_test.go 5 'const tok = "spool_manage_fixtureFIXTUREfixtureFIXTUREfixtureFIXTURE0"')"
+
 # The excerpt is the whole point of the output format: eight characters, then
 # an ellipsis. If this ever prints more, CI logs become the leak.
 check 'the excerpt stops at eight characters' 1 '71963842…' \

@@ -26,6 +26,7 @@ var credentialShapes = []credentialShape{
 	{"github-token", regexp.MustCompile(`gh[pousr]_[a-z0-9]{20,}`)},
 	{"bearer-header", regexp.MustCompile(`bearer[ \t]+[a-z0-9._-]{24,}`)},
 	{"assigned-secret", regexp.MustCompile(`(token|secret|password|passwd|api[_-]?key)[ \t]*[:=]{1,2}[ \t]*["']?[a-z0-9._-]{24,}`)},
+	{"management-token", regexp.MustCompile(`spool_manage_[a-z0-9_-]{43}`)},
 }
 
 // envReference is an assigned-secret match whose value reads the

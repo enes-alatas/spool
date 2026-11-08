@@ -10,7 +10,8 @@
 //
 // What it catches is the secrets Spool itself holds — the operator's Claude
 // token, each loop's bot token, hub MCP token and per-loop secrets, and the
-// operator token and hub key in the data directory. It cannot
+// operator token and hub key in the data directory — and, by its shape,
+// any management token, which the hub keeps only as a hash (ADR-0067). It cannot
 // catch a credential a loop invents or reads from somewhere Spool has never
 // seen (#30 is that problem), and it matches values literally, so a value
 // that survives only in an escaped or re-encoded form goes through, beyond
@@ -28,6 +29,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // Secret is one value to keep out of the record, and the name that stands in
@@ -175,18 +178,33 @@ func base64Core(value string, offset int) string {
 	return encoded[first:last]
 }
 
-// Text returns text with every known secret value replaced. It never blocks
-// on the store: a stale snapshot redacts what it knows, and the ttl decides
-// when the next caller reloads.
+// Text returns text with every known secret value replaced, and every
+// management token by its shape. It never blocks on the store: a stale snapshot
+// redacts what it knows, and the ttl decides when the next caller reloads.
 func (redactor *Redactor) Text(text string) string {
 	if text == "" {
 		return text
 	}
+	text = shapes(text)
 	snap := redactor.current()
 	if snap == nil || snap.empty {
 		return text
 	}
 	return snap.replacer.Replace(text)
+}
+
+// ManagementTokenName is what stands in for a management token.
+const ManagementTokenName = "management_token"
+
+// shapes replaces every management token in text, known or not (ADR-0067).
+// The hub keeps only a management token's hash, so its value is never a
+// secret the source can name; its shape is what gives it away. The prefix
+// is looked for first, so a line without one costs no regexp.
+func shapes(text string) string {
+	if !strings.Contains(text, store.ManagementTokenPrefix) {
+		return text
+	}
+	return store.ManagementTokenShape.ReplaceAllLiteralString(text, "<redacted:"+ManagementTokenName+">")
 }
 
 // Redacted reports whether text contains a known secret value.

@@ -184,3 +184,30 @@ func TestEncodedFormsLeaveOtherTextAlone(t *testing.T) {
 		}
 	}
 }
+
+// fixtureManagementToken is management-token shaped and says it is a fixture, so the
+// secret scanner lets it be (scripts/secret-rules.awk).
+const fixtureManagementToken = "spool_manage_" + "fixtureFIXTUREfixtureFIXTUREfixtureFIXTURE0"
+
+// A management token is kept only as its hash, so no source names its value:
+// the redactor masks it by its shape, loaded or not (ADR-0067).
+func TestManagementTokensAreMaskedByTheirShape(t *testing.T) {
+	unloaded := New(&fakeSource{}, 0)
+	loadedRedactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: "ghp_abcdefghij"})
+	for name, redactor := range map[string]*Redactor{"unloaded": unloaded, "loaded": loadedRedactor} {
+		got := redactor.Text("export SPOOL_AGENT=" + fixtureManagementToken + " and ghp_abcdefghij")
+		want := "export SPOOL_AGENT=<redacted:management_token> and ghp_abcdefghij"
+		if name == "loaded" {
+			want = "export SPOOL_AGENT=<redacted:management_token> and <redacted:GH_TOKEN>"
+		}
+		if got != want {
+			t.Errorf("%s: Text = %q, want %q", name, got, want)
+		}
+	}
+	// the prefix alone, or a value too short to be one, is not a token
+	for _, text := range []string{"spool_manage_ is the prefix", "spool_manage_short"} {
+		if got := unloaded.Text(text); got != text {
+			t.Errorf("Text(%q) = %q, want it untouched", text, got)
+		}
+	}
+}
