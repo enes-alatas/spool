@@ -2026,8 +2026,11 @@ func (actor *Actor) handleProcExit() {
 	// session at all. One can be a blip; a run of them means this session
 	// cannot be resumed any more, whatever the CLI printed about it — which
 	// is why this is classified by what the process did rather than by
-	// matching a message.
-	deadOnResume := !actor.freshSpawn && !actor.sawInit && exit.Code != 0
+	// matching a message. A process the operator ended (a kill, a pause or
+	// a power verb) failed at nothing, before its init or after, so it is
+	// never one (#1302).
+	operatorEnded := killedFor == killedByOperator || strings.HasPrefix(killedFor, endedByVerb)
+	deadOnResume := !actor.freshSpawn && !actor.sawInit && exit.Code != 0 && !operatorEnded
 	if deadOnResume {
 		actor.deadResumes++
 	}
@@ -2103,12 +2106,20 @@ func (actor *Actor) handleProcExit() {
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, claude.LastLines(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", claude.LastLines(exit.Stderr, 500))
 		actor.carryCrashedBatch(killedFor)
-		if killedFor == killedByOperator || strings.HasPrefix(killedFor, endedByVerb) {
-			// the operator ended it: nothing failed
+		if operatorEnded {
+			// The operator ended it: nothing failed, so nothing backs off
+			// either. The ladder doesn't climb, and work that waits wakes
+			// the loop as soon as the verb lets it, as after a clean exit
+			// (#1302). A pause leaves it paused; its resume wakes it.
 			actor.noteWakeFailure("")
-		} else {
-			actor.noteWakeFailure(WakeFailureCrashed)
+			actor.state = StateAsleep
+			actor.publishState()
+			if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.held() && !actor.powering {
+				actor.wake()
+			}
+			return
 		}
+		actor.noteWakeFailure(WakeFailureCrashed)
 		actor.crashBackoff()
 	}
 }
