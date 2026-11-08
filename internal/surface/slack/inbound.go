@@ -280,7 +280,9 @@ func (adapter *Adapter) roomChannel(ctx context.Context, link *link, loopRecord 
 	if room.Channel != "" {
 		return room.Channel
 	}
-	if loopRecord.SlackChannelID == "" {
+	// a loop the operator took out of the fleet channel has none to bind a
+	// first room to: its room waits unbound, for the loop page (#1424)
+	if loopRecord.SlackChannelID == "" && !loopRecord.OutsideFleetChannel {
 		_, err := adapter.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceSlack, channelID, store.FleetChannel, now)
 		switch {
 		case err == nil:

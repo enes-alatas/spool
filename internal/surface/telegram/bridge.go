@@ -1238,7 +1238,9 @@ func (br *Bridge) roomChannel(ctx context.Context, bot *poller, chat Chat) strin
 		br.log.Error("telegram: read loop for room", "loop", bot.name, "err", err)
 		return ""
 	}
-	if loopRecord.TGGroupChatID == 0 {
+	// a loop the operator took out of the fleet channel has none to bind a
+	// first group to: its group waits unbound, for the loop page (#1424)
+	if loopRecord.TGGroupChatID == 0 && !loopRecord.OutsideFleetChannel {
 		_, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, roomID, store.FleetChannel, now)
 		switch {
 		case err == nil:

@@ -92,8 +92,9 @@ Slack connects out over Socket Mode, so no port is opened for either
   other surface still links, the hub logs the pause, and an admin reads it
   in `GET /api/strangers` and can lift it (ADR-0051, #789).
 - **The first group in which a loop's bot hears an allowed sender becomes
-  its fleet channel** while it has none (ADR-0038). A stranger cannot bind
-  one.
+  its fleet channel** while it has none, for a loop in the fleet channel; a
+  loop the operator took out records it unbound, to bind from its page
+  (ADR-0038, #1424). A stranger cannot bind one.
 - **An allowed person adding a loop's bot to a Telegram group makes the
   group known to the loop,** as their first message there would: it binds
   as above, or is recorded unbound for the loop page (#1320). Telegram
