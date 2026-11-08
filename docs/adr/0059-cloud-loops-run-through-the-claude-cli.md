@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10); superseded in part by ADR-0061: item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 9's #977 amendment's create refusal, and item 10's *The repo field goes* and its #1169 amendment · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102); 2026-10-28 (item 10: no repo reach in an Anthropic-hosted environment, #1169) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10); superseded in part by ADR-0061: item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 9's #977 amendment's create refusal, and item 10's *The repo field goes* and its #1169 amendment · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102); 2026-10-28 (item 10: no repo reach in an Anthropic-hosted environment, #1169); 2026-11-08 (item 1: a start names the loop's model, #1281) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -120,6 +120,23 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    - Every other new hub session still starts a session of its own: a
      session lost on resume, a kill, a recreate, and a change of repo,
      branch, environment, login or account.
+
+   **Amendment (2026-11-08, #1281):** a start names the loop's model.
+   The CLI creates the session on its main-loop model, which `--model`
+   sets, and a `-p --cloud` send can't change it later. That was read in
+   the source of CLI 2.1.318 and checked on one live haiku session, both
+   on #1281. A start with no `--model` ran
+   every session on the account's default, whatever the loop's page
+   said.
+   - A loop that names a model starts its sessions with `--model` and
+     that model. A loop that names none passes nothing, so the
+     account's default stays its default.
+   - The state file keeps the model its session was created on. A
+     session made on another model is not carried on, by #1278's rule
+     above: a stop and start, or a rotation, then starts a session of
+     its own on the loop's model. So does the first start after an
+     upgrade, for a loop that names a model, since its session was made
+     on the default.
 
 2. **Each start bundles a *loop home*: a small git repo the hub builds
    for that start alone, in a fresh 0700 directory outside the data

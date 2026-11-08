@@ -117,6 +117,11 @@ type state struct {
 	// handed at its start. A state written before #1278 has none, so its
 	// session isn't carried on: the hub can't tell what its shell holds.
 	Connections string `json:"connections,omitempty"`
+	// Model is the model SessionID was created on, "" for the account's
+	// default: the CLI fixes it when it creates the session, and a send
+	// can't change it (#1281). A state written before #1281 has none, so
+	// a loop that names a model starts a session of its own on it.
+	Model string `json:"model,omitempty"`
 	// Turn is the turn that may be running in the loop's session, nil
 	// when the hub knows of none (ADR-0059).
 	Turn *turnState `json:"turn,omitempty"`
@@ -256,11 +261,12 @@ func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Pro
 		source: source,
 		bounds: cloud.Bounds.withDefaults(),
 		env:    spec.Env,
+		model:  spec.Model,
 	}
 	resuming := spec.SessionID == "" && spec.ResumeID == current.ClaudeSession
 	var account, unkept string
 	if resuming || spec.Rotated {
-		account, unkept, err = cloud.carriedOn(ctx, current, source, spec.Env)
+		account, unkept, err = cloud.carriedOn(ctx, current, source, spec.Env, spec.Model)
 		if err != nil {
 			return nil, err
 		}
@@ -291,9 +297,10 @@ func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Pro
 }
 
 // carriedOn says whether the loop's cloud session in current can be
-// carried on for a start from source with the connections env: unkept is
-// why not, "" when it can, and account the account it runs under then.
-func (cloud *Runtime) carriedOn(ctx context.Context, current state, source runtime.CloudStart, env map[string]string) (account, unkept string, err error) {
+// carried on for a start from source with the connections env on model:
+// unkept is why not, "" when it can, and account the account it runs
+// under then.
+func (cloud *Runtime) carriedOn(ctx context.Context, current state, source runtime.CloudStart, env map[string]string, model string) (account, unkept string, err error) {
 	switch {
 	case current.SessionID == "":
 		return "", "the loop holds no cloud session", nil
@@ -307,6 +314,10 @@ func (cloud *Runtime) carriedOn(ctx context.Context, current state, source runti
 		// a connection detached since the session started is still
 		// exported in its shell
 		return "", "the loop's connections changed since its session started", nil
+	case current.Model != model:
+		// the CLI names the model when it creates a session, and no send
+		// changes it (#1281)
+		return "", "its session started on another model", nil
 	}
 	// a login signed in again as another account doesn't own the session
 	// its last one started (#1230)

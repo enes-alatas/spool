@@ -453,6 +453,9 @@ type cliSession struct {
 	// env is the loop's connections as the spec carries them, which a
 	// start hands to the session.
 	env map[string]string
+	// model is the loop's model, "" for the account's default, which a
+	// start names to the CLI (#1281).
+	model string
 
 	// claudeSession is the hub's session id, which the events carry;
 	// sessionID is the cloud session, "" until the first Send starts one.
@@ -659,7 +662,14 @@ func (session *cliSession) startSession(text string) error {
 	// CLI bundles the start directory, which has nothing to bundle (run R
 	// on #1180). CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded. Its
 	// debug log says which environment it picked (#1232).
-	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch, "--debug-file", run.debugLog)
+	args := []string{"--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch, "--debug-file", run.debugLog}
+	if session.model != "" {
+		// the CLI creates the session on its main-loop model, which
+		// --model sets; without it the session runs on the account's
+		// default (#1281)
+		args = append(args, "--model", session.model)
+	}
+	cmd := exec.Command(cli.Binary, args...)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
@@ -704,6 +714,7 @@ func (session *cliSession) startSession(text string) error {
 				s.SessionURL = sessionPages + sessionID
 				s.Source = sourceKey(session.source, run.account)
 				s.Connections = session.cloud.connectionsKey(session.env)
+				s.Model = session.model
 			})
 			session.cloud.waits.mu.Lock()
 			delete(session.cloud.waits.binding, session.loopID)
