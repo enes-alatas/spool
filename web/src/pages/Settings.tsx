@@ -13,6 +13,7 @@ import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
 import { CapBanners, useCloudOnly, useMinuteClock } from '../components/PlanUsage'
+import { ManagementTokensSection } from '../components/ManagementTokens'
 import { capFields, capGate, capReach, capValue, type CapDraft } from '../planCap'
 import {
   ERROR_TURN_STOPS,
@@ -54,6 +55,7 @@ export default function Settings() {
           <RotationThresholds settings={settings} loadError={loadError} />
           <EgressSection />
           <CloudSection />
+          <ManagementTokensSection />
         </>
       )}
       <Build />

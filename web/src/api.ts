@@ -1288,6 +1288,28 @@ export interface Rehome {
   not_carried: string[]
 }
 
+// An operator's management token as the list shows it (ADR-0067, #1402): by name,
+// owner and times, never by value. Mirrors httpapi's managementTokenView.
+export interface ManagementToken {
+  id: string
+  name: string
+  // The minting user's name, '' for a token the operator token minted.
+  owner: string
+  // Unix ms.
+  created_at: number
+  // Unix ms; 0 for no end.
+  expires_at: number
+  // Unix ms; 0 before its first use.
+  last_used_at: number
+}
+
+// A mint: expires_at left out ends the token 90 days from now, 0 gives it
+// no end, and a Unix ms time to come ends it then.
+export interface ManagementTokenMint {
+  name: string
+  expires_at?: number
+}
+
 // ApiError carries the API's machine-readable reason alongside its prose, so
 // a caller can branch on the cause without parsing the message.
 export class ApiError extends Error {
@@ -1722,6 +1744,12 @@ export const api = {
   relabelCustomModel: (id: string, label: string) =>
     req<CustomModel>(`/api/models/custom/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
   deleteCustomModel: (id: string) => req<void>(`/api/models/custom/${id}`, { method: 'DELETE' }),
+  managementTokens: () => req<ManagementToken[]>('/api/management-tokens'),
+  // The answer is the token itself, in text/plain and shown once: a JSON
+  // answer would have its value masked by the hub's redactor (#1402).
+  mintManagementToken: (body: ManagementTokenMint) =>
+    reqText('/api/management-tokens', { method: 'POST', body: JSON.stringify(body) }),
+  revokeManagementToken: (id: string) => req<void>(`/api/management-tokens/${id}`, { method: 'DELETE' }),
   cloudSettings: () => req<CloudSettings>('/api/settings/cloud'),
   // Opens the listener where `listen` names, the hub's default when empty,
   // or closes it. Refused with 409 `cloud_listener`: a bind failure, another
