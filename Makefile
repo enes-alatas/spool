@@ -200,6 +200,7 @@ workflow-lint:
 	bash scripts/test-failures-test.sh
 	bash scripts/comment-refs-test.sh
 	bash scripts/other-half-test.sh
+	bash scripts/release-gate-test.sh
 	bash scripts/security-paths-test.sh
 	bash scripts/spool-backup-test.sh
 	bash scripts/langfuse-setup-test.sh

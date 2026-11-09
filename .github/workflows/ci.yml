@@ -493,6 +493,11 @@ jobs:
       - name: the other-half check still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/gate-annotate.sh other-half-test -- bash scripts/other-half-test.sh
+      # release.yml runs the gate only on a tag or a dry run, which PR CI
+      # never fires; the fixtures are what say it still holds a half (#1446).
+      - name: the release gate still holds what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gate-annotate.sh release-gate-test -- bash scripts/release-gate-test.sh
       # The advisory scan runs on a schedule, so this is what a PR can see
       # of its filing step: the tools' real output, a stubbed `gh` (#737).
       - name: the advisory scan still files what it claims to
