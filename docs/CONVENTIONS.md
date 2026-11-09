@@ -105,7 +105,9 @@ ADR instead.*
   never an unsplit issue.
 - **An issue's title says what changes, for whoever the change is for**
   (#1034): a product issue's title is one sentence in the operator's words,
-  with no ADR, slice, PR or symbol and no prefix, and its body opens with what
+  with no ADR, slice, PR or symbol and no prefix. A feature or improvement
+  title names what the operator can now do or see, and a bug title keeps the
+  broken behaviour (#1433). Whatever the type, the body opens with what
   the operator sees today and names each surface that changes (a shot of
   anything else means a missing line, or another issue); a team-only issue
   (CI, tests, docs of record, repo guards) may name its test or workflow and

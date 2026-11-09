@@ -51,6 +51,13 @@ No guard checks the headings, so get them right first time.
 ## 4. Title: one sentence in the operator's words
 
 - At most 100 characters.
+- The type decides what the title names (#1433):
+  - **Feature or improvement:** what the operator can now do or see, once
+    it ships. "A loop in a team sees its team in its prompt", not "A loop
+    in a team isn't told which team it is in", which reads as a bug.
+  - **Bug:** the broken behaviour, as the operator meets it. "A paused
+    loop still answers in the group".
+  - Either way, the body still opens with what's wrong today (section 5).
 - A product issue names no team process. Among what issue-guards flags:
   an ADR number, slice, PR, "part of", item number, `#n`, backticked
   symbol, snake_case name, or "web/hub/ui/backend/frontend/server/Go
