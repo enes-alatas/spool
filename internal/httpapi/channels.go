@@ -22,6 +22,10 @@ const (
 	codeChannelExists      = "channel_exists"
 	codeChannelNotFound    = "channel_not_found"
 	codeChannelReserved    = "channel_reserved"
+	// A team's channels are kept to its loops (ADR-0066).
+	codeChannelInOtherTeam  = "channel_in_other_team"
+	codeChannelHasOutsiders = "channel_has_outsiders"
+	codeChannelIsHome       = "channel_is_home"
 )
 
 // maxChannelDescription bounds a description in characters: one line the
@@ -35,6 +39,9 @@ type channelView struct {
 	Description string   `json:"description"`
 	CreatedAt   int64    `json:"created_at"`
 	Loops       []string `json:"loops"`
+	// Team is the team the channel belongs to, "" for a hub channel
+	// (ADR-0066).
+	Team string `json:"team"`
 }
 
 func (server *Server) channelViews(r *http.Request, channels ...*store.Channel) ([]channelView, error) {
@@ -48,7 +55,7 @@ func (server *Server) channelViews(r *http.Request, channels ...*store.Channel) 
 	}
 	views := make([]channelView, 0, len(channels))
 	for _, channel := range channels {
-		view := channelView{Name: channel.Name, Description: channel.Description, CreatedAt: channel.CreatedAt, Loops: []string{}}
+		view := channelView{Name: channel.Name, Description: channel.Description, CreatedAt: channel.CreatedAt, Loops: []string{}, Team: channel.Team}
 		for _, id := range channel.LoopIDs {
 			if name, ok := names[id]; ok {
 				view.Loops = append(view.Loops, name)
@@ -71,11 +78,14 @@ func (server *Server) writeChannel(w http.ResponseWriter, r *http.Request, statu
 
 // channelErr answers a store error about the channel named in the path.
 func (server *Server) channelErr(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, store.ErrNotFound) {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
 		server.jsonErrCode(w, 404, codeChannelNotFound, "channel %q not found", r.PathValue("name"))
-		return
+	case errors.Is(err, store.ErrChannelIsHome):
+		server.jsonErrCode(w, 409, codeChannelIsHome, "channel %q is its team's home; give the team another home channel, or none, first", r.PathValue("name"))
+	default:
+		server.jsonErr(w, 500, "%v", err)
 	}
-	server.jsonErr(w, 500, "%v", err)
 }
 
 func (server *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
@@ -162,12 +172,14 @@ func (server *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		// Team makes the channel that team's (ADR-0066); "" a hub channel.
+		Team string `json:"team"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	channel := &store.Channel{Name: req.Name, Description: strings.TrimSpace(req.Description), CreatedAt: time.Now().UnixMilli()}
+	channel := &store.Channel{Name: req.Name, Description: strings.TrimSpace(req.Description), CreatedAt: time.Now().UnixMilli(), Team: req.Team}
 	switch {
 	case channel.Name == store.FleetChannel:
 		server.jsonErrCode(w, 400, codeChannelReserved, "%q is the fleet channel, which every hub already has", store.FleetChannel)
@@ -179,38 +191,102 @@ func (server *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := server.Store.Channels().Create(r.Context(), channel); err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
+		switch {
+		case errors.Is(err, store.ErrDuplicate):
 			server.jsonErrCode(w, 409, codeChannelExists, "a channel named %q already exists", channel.Name)
-			return
+		case errors.Is(err, store.ErrNotFound):
+			server.jsonErrCode(w, 404, codeTeamNotFound, "team %q not found", channel.Team)
+		default:
+			server.jsonErr(w, 500, "%v", err)
 		}
-		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	server.writeChannel(w, r, 201, channel)
 }
 
+// handlePatchChannel rewrites a channel's description, or gives it to a
+// team or back to the hub (ADR-0066). A channel goes to a team only whole:
+// while it holds a loop outside the team, the move is refused naming them.
 func (server *Server) handlePatchChannel(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description *string `json:"description"`
+		Team        *string `json:"team"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	if req.Description == nil {
-		server.jsonErr(w, 400, "nothing to change: a channel's description is the one field that changes")
+	if req.Description == nil && req.Team == nil {
+		server.jsonErr(w, 400, "nothing to change: a channel's description and team are the fields that change")
 		return
 	}
-	description := strings.TrimSpace(*req.Description)
-	if !server.validDescription(w, description) {
+	name := r.PathValue("name")
+	if req.Team != nil && name == store.FleetChannel {
+		server.jsonErrCode(w, 400, codeChannelReserved, "the fleet channel is the whole hub's, and no team's")
 		return
 	}
-	channel, err := server.Store.Channels().SetDescription(r.Context(), r.PathValue("name"), description)
+	var description string
+	if req.Description != nil {
+		description = strings.TrimSpace(*req.Description)
+		if !server.validDescription(w, description) {
+			return
+		}
+	}
+	channel, err := server.Store.Channels().Get(r.Context(), name)
 	if err != nil {
 		server.channelErr(w, r, err)
 		return
 	}
+	// the team first: it is the half that can be refused
+	if req.Team != nil && *req.Team != channel.Team {
+		channel, err = server.Store.Channels().SetTeam(r.Context(), name, *req.Team)
+		switch {
+		case errors.Is(err, store.ErrChannelHasOutsiders):
+			server.channelHasOutsiders(w, r, name, *req.Team)
+			return
+		case errors.Is(err, store.ErrNotFound):
+			server.jsonErrCode(w, 404, codeTeamNotFound, "team %q not found", *req.Team)
+			return
+		case err != nil:
+			server.channelErr(w, r, err)
+			return
+		}
+	}
+	if req.Description != nil {
+		if channel, err = server.Store.Channels().SetDescription(r.Context(), name, description); err != nil {
+			server.channelErr(w, r, err)
+			return
+		}
+	}
 	server.writeChannel(w, r, 200, channel)
+}
+
+// channelHasOutsiders refuses giving a channel to a team, naming the loops
+// in it that are not the team's.
+func (server *Server) channelHasOutsiders(w http.ResponseWriter, r *http.Request, name, team string) {
+	channel, err := server.Store.Channels().Get(r.Context(), name)
+	if err != nil {
+		server.channelErr(w, r, err)
+		return
+	}
+	loops, err := server.Store.Loops().List(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	in := map[string]bool{}
+	for _, id := range channel.LoopIDs {
+		in[id] = true
+	}
+	var outsiders []string
+	for _, loopRecord := range loops {
+		if in[loopRecord.ID] && loopRecord.Team != team {
+			outsiders = append(outsiders, loopRecord.Name)
+		}
+	}
+	sort.Strings(outsiders)
+	server.jsonErrCode(w, 409, codeChannelHasOutsiders, "channel %q holds loops outside team %q: %s; take them out first",
+		name, team, strings.Join(outsiders, ", "))
 }
 
 func (server *Server) validDescription(w http.ResponseWriter, description string) bool {
@@ -250,7 +326,8 @@ func (server *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request
 func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		channelName := r.PathValue("name")
-		if _, err := server.Store.Channels().Get(r.Context(), channelName); err != nil {
+		channel, err := server.Store.Channels().Get(r.Context(), channelName)
+		if err != nil {
 			server.channelErr(w, r, err)
 			return
 		}
@@ -264,6 +341,11 @@ func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 			write = server.Store.Channels().AddLoop
 		}
 		if err := write(r.Context(), channelName, loopRecord.ID, time.Now().UnixMilli()); err != nil {
+			if errors.Is(err, store.ErrChannelInOtherTeam) {
+				server.jsonErrCode(w, 409, codeChannelInOtherTeam, "channel %q is team %q's, and loop %q isn't in that team",
+					channelName, channel.Team, loopRecord.Name)
+				return
+			}
 			server.channelErr(w, r, err)
 			return
 		}

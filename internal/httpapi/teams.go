@@ -15,7 +15,8 @@ import (
 
 // Teams (ADR-0066): named sets of loops on one hub. The operator makes,
 // renames and deletes them here; which team a loop is in is a field of the
-// loop, set by its create and PATCH. A team's channels and settings are
+// loop, set by its create and PATCH. A team's channels are channels with
+// a team (channels.go), its home channel among them; its settings are
 // later slices of #1289.
 
 const (
@@ -23,6 +24,8 @@ const (
 	codeTeamExists      = "team_exists"
 	codeTeamNotFound    = "team_not_found"
 	codeTeamHasLoops    = "team_has_loops"
+	// A home channel must be one of the team's own.
+	codeChannelNotInTeam = "channel_not_in_team"
 )
 
 // maxTeamDescription bounds a description in characters: one line, as a
@@ -36,6 +39,10 @@ type teamView struct {
 	Description string   `json:"description"`
 	CreatedAt   int64    `json:"created_at"`
 	Loops       []string `json:"loops"`
+	// HomeChannel is the channel every loop put in the team joins, ""
+	// for none; Channels are all of the team's, by name.
+	HomeChannel string   `json:"home_channel"`
+	Channels    []string `json:"channels"`
 }
 
 func (server *Server) teamViews(r *http.Request, teams ...*store.Team) ([]teamView, error) {
@@ -45,7 +52,11 @@ func (server *Server) teamViews(r *http.Request, teams ...*store.Team) ([]teamVi
 	}
 	views := make([]teamView, 0, len(teams))
 	for _, team := range teams {
-		view := teamView{Name: team.Name, Description: team.Description, CreatedAt: team.CreatedAt, Loops: namesOf(names, team.LoopIDs)}
+		view := teamView{Name: team.Name, Description: team.Description, CreatedAt: team.CreatedAt, Loops: namesOf(names, team.LoopIDs),
+			HomeChannel: team.HomeChannel, Channels: team.Channels}
+		if view.Channels == nil {
+			view.Channels = []string{}
+		}
 		views = append(views, view)
 	}
 	return views, nil
@@ -144,6 +155,9 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
+		// HomeChannel names the channel made with the team, the team's own
+		// name when absent.
+		HomeChannel *string `json:"home_channel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
@@ -158,29 +172,56 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		server.refuse(w, refusal)
 		return
 	}
+	team.HomeChannel = team.Name
+	if req.HomeChannel != nil {
+		team.HomeChannel = *req.HomeChannel
+	}
+	switch {
+	case team.HomeChannel == store.FleetChannel:
+		server.jsonErrCode(w, 409, codeChannelExists, "%q is the fleet channel; name the team's home channel with home_channel", store.FleetChannel)
+		return
+	case !store.ValidChannelName(team.HomeChannel):
+		server.jsonErrCode(w, 400, codeChannelNameInvalid,
+			"the home channel %q is not a channel name, which is 1 to 32 of a-z, 0-9 and '-'; name it with home_channel", team.HomeChannel)
+		return
+	}
 	if err := server.Store.Teams().Create(r.Context(), team); err != nil {
+		if errors.Is(err, store.ErrChannelTaken) {
+			server.jsonErrCode(w, 409, codeChannelExists, "a channel named %q already exists; name the team's home channel with home_channel", team.HomeChannel)
+			return
+		}
 		server.teamErr(w, err, team.Name)
 		return
 	}
 	server.writeTeam(w, r, 201, team)
 }
 
-// handlePatchTeam renames a team or rewrites its description. Its loops
-// stay in it under the new name.
+// handlePatchTeam renames a team, rewrites its description, or names its
+// home channel. Its loops and channels stay in it under a new name.
 func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
+		HomeChannel *string `json:"home_channel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	if req.Name == nil && req.Description == nil {
-		server.jsonErr(w, 400, "nothing to change: a team's name and description are the fields that change")
+	if req.Name == nil && req.Description == nil && req.HomeChannel == nil {
+		server.jsonErr(w, 400, "nothing to change: a team's name, description and home channel are the fields that change")
 		return
 	}
-	edit := store.TeamEdit{Name: req.Name}
+	edit := store.TeamEdit{Name: req.Name, HomeChannel: req.HomeChannel, At: time.Now().UnixMilli()}
+	if req.HomeChannel != nil && *req.HomeChannel != "" {
+		if _, err := server.Store.Channels().Get(r.Context(), *req.HomeChannel); errors.Is(err, store.ErrNotFound) {
+			server.jsonErrCode(w, 404, codeChannelNotFound, "channel %q not found", *req.HomeChannel)
+			return
+		} else if err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
 	if req.Name != nil {
 		if refusal := teamNameRefusal(*req.Name); refusal != nil {
 			server.refuse(w, refusal)
@@ -197,6 +238,10 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	team, err := server.Store.Teams().Edit(r.Context(), name, edit)
+	if errors.Is(err, store.ErrChannelNotInTeam) {
+		server.jsonErrCode(w, 409, codeChannelNotInTeam, "channel %q is not team %q's; give it to the team first", *req.HomeChannel, name)
+		return
+	}
 	if errors.Is(err, store.ErrDuplicate) {
 		name = *req.Name
 	}
@@ -210,9 +255,10 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 	server.writeTeam(w, r, 200, team)
 }
 
-// handleDeleteTeam deletes a team with no loops in it. One that still has
-// loops is refused, naming them: moving each out is the operator choosing
-// where it goes (ADR-0066).
+// handleDeleteTeam deletes a team with no loops in it, and its channels
+// with it, as a deleted channel goes. One that still has loops is refused,
+// naming them: moving each out is the operator choosing where it goes
+// (ADR-0066).
 func (server *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	switch err := server.Store.Teams().Delete(r.Context(), name); {

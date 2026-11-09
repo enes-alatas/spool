@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430)
 
 ## Context
 
@@ -184,6 +184,39 @@ channel, item 1 is amended with it.
      refuse a name a channel already has. Slice 2 adds both to the
      create. It also decides what a team made before it gets, since such
      a team has no home channel.
+
+   **Amendment (2026-11-09, #1430): the routes and fields of slice 2.**
+   - **A channel view** carries `team`, `""` for a hub channel. `POST
+     /api/channels` takes an optional `team` (404 `team_not_found`).
+     `PATCH /api/channels/{name}` takes `team` to give the channel to a
+     team, or `""` to make it a hub channel again. `group` takes no
+     team (400 `channel_reserved`). A channel holding a loop outside the
+     team is refused with 409 `channel_has_outsiders`, and the error
+     names those loops. A team's home channel is refused with 409
+     `channel_is_home` until the team names another home or none.
+   - **A team view** carries `home_channel`, `""` for none, and
+     `channels`: every channel of the team, sorted, the home among them.
+   - **`POST /api/teams`** takes an optional `home_channel`, which
+     defaults to the team's name. A name a channel already has is 409
+     `channel_exists`. A team name that isn't a channel name, such as one
+     with `_`, is 400 `channel_name_invalid` until the request names the
+     home channel.
+   - **`PATCH /api/teams/{name}`** takes `home_channel`. A channel of the
+     team becomes its home, and every loop of the team is put in it;
+     naming the home the team already has changes nothing. `""` leaves
+     the team with no home, and the channel stays the team's. A channel
+     that isn't the team's is 409 `channel_not_in_team`. This is how a
+     team made before slice 2, or the upgrade's `default`, gets a home
+     channel. Neither gets one by itself.
+   - **A loop's team move** takes the loop out of every channel of the
+     team it left and unbinds its rooms there. It puts the loop in the
+     home channel of the team it joined, if that team has one. A loop
+     made in a team starts in its home channel. Putting a loop in a
+     team's channel when the loop isn't in that team is 409
+     `channel_in_other_team`.
+   - **`DELETE /api/teams/{name}`** deletes the team's channels with it,
+     as the item says. Their history is kept and their rooms are
+     unbound.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;

@@ -1419,6 +1419,10 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.TGBotToken != nil || slackGiven {
 		server.secretsChanged(r.Context())
 	}
+	// leaving a team unbinds the loop's rooms in the team's channels
+	if updated.Team != loopRecord.Team {
+		server.roomsChanged(r, updated.ID)
+	}
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.
 	server.Manager.UpdateLoop(updated)

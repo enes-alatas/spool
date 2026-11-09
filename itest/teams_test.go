@@ -17,6 +17,8 @@ type teamJSON struct {
 	Description string   `json:"description"`
 	CreatedAt   int64    `json:"created_at"`
 	Loops       []string `json:"loops"`
+	HomeChannel string   `json:"home_channel"`
+	Channels    []string `json:"channels"`
 }
 
 // teamOf reads one team from the hub.

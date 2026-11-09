@@ -14,6 +14,7 @@ type channelJSON struct {
 	Description string   `json:"description"`
 	CreatedAt   int64    `json:"created_at"`
 	Loops       []string `json:"loops"`
+	Team        string   `json:"team"`
 }
 
 func (s *server) channel(name string) channelJSON {
