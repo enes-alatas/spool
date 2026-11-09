@@ -1,6 +1,6 @@
 # ADR-0052: A release ships built artifacts, and the operator verifies them before the hub runs them
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Amended: 2026-10-31 (decision 1: a release pins its Claude Code CLI, #1223) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Amended: 2026-10-31 (decision 1: a release pins its Claude Code CLI, #1223); 2026-11-09 (decision 2: releases are trunk-based, #1452) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
 
 ## Context
 
@@ -75,6 +75,14 @@ Three facts shape the options:
    - Recommended, for the operator: a tag ruleset on `v*` so that only
      the operator can create or move a release tag. A moved tag is how a
      release's contents change under its name.
+
+   **Amendment (2026-11-09, #1452): releases are trunk-based.** Every
+   change merges to `main`, and every tag, a minor or a patch, is cut from
+   `main` (the operator's release plan of 2026-11-09). There are no release
+   branches. A fix to a broken release therefore ships as the next release
+   from `main` (CONVENTIONS.md, "Releases"). Release branches for backports
+   are not decided before 1.0.
+
 3. **The hub never pulls an image itself.** Every `docker run` the runtime
    issues passes `--pull=never`, so "never pulls" is a property of the hub,
    not of Docker's defaults. Every image the hub runs is one the operator
