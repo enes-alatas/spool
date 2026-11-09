@@ -289,6 +289,9 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	if err != nil {
 		return err
 	}
+	if err := moveTeamChannels(ctx, table.db, loopRecord.ID, "", loopRecord.Team, loopRecord.CreatedAt); err != nil {
+		return err
+	}
 	// A loop created already bound, as a fixture's are: its group or its
 	// Slack channel is a room.
 	if loopRecord.TGGroupChatID != 0 {
@@ -394,12 +397,26 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		return nil, err
 	}
 	defer tx.Rollback()
+	var oldTeam string
+	if edit.Team != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(team, '') FROM loops WHERE id=?`, id).Scan(&oldTeam); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, store.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE loops SET `+strings.Join(sets, ", ")+` WHERE id=?`, append(args, id)...); err != nil {
 		if strings.Contains(err.Error(), "FOREIGN KEY") {
 			return nil, store.ErrNotFound // no team by that name
 		}
 		return nil, err
+	}
+	if edit.Team != nil && *edit.Team != oldTeam {
+		if err := moveTeamChannels(ctx, tx, id, oldTeam, *edit.Team, edit.UpdatedAt); err != nil {
+			return nil, err
+		}
 	}
 	if edit.ClearTelegramRooms {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM rooms WHERE loop_id=? AND surface=?`, id, store.SurfaceTelegram); err != nil {

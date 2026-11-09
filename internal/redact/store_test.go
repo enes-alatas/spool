@@ -453,6 +453,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// timestamps.
 			"Create": false, "SetDescription": false, "Delete": false,
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
+			"SetTeam": false,
 		},
 		"TeamStore": {
 			// A team's description is operator-written text, like a

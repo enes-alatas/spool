@@ -161,12 +161,12 @@ func unmigrateChannels(t *testing.T, dataDir string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, stmt := range []string{
+	for _, stmt := range append(undo0079,
 		`DROP TABLE channel_loops`,
 		`DROP TABLE channels`,
 		`ALTER TABLE messages DROP COLUMN channel`,
 		`DELETE FROM schema_migrations WHERE version='0033_channels.sql'`,
-	} {
+	) {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}

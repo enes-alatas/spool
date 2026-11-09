@@ -165,14 +165,24 @@ func unmigrateTeams(t *testing.T, dataDir string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, statement := range []string{
+	for _, statement := range append(undo0079,
 		`DROP INDEX loops_team`,
 		`ALTER TABLE loops DROP COLUMN team`,
 		`DROP TABLE teams`,
 		`DELETE FROM schema_migrations WHERE version='0078_teams.sql'`,
-	} {
+	) {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatalf("%s: %v", statement, err)
 		}
 	}
+}
+
+// undo0079 takes a stopped hub's database back to before team channels; a
+// test unmigrating an earlier migration runs it first, so the next start
+// replays 0079 over the shape that test rebuilt.
+var undo0079 = []string{
+	`DROP INDEX channels_team`,
+	`ALTER TABLE channels DROP COLUMN team`,
+	`ALTER TABLE teams DROP COLUMN home_channel`,
+	`DELETE FROM schema_migrations WHERE version='0079_team_channels.sql'`,
 }

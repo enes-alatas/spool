@@ -144,12 +144,12 @@ func TestATeamKeepsItsLoopsThroughARename(t *testing.T) {
 }
 
 func unmigrate0078(db *DB) error {
-	for _, statement := range []string{
+	for _, statement := range append(undo0079,
 		`DROP INDEX loops_team`,
 		`ALTER TABLE loops DROP COLUMN team`,
 		`DROP TABLE teams`,
 		`DELETE FROM schema_migrations WHERE version='0078_teams.sql'`,
-	} {
+	) {
 		if _, err := db.db.Exec(statement); err != nil {
 			return err
 		}
@@ -205,5 +205,176 @@ func TestTheUpgradeMakesTheFleetChannelTheDefaultTeam(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// undo0079 are the statements that take a database back to before team
+// channels; a test unmigrating an earlier migration runs them first, so
+// the next migrate replays 0079 over the shape it rebuilt.
+var undo0079 = []string{
+	`DROP INDEX channels_team`,
+	`ALTER TABLE channels DROP COLUMN team`,
+	`ALTER TABLE teams DROP COLUMN home_channel`,
+	`DELETE FROM schema_migrations WHERE version='0079_team_channels.sql'`,
+}
+
+// A team's channels hold only its loops: a loop joins the home channel
+// with the team, and leaving the team takes it out of every channel of the
+// team and unbinds its rooms there, while its hub channels stay.
+func TestATeamsChannelsKeepToItsLoops(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	createLoops(t, db, "l1", "l2")
+	if err := db.Teams().Create(ctx, &store.Team{Name: "red", HomeChannel: "red", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, channel := range []*store.Channel{{Name: "red-side", Team: "red", CreatedAt: 1}, {Name: "hub", CreatedAt: 1}} {
+		if err := db.Channels().Create(ctx, channel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Channels().Create(ctx, &store.Channel{Name: "nowhere", Team: "green", CreatedAt: 1}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a channel for a team that doesn't exist: %v, want ErrNotFound", err)
+	}
+	if err := putInTeam(t, db, "l1", "red"); err != nil {
+		t.Fatal(err)
+	}
+	if got := members(t, db, "red"); !reflect.DeepEqual(got, []string{"l1"}) {
+		t.Errorf("the home channel after l1 joined red = %v, want l1", got)
+	}
+	if err := db.Channels().AddLoop(ctx, "red-side", "l2", 2); !errors.Is(err, store.ErrChannelInOtherTeam) {
+		t.Errorf("a loop in no team put in red's channel: %v, want ErrChannelInOtherTeam", err)
+	}
+	// a channel deleted between AddLoop's lookup and its insert is gone, not another team's
+	if err := (channels{db.db}).addLoop(ctx, "deleted-meanwhile", "l1", 2); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a loop put in a channel deleted meanwhile: %v, want ErrNotFound", err)
+	}
+	for _, channel := range []string{"red-side", "hub"} {
+		if err := db.Channels().AddLoop(ctx, channel, "l1", 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100", "red-side", 3); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := putInTeam(t, db, "l1", ""); err != nil {
+		t.Fatal(err)
+	}
+	for channel, want := range map[string][]string{"red": {}, "red-side": {}, "hub": {"l1"}} {
+		if got := members(t, db, channel); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s after l1 left red = %v, want %v", channel, got, want)
+		}
+	}
+	rooms, err := db.Rooms().List(ctx, "l1")
+	if err != nil || len(rooms) != 1 || rooms[0].Channel != "" {
+		t.Errorf("l1's rooms after it left red = %+v (%v), want its red-side room unbound", rooms, err)
+	}
+
+	// a loop created in the team starts in its home channel
+	created := testLoop()
+	created.ID, created.Name, created.Team = "l3", "l3", "red"
+	if err := db.Loops().Create(ctx, created); err != nil {
+		t.Fatal(err)
+	}
+	if got := members(t, db, "red"); !reflect.DeepEqual(got, []string{"l3"}) {
+		t.Errorf("the home channel after l3 was created in red = %v, want l3", got)
+	}
+}
+
+// A channel goes to a team only with no outsider in it, a team's home
+// stays its own until the team names another, and a home channel is one of
+// the team's; the team's channels go with it.
+func TestAChannelChangesTeamOnlyWhole(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	createLoops(t, db, "l1", "l2")
+	for _, team := range []*store.Team{{Name: "red", HomeChannel: "red", CreatedAt: 1}, {Name: "blue", CreatedAt: 1}} {
+		if err := db.Teams().Create(ctx, team); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Teams().Create(ctx, &store.Team{Name: "teal", HomeChannel: "red", CreatedAt: 1}); !errors.Is(err, store.ErrChannelTaken) {
+		t.Errorf("a team whose home channel's name is taken: %v, want ErrChannelTaken", err)
+	}
+	if _, err := db.Teams().Get(ctx, "teal"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the refused team was kept: %v", err)
+	}
+	if err := db.Channels().Create(ctx, &store.Channel{Name: "ops", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putInTeam(t, db, "l1", "red"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"l1", "l2"} {
+		if err := db.Channels().AddLoop(ctx, "ops", id, 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Channels().SetTeam(ctx, "ops", "red"); !errors.Is(err, store.ErrChannelHasOutsiders) {
+		t.Errorf("giving red a channel l2 is in: %v, want ErrChannelHasOutsiders", err)
+	}
+	if err := db.Channels().RemoveLoop(ctx, "ops", "l2", 3); err != nil {
+		t.Fatal(err)
+	}
+	if channel, err := db.Channels().SetTeam(ctx, "ops", "red"); err != nil || channel.Team != "red" {
+		t.Fatalf("giving red ops = %+v (%v)", channel, err)
+	}
+	if _, err := db.Channels().SetTeam(ctx, "red", ""); !errors.Is(err, store.ErrChannelIsHome) {
+		t.Errorf("taking red's home channel from it: %v, want ErrChannelIsHome", err)
+	}
+	if _, err := db.Channels().SetTeam(ctx, "ops", "green"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("giving a channel to a team that doesn't exist: %v, want ErrNotFound", err)
+	}
+
+	// blue can't take red's channel as its home
+	ops := "ops"
+	if _, err := db.Teams().Edit(ctx, "blue", store.TeamEdit{HomeChannel: &ops, At: 4}); !errors.Is(err, store.ErrChannelNotInTeam) {
+		t.Errorf("blue's home set to red's channel: %v, want ErrChannelNotInTeam", err)
+	}
+	// red's new home takes every loop of red in
+	if err := db.Channels().RemoveLoop(ctx, "ops", "l1", 4); err != nil {
+		t.Fatal(err)
+	}
+	team, err := db.Teams().Edit(ctx, "red", store.TeamEdit{HomeChannel: &ops, At: 5})
+	if err != nil || team.HomeChannel != "ops" || !reflect.DeepEqual(team.Channels, []string{"ops", "red"}) {
+		t.Fatalf("red with ops as its home = %+v (%v)", team, err)
+	}
+	if got := members(t, db, "ops"); !reflect.DeepEqual(got, []string{"l1"}) {
+		t.Errorf("ops as red's home holds %v, want l1", got)
+	}
+	// naming the home it has again doesn't put back a loop taken out
+	if err := db.Channels().RemoveLoop(ctx, "ops", "l1", 6); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Teams().Edit(ctx, "red", store.TeamEdit{HomeChannel: &ops, At: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if got := members(t, db, "ops"); len(got) != 0 {
+		t.Errorf("naming red's own home again put back %v", got)
+	}
+	// a rename carries the channels along
+	crimson := "crimson"
+	if team, err := db.Teams().Edit(ctx, "red", store.TeamEdit{Name: &crimson}); err != nil || !reflect.DeepEqual(team.Channels, []string{"ops", "red"}) {
+		t.Fatalf("crimson = %+v (%v), want red's channels", team, err)
+	}
+	if channel, err := db.Channels().Get(ctx, "ops"); err != nil || channel.Team != "crimson" {
+		t.Errorf("ops after red's rename = %+v (%v), want crimson's", channel, err)
+	}
+
+	// deleting the team deletes its channels, and only its own
+	if err := putInTeam(t, db, "l1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Teams().Delete(ctx, "crimson"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ops", "red"} {
+		if _, err := db.Channels().Get(ctx, name); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s outlived its team: %v", name, err)
+		}
+	}
+	if _, err := db.Channels().Get(ctx, store.FleetChannel); err != nil {
+		t.Errorf("the fleet channel went with a team: %v", err)
 	}
 }

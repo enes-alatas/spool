@@ -1056,7 +1056,9 @@ type LoopEdit struct {
 	OutsideFleetChannel *bool
 	// Team puts the loop in the named team, which moves it out of any
 	// other, or takes it out of every team with ""; nil leaves it where it
-	// is. ErrNotFound if no team has that name.
+	// is. ErrNotFound if no team has that name. Leaving a team takes the
+	// loop out of every channel of that team and unbinds its rooms there;
+	// joining one puts it in the team's home channel (ADR-0066).
 	Team *string
 
 	UpdatedAt int64
@@ -1074,6 +1076,8 @@ type SlackIdentity struct {
 }
 
 type LoopStore interface {
+	// Create stores a new loop; one made in a team starts in the team's
+	// home channel. ErrNotFound if its team is not there.
 	Create(ctx context.Context, loopRecord *Loop) error
 	// Edit writes the fields an operator named and nothing else, returning
 	// the row as it stands afterwards. There is deliberately no whole-row
@@ -1691,6 +1695,9 @@ type Channel struct {
 	CreatedAt   int64
 	// LoopIDs are the loops in the channel, in no promised order.
 	LoopIDs []string
+	// Team is the team the channel belongs to, "" for a hub channel
+	// (ADR-0066). The fleet channel is always a hub channel.
+	Team string
 }
 
 // ValidChannelName reports whether a name may name a channel: 1–32 of
@@ -1791,8 +1798,9 @@ type ChannelStore interface {
 	List(ctx context.Context) ([]*Channel, error)
 	// Get returns one channel, or ErrNotFound.
 	Get(ctx context.Context, name string) (*Channel, error)
-	// Create adds a channel with no loops in it; ErrDuplicate if the name
-	// is taken.
+	// Create adds a channel with no loops in it, in channel.Team when it
+	// names one; ErrDuplicate if the name is taken, ErrNotFound if the team
+	// is not there.
 	Create(ctx context.Context, channel *Channel) error
 	// SetDescription rewrites a channel's description and returns it;
 	// ErrNotFound if there is none by that name.
@@ -1802,9 +1810,18 @@ type ChannelStore interface {
 	// its name. The fleet channel is not deletable, and the caller refuses
 	// it before asking.
 	Delete(ctx context.Context, name string) error
+	// SetTeam gives a channel to a team, or with "" makes it a hub channel
+	// again, and returns it (ADR-0066); ErrNotFound if there is no such
+	// channel or team. ErrChannelHasOutsiders while it holds a loop outside
+	// the team, and ErrChannelIsHome for a team's home channel, which the
+	// team gives up first. The fleet channel is always a hub channel, and
+	// the caller refuses it before asking.
+	SetTeam(ctx context.Context, name, team string) (*Channel, error)
 	// AddLoop puts a loop in a channel and RemoveLoop takes it out; both
 	// are no-ops when it already is, or is not, there, and ErrNotFound when
-	// the channel is not. at stamps the write. Taking a loop out of a
+	// the channel is not. A team's channel takes only that team's loops:
+	// ErrChannelInOtherTeam for any other (ADR-0066). at stamps the write.
+	// Taking a loop out of a
 	// channel other than the fleet channel unbinds its room for it; the
 	// fleet channel's room stays bound, as it did before rooms, so a loop
 	// put back in finds its group where it was.
@@ -1820,13 +1837,25 @@ type Team struct {
 	CreatedAt   int64
 	// LoopIDs are the loops in the team, in no promised order.
 	LoopIDs []string
+	// HomeChannel is the team's own channel, which every loop put in the
+	// team joins; "" for none, as the upgrade's default team has.
+	HomeChannel string
+	// Channels are every channel of the team, its home channel among them,
+	// by name.
+	Channels []string
 }
 
 // TeamEdit names what a team edit changes; nil leaves a field alone.
 type TeamEdit struct {
-	// Name renames the team, and every loop in it follows.
+	// Name renames the team, and every loop and channel in it follows.
 	Name        *string
 	Description *string
+	// HomeChannel makes one of the team's channels its home and puts every
+	// loop of the team in it, or with "" leaves the team with none and the
+	// channel still the team's.
+	HomeChannel *string
+	// At stamps the loops a new home channel takes in.
+	At int64
 }
 
 // TeamStore holds the hub's teams (ADR-0066). Which team a loop is in is
@@ -1837,15 +1866,18 @@ type TeamStore interface {
 	List(ctx context.Context) ([]*Team, error)
 	// Get returns one team, or ErrNotFound.
 	Get(ctx context.Context, name string) (*Team, error)
-	// Create adds a team with no loops in it; ErrDuplicate if the name is
-	// taken.
+	// Create adds a team with no loops in it, and with team.HomeChannel
+	// set, that channel made as its home in the same write; ErrDuplicate if
+	// the team's name is taken, ErrChannelTaken if the channel's is.
 	Create(ctx context.Context, team *Team) error
 	// Edit writes what edit names and returns the team as it stands
 	// afterwards, under its new name if it was renamed; ErrNotFound if
-	// there is none by that name, ErrDuplicate if the new name is taken.
+	// there is none by that name, ErrDuplicate if the new name is taken,
+	// ErrChannelNotInTeam for a home channel that is not one of the team's.
 	Edit(ctx context.Context, name string, edit TeamEdit) (*Team, error)
-	// Delete removes a team; ErrNotFound if there is none, ErrTeamHasLoops
-	// while any loop is in it.
+	// Delete removes a team and its channels, which keep their history and
+	// unbind their rooms as a deleted channel does; ErrNotFound if there is
+	// none, ErrTeamHasLoops while any loop is in it.
 	Delete(ctx context.Context, name string) error
 }
 
@@ -2077,6 +2109,22 @@ const (
 	// one is moved out first, which is the operator choosing where it goes
 	// (ADR-0066).
 	ErrTeamHasLoops = sentinelError("store: team has loops")
+	// ErrChannelTaken refuses a team whose home channel would take a
+	// channel name already in use.
+	ErrChannelTaken = sentinelError("store: channel name taken")
+	// ErrChannelInOtherTeam refuses putting a loop in a team's channel
+	// when the loop is not in that team: a team's channels are kept to its
+	// loops (ADR-0066).
+	ErrChannelInOtherTeam = sentinelError("store: channel in another team")
+	// ErrChannelHasOutsiders refuses giving a channel to a team while it
+	// holds a loop outside that team.
+	ErrChannelHasOutsiders = sentinelError("store: channel has outsiders")
+	// ErrChannelIsHome refuses taking a team's home channel from it while
+	// it is the home: the team names another home, or none, first.
+	ErrChannelIsHome = sentinelError("store: channel is a team's home")
+	// ErrChannelNotInTeam refuses making a channel a team's home when the
+	// channel is not one of that team's.
+	ErrChannelNotInTeam = sentinelError("store: channel not in team")
 )
 
 // Connection is an org-level tool credential or config, defined once under

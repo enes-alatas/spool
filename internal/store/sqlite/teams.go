@@ -10,30 +10,41 @@ import (
 )
 
 // teams are the hub's teams (ADR-0066). A loop's team is its own loops.team
-// column, which follows a rename and keeps a team with loops from being
-// deleted, so the loops in a team are read from there.
+// column and a channel's its channels.team, both of which follow a rename
+// and keep a team that still has loops from being deleted, so the loops and
+// channels of a team are read from there.
 type teams struct{ db *sql.DB }
 
+const teamCols = `name, description, created_at, COALESCE(home_channel, '')`
+
+func scanTeam(row interface{ Scan(...any) error }) (*store.Team, error) {
+	var team store.Team
+	if err := row.Scan(&team.Name, &team.Description, &team.CreatedAt, &team.HomeChannel); err != nil {
+		return nil, err
+	}
+	return &team, nil
+}
+
 func (table teams) List(ctx context.Context) ([]*store.Team, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT name, description, created_at FROM teams ORDER BY name`)
+	rows, err := table.db.QueryContext(ctx, `SELECT `+teamCols+` FROM teams ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	var out []*store.Team
 	for rows.Next() {
-		var team store.Team
-		if err := rows.Scan(&team.Name, &team.Description, &team.CreatedAt); err != nil {
+		team, err := scanTeam(rows)
+		if err != nil {
 			rows.Close()
 			return nil, err
 		}
-		out = append(out, &team)
+		out = append(out, team)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	for _, team := range out {
-		if team.LoopIDs, err = table.loopIDs(ctx, team.Name); err != nil {
+		if err := table.readMembers(ctx, team); err != nil {
 			return nil, err
 		}
 	}
@@ -41,49 +52,92 @@ func (table teams) List(ctx context.Context) ([]*store.Team, error) {
 }
 
 func (table teams) Get(ctx context.Context, name string) (*store.Team, error) {
-	var team store.Team
-	err := table.db.QueryRowContext(ctx, `SELECT name, description, created_at FROM teams WHERE name=?`, name).
-		Scan(&team.Name, &team.Description, &team.CreatedAt)
+	team, err := scanTeam(table.db.QueryRowContext(ctx, `SELECT `+teamCols+` FROM teams WHERE name=?`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
-	if team.LoopIDs, err = table.loopIDs(ctx, name); err != nil {
+	if err := table.readMembers(ctx, team); err != nil {
 		return nil, err
 	}
-	return &team, nil
+	return team, nil
 }
 
-func (table teams) loopIDs(ctx context.Context, name string) ([]string, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT id FROM loops WHERE team=? ORDER BY id`, name)
+// readMembers fills in the team's loops and channels.
+func (table teams) readMembers(ctx context.Context, team *store.Team) error {
+	var err error
+	if team.LoopIDs, err = table.names(ctx, `SELECT id FROM loops WHERE team=? ORDER BY id`, team.Name); err != nil {
+		return err
+	}
+	team.Channels, err = table.names(ctx, `SELECT name FROM channels WHERE team=? ORDER BY name`, team.Name)
+	return err
+}
+
+func (table teams) names(ctx context.Context, query, team string) ([]string, error) {
+	rows, err := table.db.QueryContext(ctx, query, team)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	ids := []string{}
+	names := []string{}
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var name string
+		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		names = append(names, name)
 	}
-	return ids, rows.Err()
+	return names, rows.Err()
 }
 
 func (table teams) Create(ctx context.Context, team *store.Team) error {
-	_, err := table.db.ExecContext(ctx, `INSERT INTO teams (name, description, created_at) VALUES (?,?,?)`,
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at) VALUES (?,?,?)`,
 		team.Name, team.Description, team.CreatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
-	team.LoopIDs = []string{}
-	return err
+	if err != nil {
+		return err
+	}
+	team.LoopIDs, team.Channels = []string{}, []string{}
+	if team.HomeChannel != "" {
+		_, err := tx.ExecContext(ctx, `INSERT INTO channels (name, created_at, team) VALUES (?,?,?)`,
+			team.HomeChannel, team.CreatedAt, team.Name)
+		if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+			return store.ErrChannelTaken
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=? WHERE name=?`, team.HomeChannel, team.Name); err != nil {
+			return err
+		}
+		team.Channels = []string{team.HomeChannel}
+	}
+	return tx.Commit()
 }
 
 func (table teams) Edit(ctx context.Context, name string, edit store.TeamEdit) (*store.Team, error) {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var home string
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(home_channel, '') FROM teams WHERE name=?`, name).Scan(&home)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
 	var sets []string
 	var args []any
 	if edit.Name != nil {
@@ -92,36 +146,118 @@ func (table teams) Edit(ctx context.Context, name string, edit store.TeamEdit) (
 	if edit.Description != nil {
 		sets, args = append(sets, "description=?"), append(args, *edit.Description)
 	}
-	if len(sets) == 0 {
-		return table.Get(ctx, name)
-	}
-	// loops.team follows the rename by ON UPDATE CASCADE
-	res, err := table.db.ExecContext(ctx, `UPDATE teams SET `+strings.Join(sets, ", ")+` WHERE name=?`, append(args, name)...)
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return nil, store.ErrDuplicate
-	}
-	if err != nil {
-		return nil, err
-	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
-		return nil, store.ErrNotFound
+	if len(sets) > 0 {
+		// loops.team and channels.team follow a rename by ON UPDATE CASCADE
+		_, err := tx.ExecContext(ctx, `UPDATE teams SET `+strings.Join(sets, ", ")+` WHERE name=?`, append(args, name)...)
+		if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+			return nil, store.ErrDuplicate
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	if edit.Name != nil {
 		name = *edit.Name
 	}
+	// Naming the home it already has changes nothing, so a loop the
+	// operator took out of it stays out.
+	if edit.HomeChannel != nil && *edit.HomeChannel != home {
+		if err := setHome(ctx, tx, name, *edit.HomeChannel, edit.At); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	return table.Get(ctx, name)
 }
 
-func (table teams) Delete(ctx context.Context, name string) error {
-	res, err := table.db.ExecContext(ctx, `DELETE FROM teams WHERE name=?`, name)
-	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
-		return store.ErrTeamHasLoops
+// setHome makes one of the team's channels its home and puts every loop of
+// the team in it, or with "" leaves the team with none.
+func setHome(ctx context.Context, tx *sql.Tx, team, channel string, at int64) error {
+	if channel == "" {
+		_, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=NULL WHERE name=?`, team)
+		return err
+	}
+	var owner string
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE(team, '') FROM channels WHERE name=?`, channel).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && owner != team {
+		return store.ErrChannelNotInTeam
 	}
 	if err != nil {
 		return err
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=? WHERE name=?`, channel, team); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
+		SELECT ?, id, ? FROM loops WHERE team=? ON CONFLICT (channel, loop_id) DO NOTHING`, channel, at, team)
+	return err
+}
+
+func (table teams) Delete(ctx context.Context, name string) error {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var exists, loops int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), (SELECT COUNT(*) FROM loops WHERE team=?1) FROM teams WHERE name=?1`, name).
+		Scan(&exists, &loops); err != nil {
+		return err
+	}
+	switch {
+	case exists == 0:
 		return store.ErrNotFound
+	case loops > 0:
+		return store.ErrTeamHasLoops
+	}
+	// Its channels go as a deleted channel does: membership with them,
+	// rooms unbound, messages keeping the name.
+	if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0
+		WHERE channel IN (SELECT name FROM channels WHERE team=?)`, name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM channels WHERE team=?`, name); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `DELETE FROM teams WHERE name=?`, name)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrTeamHasLoops // a loop joined it meanwhile
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// execer is a transaction or the database itself.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// moveTeamChannels follows a loop from one team to another: out of every
+// channel of the team it left, its rooms there unbound as leaving a channel
+// does, and into the home channel of the team it joined, if it has one
+// (ADR-0066). "" is no team on either side.
+func moveTeamChannels(ctx context.Context, tx execer, loopID, left, joined string, at int64) error {
+	if left != "" {
+		const leftChannels = `SELECT name FROM channels WHERE team=?`
+		if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0
+			WHERE loop_id=? AND channel IN (`+leftChannels+`)`, loopID, left); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM channel_loops
+			WHERE loop_id=? AND channel IN (`+leftChannels+`)`, loopID, left); err != nil {
+			return err
+		}
+	}
+	if joined != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
+			SELECT home_channel, ?, ? FROM teams WHERE name=? AND home_channel IS NOT NULL
+			ON CONFLICT (channel, loop_id) DO NOTHING`, loopID, at, joined); err != nil {
+			return err
+		}
 	}
 	return nil
 }

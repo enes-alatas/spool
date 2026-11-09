@@ -177,12 +177,12 @@ func TestMessageChannel(t *testing.T) {
 // unmigrate0033 returns the database to its shape before channels, so the
 // shipped migration can be replayed over an existing fleet.
 func unmigrate0033(db *DB) error {
-	for _, stmt := range []string{
+	for _, stmt := range append(undo0079,
 		`DROP TABLE channel_loops`,
 		`DROP TABLE channels`,
 		`ALTER TABLE messages DROP COLUMN channel`,
 		`DELETE FROM schema_migrations WHERE version='0033_channels.sql'`,
-	} {
+	) {
 		if _, err := db.db.Exec(stmt); err != nil {
 			return err
 		}
