@@ -633,9 +633,10 @@ func (loopRecord *Loop) OwnerDMReady() bool {
 	return false
 }
 
-// FleetRule is one operator-defined rule every loop follows. Enabled rules
-// render into every loop's system prompt as the FLEET RULES section, ahead of
-// its mission (ADR-0024). A rule's text is data; only the section is contract.
+// FleetRule is one operator-defined rule the loops in its scope follow.
+// Enabled rules render into the system prompt of every loop in scope as the
+// FLEET RULES section, ahead of its mission (ADR-0024). A rule's text is
+// data; only the section is contract.
 type FleetRule struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -643,6 +644,9 @@ type FleetRule struct {
 	Enabled   bool   `json:"enabled"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
+	// Team is the team whose loops the rule binds, "" for a hub rule, which
+	// binds every loop (ADR-0066). Deleting the team deletes it.
+	Team string `json:"team"`
 }
 
 // ModelResolution is what a model name runs as on this hub (ADR-0033): a

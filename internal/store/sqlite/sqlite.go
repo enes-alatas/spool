@@ -1756,12 +1756,21 @@ func (table settings) sealIfSecret(key, value string) string {
 
 type fleetRules struct{ db *sql.DB }
 
-const ruleCols = `id, title, body, enabled, created_at, updated_at`
+// teamRefusal answers a write that named a team the hub doesn't have as
+// ErrNotFound: the API checks the team first, and the key is the backstop.
+func teamRefusal(err error) error {
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound
+	}
+	return err
+}
+
+const ruleCols = `id, title, body, enabled, created_at, updated_at, COALESCE(team, '')`
 
 func scanRule(row interface{ Scan(...any) error }) (*store.FleetRule, error) {
 	var rule store.FleetRule
 	var enabled int
-	if err := row.Scan(&rule.ID, &rule.Title, &rule.Body, &enabled, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+	if err := row.Scan(&rule.ID, &rule.Title, &rule.Body, &enabled, &rule.CreatedAt, &rule.UpdatedAt, &rule.Team); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -1772,16 +1781,16 @@ func scanRule(row interface{ Scan(...any) error }) (*store.FleetRule, error) {
 }
 
 func (table fleetRules) Create(ctx context.Context, rule *store.FleetRule) error {
-	_, err := table.db.ExecContext(ctx, `INSERT INTO fleet_rules (`+ruleCols+`) VALUES (?,?,?,?,?,?)`,
-		rule.ID, rule.Title, rule.Body, boolInt(rule.Enabled), rule.CreatedAt, rule.UpdatedAt)
-	return err
+	_, err := table.db.ExecContext(ctx, `INSERT INTO fleet_rules (id, title, body, enabled, created_at, updated_at, team) VALUES (?,?,?,?,?,?,NULLIF(?, ''))`,
+		rule.ID, rule.Title, rule.Body, boolInt(rule.Enabled), rule.CreatedAt, rule.UpdatedAt, rule.Team)
+	return teamRefusal(err)
 }
 
 func (table fleetRules) Update(ctx context.Context, rule *store.FleetRule) error {
-	res, err := table.db.ExecContext(ctx, `UPDATE fleet_rules SET title=?, body=?, enabled=?, updated_at=? WHERE id=?`,
-		rule.Title, rule.Body, boolInt(rule.Enabled), rule.UpdatedAt, rule.ID)
+	res, err := table.db.ExecContext(ctx, `UPDATE fleet_rules SET title=?, body=?, enabled=?, updated_at=?, team=NULLIF(?, '') WHERE id=?`,
+		rule.Title, rule.Body, boolInt(rule.Enabled), rule.UpdatedAt, rule.Team, rule.ID)
 	if err != nil {
-		return err
+		return teamRefusal(err)
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		return store.ErrNotFound
