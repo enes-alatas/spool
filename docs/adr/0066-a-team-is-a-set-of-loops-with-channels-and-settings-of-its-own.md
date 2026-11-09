@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436)
 
 ## Context
 
@@ -217,6 +217,27 @@ channel, item 1 is amended with it.
    - **`DELETE /api/teams/{name}`** deletes the team's channels with it,
      as the item says. Their history is kept and their rooms are
      unbound.
+
+   **Amendment (2026-11-09, #1436): the fields of fleet rules by scope.**
+   - **A rule** gains `team`: the team's name, `""` for a hub rule. Every
+     rule made before it is a hub rule. `POST /api/rules` takes `team`,
+     absent meaning the hub. `PATCH` may take it to move a rule between
+     the hub and a team. A team the hub doesn't have is 404
+     `team_not_found`. `GET /api/rules` lists every rule, of every
+     scope, in creation order.
+   - **The budget** keeps `section_chars` for the section a loop in no
+     team is shown, which is the hub's rules alone. It gains `teams`, one
+     `{team, section_chars}` per team by name: the section that team's
+     loops are shown. A write over the cap is 400 `rules_too_large`, as
+     before, and its message names whose section it would push over.
+   - **The line** beside the mission line reads "Rule N is team T's;
+     where it conflicts with a hub rule, the hub rule wins.", or "Rules
+     N–M are team T's; where one conflicts …" for more than one. It
+     appears only when the loop is shown a team rule, so a loop in no
+     team, or in a team with no enabled rule, is shown the section byte
+     for byte as before.
+   - **A rename** carries the team's rules to the new name, and deleting
+     the team deletes them, both by the store's foreign key.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;

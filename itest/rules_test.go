@@ -14,6 +14,7 @@ type fleetRule struct {
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 	Enabled bool   `json:"enabled"`
+	Team    string `json:"team"`
 }
 
 type rulesBudget struct {
@@ -21,6 +22,10 @@ type rulesBudget struct {
 	SectionCharsMax int `json:"section_chars_max"`
 	TitleCharsMax   int `json:"title_chars_max"`
 	BodyCharsMax    int `json:"body_chars_max"`
+	Teams           []struct {
+		Team         string `json:"team"`
+		SectionChars int    `json:"section_chars"`
+	} `json:"teams"`
 }
 
 type rulesView struct {

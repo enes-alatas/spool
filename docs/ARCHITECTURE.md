@@ -35,7 +35,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 |---|---|
 | **loop** | The product's core noun: a mission-driven agent on a persistent Claude Code session. Never "bot" (reserved for chat-platform bot identities) or "agent" in user-facing text. |
 | **mission** | The loop's standing purpose, set at creation, restated in its system prompt. |
-| **fleet rule** | An operator-defined rule every loop follows. Enabled rules render into every system prompt as the `FLEET RULES` section ahead of the mission, and win where the two conflict (ADR-0024). |
+| **fleet rule** | An operator-defined rule the loops in its scope follow: a hub rule binds every loop, a team's binds that team's loops (ADR-0066). Enabled rules render into the system prompt as the `FLEET RULES` section ahead of the mission, the hub's then the team's, and win where they conflict with the mission; a hub rule wins over a team's (ADR-0024). |
 | **workspace** | The loop's working directory (`none` \| plain dir \| git worktree). A loop-level concept only. |
 | **org** | The tenant: the people sharing a hub's loops, teams, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
 | **team** | A named set of loops on one hub, with channels and settings of its own: a loop is in at most one team or none, a team channel takes only the team's loops, and a setting resolves from the loop to its team to the hub, "all" meaning the hub. A team is not a tenant and has no people of its own; the fleet stays every loop, and the fleet channel stays `group`. Being built under #1289. (ADR-0066) |

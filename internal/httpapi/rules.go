@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,19 +31,65 @@ const (
 // with every read and write so a client can show the wall while the
 // operator is typing instead of a 400 after the save.
 type rulesBudget struct {
+	// SectionChars is the section a loop in no team is shown: the hub's
+	// rules alone.
 	SectionChars    int `json:"section_chars"`
 	SectionCharsMax int `json:"section_chars_max"`
 	TitleCharsMax   int `json:"title_chars_max"`
 	BodyCharsMax    int `json:"body_chars_max"`
+	// Teams is the section each team's loops are shown, the hub's rules
+	// then the team's, one entry per team by name (ADR-0066).
+	Teams []teamBudget `json:"teams"`
 }
 
-func budgetOf(rules []*store.FleetRule) rulesBudget {
-	return rulesBudget{
-		SectionChars:    utf8.RuneCountInString(loop.FleetRulesSection(rules)),
+type teamBudget struct {
+	Team         string `json:"team"`
+	SectionChars int    `json:"section_chars"`
+}
+
+// budgetOf measures the section each scope's loops are shown: a loop in no
+// team, and a loop in each of teams.
+func budgetOf(rules []*store.FleetRule, teams []string) rulesBudget {
+	budget := rulesBudget{
+		SectionChars:    sectionChars(rules, ""),
 		SectionCharsMax: maxRulesSectionChars,
 		TitleCharsMax:   maxRuleTitleChars,
 		BodyCharsMax:    maxRuleBodyChars,
+		Teams:           make([]teamBudget, 0, len(teams)),
 	}
+	for _, team := range teams {
+		budget.Teams = append(budget.Teams, teamBudget{Team: team, SectionChars: sectionChars(rules, team)})
+	}
+	return budget
+}
+
+// sectionChars is the length of the section a loop in team is shown, ""
+// for a loop in no team.
+func sectionChars(rules []*store.FleetRule, team string) int {
+	return utf8.RuneCountInString(loop.FleetRulesSection(loop.RulesFor(team, rules)))
+}
+
+// teamNames lists the hub's teams by name, as the budget measures them.
+func (server *Server) teamNames(ctx context.Context) ([]string, error) {
+	teams, err := server.Store.Teams().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(teams))
+	for _, team := range teams {
+		names = append(names, team.Name)
+	}
+	return names, nil
+}
+
+// ruleTeamRefused refuses a rule scoped to a team the hub doesn't have,
+// and reports whether it did.
+func (server *Server) ruleTeamRefused(w http.ResponseWriter, team string, teams []string) bool {
+	if team == "" || slices.Contains(teams, team) {
+		return false
+	}
+	server.jsonErrCode(w, 404, codeTeamNotFound, "team %q not found", team)
+	return true
 }
 
 type rulesView struct {
@@ -65,7 +113,12 @@ func (server *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 	if rules == nil {
 		rules = []*store.FleetRule{}
 	}
-	writeJSON(w, 200, rulesView{Rules: rules, Budget: budgetOf(rules)})
+	teams, err := server.teamNames(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, rulesView{Rules: rules, Budget: budgetOf(rules, teams)})
 }
 
 type ruleReq struct {
@@ -74,6 +127,9 @@ type ruleReq struct {
 	// Enabled left out on create means live: a rule is written to be
 	// followed. On PATCH, nil leaves it unchanged like the other fields.
 	Enabled *bool `json:"enabled"`
+	// Team scopes the rule to one team's loops: "" or absent on create is
+	// a hub rule, and nil on PATCH leaves the scope (ADR-0066).
+	Team *string `json:"team"`
 }
 
 func (server *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +149,9 @@ func (server *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		rule.Enabled = *req.Enabled
 	}
+	if req.Team != nil {
+		rule.Team = *req.Team
+	}
 	if err := validateRuleText(rule.Title, rule.Body); err != nil {
 		server.jsonErr(w, 400, "%v", err)
 		return
@@ -105,15 +164,27 @@ func (server *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	proposed := append(append([]*store.FleetRule{}, current...), rule)
-	if !server.withinRulesBudget(w, current, proposed) {
-		return
-	}
-	if err := server.Store.FleetRules().Create(r.Context(), rule); err != nil {
+	teams, err := server.teamNames(r.Context())
+	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	writeJSON(w, 201, ruleWriteView{Rule: rule, Budget: budgetOf(proposed)})
+	if server.ruleTeamRefused(w, rule.Team, teams) {
+		return
+	}
+	proposed := append(append([]*store.FleetRule{}, current...), rule)
+	if !server.withinRulesBudget(w, current, proposed, teams) {
+		return
+	}
+	if err := server.Store.FleetRules().Create(r.Context(), rule); err != nil {
+		if errors.Is(err, store.ErrNotFound) { // the team went since it was read
+			server.jsonErrCode(w, 404, codeTeamNotFound, "team %q not found", rule.Team)
+			return
+		}
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 201, ruleWriteView{Rule: rule, Budget: budgetOf(proposed, teams)})
 }
 
 func (server *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
@@ -154,11 +225,22 @@ func (server *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		rule.Enabled = *req.Enabled
 	}
+	if req.Team != nil {
+		rule.Team = *req.Team
+	}
 	if err := validateRuleText(rule.Title, rule.Body); err != nil {
 		server.jsonErr(w, 400, "%v", err)
 		return
 	}
-	if !server.withinRulesBudget(w, current, proposed) {
+	teams, err := server.teamNames(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if server.ruleTeamRefused(w, rule.Team, teams) {
+		return
+	}
+	if !server.withinRulesBudget(w, current, proposed, teams) {
 		return
 	}
 	rule.UpdatedAt = time.Now().UnixMilli()
@@ -166,7 +248,7 @@ func (server *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 		server.storeErr(w, err, "rule")
 		return
 	}
-	writeJSON(w, 200, ruleWriteView{Rule: rule, Budget: budgetOf(proposed)})
+	writeJSON(w, 200, ruleWriteView{Rule: rule, Budget: budgetOf(proposed, teams)})
 }
 
 func (server *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
@@ -201,14 +283,27 @@ func validateRuleText(title, body string) error {
 	return nil
 }
 
-// withinRulesBudget applies the section cap to a proposed rule set: a write
-// that leaves the rendered section over the cap and larger than it was is
-// rejected with the budget it would have produced. A write that shrinks an
-// oversized section always goes through, so an operator is never locked out
-// of the fix. Callers hold rulesMu so the read-check-write cannot interleave.
-func (server *Server) withinRulesBudget(w http.ResponseWriter, current, proposed []*store.FleetRule) bool {
-	before, after := budgetOf(current), budgetOf(proposed)
-	if after.SectionChars <= maxRulesSectionChars || after.SectionChars <= before.SectionChars {
+// withinRulesBudget applies the section cap to a proposed rule set, for
+// every section a loop is shown: a loop in no team's, and each team's
+// (ADR-0066). So a hub rule is checked against every team, and a
+// team rule, which changes its own team's section alone, against that one.
+// A write that leaves a section over the cap and larger than it was is
+// rejected with the budget it would have produced, naming whose section it
+// is. A write that shrinks an oversized section always goes through, so an
+// operator is never locked out of the fix. Callers hold rulesMu so the
+// read-check-write cannot interleave.
+func (server *Server) withinRulesBudget(w http.ResponseWriter, current, proposed []*store.FleetRule, teams []string) bool {
+	before, after := budgetOf(current, teams), budgetOf(proposed, teams)
+	over, whose := 0, "a loop in no team"
+	if after.SectionChars > maxRulesSectionChars && after.SectionChars > before.SectionChars {
+		over = after.SectionChars
+	}
+	for i, team := range after.Teams {
+		if over == 0 && team.SectionChars > maxRulesSectionChars && team.SectionChars > before.Teams[i].SectionChars {
+			over, whose = team.SectionChars, fmt.Sprintf("team %s's loops", team.Team)
+		}
+	}
+	if over == 0 {
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -218,8 +313,8 @@ func (server *Server) withinRulesBudget(w http.ResponseWriter, current, proposed
 		Code   string      `json:"code"`
 		Budget rulesBudget `json:"budget"`
 	}{
-		Error: fmt.Sprintf("enabled rules would render to %d chars, over the %d-char section cap",
-			after.SectionChars, maxRulesSectionChars),
+		Error: fmt.Sprintf("enabled rules would render to %d chars for %s, over the %d-char section cap",
+			over, whose, maxRulesSectionChars),
 		Code:   codeRulesTooLarge,
 		Budget: after,
 	})

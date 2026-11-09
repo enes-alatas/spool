@@ -260,14 +260,33 @@ func (conversations Conversations) askDirectly() string {
 	return "in control_room"
 }
 
+// RulesFor is the rules a loop in team is shown (ADR-0066): the hub's,
+// then team's, each in the order given. A loop in no team, "", is shown
+// the hub's alone, and no other team's rule reaches it.
+func RulesFor(team string, rules []*store.FleetRule) []*store.FleetRule {
+	var hub, own []*store.FleetRule
+	for _, rule := range rules {
+		switch {
+		case rule.Team == "":
+			hub = append(hub, rule)
+		case team != "" && rule.Team == team:
+			own = append(own, rule)
+		}
+	}
+	return append(hub, own...)
+}
+
 // FleetRulesSection renders the enabled fleet rules as the FLEET RULES
 // section of a system prompt (ADR-0024), or "" when none is enabled. Rules
-// keep the order given — creation order from the store — so the section is
-// identical between wakes. The API measures this exact text against the
-// section cap, so the budget an operator sees is the budget the prompt pays.
+// keep the order given — creation order from the store, through RulesFor —
+// so the section is identical between wakes. The API measures this exact
+// text against the section cap, so the budget an operator sees is the
+// budget the prompt pays. When a team's rules follow the hub's, one line
+// names them and says a hub rule wins over them (ADR-0066); a
+// section of hub rules alone is unchanged.
 func FleetRulesSection(rules []*store.FleetRule) string {
 	var text strings.Builder
-	count := 0
+	count, firstTeamRule, team := 0, 0, ""
 	for _, rule := range rules {
 		if !rule.Enabled {
 			continue
@@ -276,6 +295,9 @@ func FleetRulesSection(rules []*store.FleetRule) string {
 			text.WriteString("FLEET RULES\n")
 		}
 		count++
+		if rule.Team != "" && firstTeamRule == 0 {
+			firstTeamRule, team = count, rule.Team
+		}
 		fmt.Fprintf(&text, "%d. %s\n", count, strings.TrimSpace(rule.Title))
 		for _, line := range strings.Split(strings.TrimSpace(rule.Body), "\n") {
 			fmt.Fprintf(&text, "   %s\n", line)
@@ -285,6 +307,13 @@ func FleetRulesSection(rules []*store.FleetRule) string {
 		return ""
 	}
 	text.WriteString("Where a fleet rule and your mission conflict, the fleet rule wins.")
+	switch firstTeamRule {
+	case 0:
+	case count:
+		fmt.Fprintf(&text, "\nRule %d is team %s's; where it conflicts with a hub rule, the hub rule wins.", count, team)
+	default:
+		fmt.Fprintf(&text, "\nRules %d–%d are team %s's; where one conflicts with a hub rule, the hub rule wins.", firstTeamRule, count, team)
+	}
 	return text.String()
 }
 
@@ -469,7 +498,7 @@ func missionSection(loopRecord *store.Loop) string {
 func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
 	var text strings.Builder
 	fmt.Fprintf(&text, "You are %q, a long-running autonomous loop managed by Spool.\n\n", loopRecord.Name)
-	if section := FleetRulesSection(rules); section != "" {
+	if section := FleetRulesSection(RulesFor(loopRecord.Team, rules)); section != "" {
 		text.WriteString(section + "\n\n")
 	}
 	text.WriteString(missionSection(loopRecord) + "\n\n")
@@ -770,7 +799,7 @@ func StandingInstructionsPreamble(loopRecord *store.Loop, cat Catalog, rules []*
 		"parts of the prompt may have changed too and are not repeated here; the\n" +
 		"whole of it catches up when your context next rotates.\n\n")
 	text.WriteString(missionSection(loopRecord) + "\n\n")
-	if section := FleetRulesSection(rules); section != "" {
+	if section := FleetRulesSection(RulesFor(loopRecord.Team, rules)); section != "" {
 		text.WriteString(section + "\n\n")
 	} else {
 		text.WriteString("FLEET RULES\nThere are no fleet rules in force.\n\n")

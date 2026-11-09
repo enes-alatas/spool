@@ -108,6 +108,51 @@ func TestSystemPromptFleetRules(t *testing.T) {
 	}
 }
 
+// A loop is shown the hub's rules, then its own team's (ADR-0066,
+// #1436), and one line names the team's and says a hub rule wins over
+// them. Another team's rule never reaches it, and a loop in no team, or
+// in a team with no enabled rule, is shown exactly the hub's section.
+func TestSystemPromptTeamRules(t *testing.T) {
+	rules := []*store.FleetRule{
+		{Title: "red first", Body: "red body", Enabled: true, Team: "red"},
+		{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true},
+		{Title: "blue only", Body: "blue body", Enabled: true, Team: "blue"},
+		{Title: "red second", Body: "red again", Enabled: true, Team: "red"},
+		{Title: "red dormant", Body: "off", Team: "red"},
+	}
+	hub := "FLEET RULES\n1. sign your work\n   End every artifact with your name.\n" +
+		"Where a fleet rule and your mission conflict, the fleet rule wins."
+
+	red := SystemPrompt(&store.Loop{Name: "r", Mission: "m", Team: "red"}, Catalog{}, rules, testVersion)
+	wantRed := "FLEET RULES\n1. sign your work\n   End every artifact with your name.\n" +
+		"2. red first\n   red body\n3. red second\n   red again\n" +
+		"Where a fleet rule and your mission conflict, the fleet rule wins.\n" +
+		"Rules 2–3 are team red's; where one conflicts with a hub rule, the hub rule wins.\n\nMISSION\n"
+	if !strings.Contains(red, wantRed) {
+		t.Errorf("team red's loop was shown:\n%s\nwant:\n%s", red, wantRed)
+	}
+
+	wantBlue := "FLEET RULES\n1. sign your work\n   End every artifact with your name.\n" +
+		"2. blue only\n   blue body\n" +
+		"Where a fleet rule and your mission conflict, the fleet rule wins.\n" +
+		"Rule 2 is team blue's; where it conflicts with a hub rule, the hub rule wins."
+	if got := FleetRulesSection(RulesFor("blue", rules)); got != wantBlue {
+		t.Errorf("team blue's section =\n%s\nwant\n%s", got, wantBlue)
+	}
+
+	for _, team := range []string{"", "green"} {
+		if got := FleetRulesSection(RulesFor(team, rules)); got != hub {
+			t.Errorf("a loop in team %q was shown\n%s\nwant the hub's section alone\n%s", team, got, hub)
+		}
+	}
+	onlyRed := []*store.FleetRule{{Title: "red first", Body: "red body", Enabled: true, Team: "red"}}
+	if got, want := FleetRulesSection(RulesFor("red", onlyRed)), "FLEET RULES\n1. red first\n   red body\n"+
+		"Where a fleet rule and your mission conflict, the fleet rule wins.\n"+
+		"Rule 1 is team red's; where it conflicts with a hub rule, the hub rule wins."; got != want {
+		t.Errorf("a team's rules with no hub rule =\n%s\nwant\n%s", got, want)
+	}
+}
+
 // TestRotationEnvelope pins the handoff request of the rotation contract
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
