@@ -15,11 +15,11 @@ import (
 // channels of a team are read from there.
 type teams struct{ db *sql.DB }
 
-const teamCols = `name, description, created_at, COALESCE(home_channel, '')`
+const teamCols = `name, description, created_at, COALESCE(home_channel, ''), COALESCE(claude_login, '')`
 
 func scanTeam(row interface{ Scan(...any) error }) (*store.Team, error) {
 	var team store.Team
-	if err := row.Scan(&team.Name, &team.Description, &team.CreatedAt, &team.HomeChannel); err != nil {
+	if err := row.Scan(&team.Name, &team.Description, &team.CreatedAt, &team.HomeChannel, &team.ClaudeLogin); err != nil {
 		return nil, err
 	}
 	return &team, nil
@@ -98,8 +98,11 @@ func (table teams) Create(ctx context.Context, team *store.Team) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at) VALUES (?,?,?)`,
-		team.Name, team.Description, team.CreatedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login) VALUES (?,?,?,NULLIF(?, ''))`,
+		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound // no Claude login by that name
+	}
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -146,9 +149,15 @@ func (table teams) Edit(ctx context.Context, name string, edit store.TeamEdit) (
 	if edit.Description != nil {
 		sets, args = append(sets, "description=?"), append(args, *edit.Description)
 	}
+	if edit.ClaudeLogin != nil {
+		sets, args = append(sets, "claude_login=NULLIF(?, '')"), append(args, *edit.ClaudeLogin)
+	}
 	if len(sets) > 0 {
 		// loops.team and channels.team follow a rename by ON UPDATE CASCADE
 		_, err := tx.ExecContext(ctx, `UPDATE teams SET `+strings.Join(sets, ", ")+` WHERE name=?`, append(args, name)...)
+		if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+			return nil, store.ErrNotFound // no Claude login by that name
+		}
 		if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 			return nil, store.ErrDuplicate
 		}

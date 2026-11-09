@@ -110,8 +110,8 @@ const (
 // through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
-// DefaultClaudeLogin names the default Claude login: the one a loop that
-// names no login runs on, and the one cloud loops run on (ADR-0060). The
+// DefaultClaudeLogin names the default Claude login: the one a loop runs
+// on when neither it nor its team names one (ADR-0060, ADR-0066). The
 // upgrade made today's sign-in a login of this name.
 const DefaultClaudeLogin = "default"
 
@@ -214,7 +214,8 @@ type ClaudeLoginStore interface {
 	// SetPlanCapResumedUntil stores when the login's Resume now stops
 	// holding its plan cap off. ErrNotFound for a name the hub doesn't hold.
 	SetPlanCapResumedUntil(ctx context.Context, name string, until int64) error
-	// Delete removes a login; ErrNotFound for a name the hub doesn't hold.
+	// Delete removes a login; ErrNotFound for a name the hub doesn't hold,
+	// ErrLoginNamedByTeam while a team names it.
 	Delete(ctx context.Context, name string) error
 }
 
@@ -298,7 +299,7 @@ const (
 )
 
 // SettingPlanUsage holds the default Claude login's plan usage, a
-// PlanUsageRecord as JSON: the usage of every loop that names no login.
+// PlanUsageRecord as JSON: the usage of every loop on the default login.
 // Unset until a first observation. Another login keeps its own on its
 // ClaudeLogin (ADR-0060).
 const SettingPlanUsage = "plan_usage"
@@ -447,9 +448,10 @@ type Loop struct {
 	Subagents       string `json:"subagents"` // allowed|off
 	// DailyCapUSD is the loop's own daily USD cap, 0 for none (#652).
 	DailyCapUSD float64 `json:"daily_cap_usd"`
-	// ClaudeLogin names the Claude login a contained loop runs on, "" for
-	// the default (ADR-0060). A bare loop runs on the host's own login and a
-	// cloud loop on the default, so theirs is always "".
+	// ClaudeLogin is the Claude login the loop names as its own, "" for
+	// none; Login says which it runs on then, its team's or the default
+	// (ADR-0060, ADR-0066). A bare loop runs on the host's own login, so it
+	// names none.
 	ClaudeLogin string `json:"claude_login"`
 	// A cloud loop's GitHub repos and claude.ai environment (ADR-0061): its
 	// sessions start from CloudRepo's CloudBranch in the environment
@@ -590,6 +592,36 @@ type Loop struct {
 	// Team is the team the loop is in, "" for none (ADR-0066). The operator
 	// puts it in or takes it out; a loop never chooses its own.
 	Team string `json:"team"`
+	// TeamClaudeLogin is the Claude login the loop's team names, "" for
+	// none: read with the loop, never written through it (ADR-0066).
+	TeamClaudeLogin string `json:"-"`
+}
+
+// Where a loop's Claude login comes from (ADR-0060, ADR-0066).
+const (
+	LoginFromLoop = "loop" // the loop names its own
+	LoginFromTeam = "team" // its team's, a contained loop naming none
+	LoginFromHub  = "hub"  // the hub's default
+	LoginFromHost = "host" // a bare loop, on this machine's own login
+)
+
+// Login is the Claude login the loop runs on, "" for the hub's default,
+// and where it comes from: the one it names, on any runtime, so the plan
+// cap and usage follow a row as it is stored. One that names none runs on
+// its team's if it is contained. A bare loop then runs on the host's own
+// login. A cloud loop does not inherit one: its move to another login
+// waits for it to stop and needs an environment of that account
+// (ADR-0061), which a team edit can't wait for.
+func (loopRecord *Loop) Login() (login, from string) {
+	switch {
+	case loopRecord.ClaudeLogin != "":
+		return loopRecord.ClaudeLogin, LoginFromLoop
+	case loopRecord.Runtime == RuntimeBare:
+		return "", LoginFromHost
+	case loopRecord.Runtime == RuntimeDocker && loopRecord.TeamClaudeLogin != "":
+		return loopRecord.TeamClaudeLogin, LoginFromTeam
+	}
+	return "", LoginFromHub
 }
 
 // Surface names the platform the loop has an identity on, or "" when it has
@@ -1841,6 +1873,9 @@ type Team struct {
 	CreatedAt   int64
 	// LoopIDs are the loops in the team, in no promised order.
 	LoopIDs []string
+	// ClaudeLogin is the Claude login the team's contained loops run on
+	// when they name none, "" for the hub's default (ADR-0066).
+	ClaudeLogin string
 	// HomeChannel is the team's own channel, which every loop put in the
 	// team joins; "" for none, as the upgrade's default team has.
 	HomeChannel string
@@ -1858,6 +1893,8 @@ type TeamEdit struct {
 	// loop of the team in it, or with "" leaves the team with none and the
 	// channel still the team's.
 	HomeChannel *string
+	// ClaudeLogin sets the team's default Claude login, "" for none.
+	ClaudeLogin *string
 	// At stamps the loops a new home channel takes in.
 	At int64
 }
@@ -1872,12 +1909,14 @@ type TeamStore interface {
 	Get(ctx context.Context, name string) (*Team, error)
 	// Create adds a team with no loops in it, and with team.HomeChannel
 	// set, that channel made as its home in the same write; ErrDuplicate if
-	// the team's name is taken, ErrChannelTaken if the channel's is.
+	// the team's name is taken, ErrChannelTaken if the channel's is,
+	// ErrNotFound if team.ClaudeLogin names no login the hub holds.
 	Create(ctx context.Context, team *Team) error
 	// Edit writes what edit names and returns the team as it stands
 	// afterwards, under its new name if it was renamed; ErrNotFound if
 	// there is none by that name, ErrDuplicate if the new name is taken,
 	// ErrChannelNotInTeam for a home channel that is not one of the team's.
+	// A ClaudeLogin naming no login the hub holds is ErrNotFound too.
 	Edit(ctx context.Context, name string, edit TeamEdit) (*Team, error)
 	// Delete removes a team and its channels, which keep their history and
 	// unbind their rooms as a deleted channel does; ErrNotFound if there is
@@ -2116,6 +2155,9 @@ const (
 	// ErrChannelTaken refuses a team whose home channel would take a
 	// channel name already in use.
 	ErrChannelTaken = sentinelError("store: channel name taken")
+	// ErrLoginNamedByTeam refuses deleting a Claude login a team names as
+	// its default (ADR-0066).
+	ErrLoginNamedByTeam = sentinelError("store: Claude login named by a team")
 	// ErrChannelInOtherTeam refuses putting a loop in a team's channel
 	// when the loop is not in that team: a team's channels are kept to its
 	// loops (ADR-0066).

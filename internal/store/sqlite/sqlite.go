@@ -201,7 +201,8 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
 	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
-	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by, COALESCE(team, '')`
+	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by, COALESCE(team, ''),
+	COALESCE((SELECT claude_login FROM teams WHERE teams.name=loops.team), '')`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -222,7 +223,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
-		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy, &loopRecord.Team)
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy, &loopRecord.Team, &loopRecord.TeamClaudeLogin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}

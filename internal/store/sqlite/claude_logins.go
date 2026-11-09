@@ -95,7 +95,11 @@ func (table claudeLogins) SetPlanCapResumedUntil(ctx context.Context, name strin
 }
 
 func (table claudeLogins) Delete(ctx context.Context, name string) error {
-	return table.update(ctx, `DELETE FROM claude_logins WHERE name=?`, name)
+	err := table.update(ctx, `DELETE FROM claude_logins WHERE name=?`, name)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrLoginNamedByTeam
+	}
+	return err
 }
 
 // update runs a statement on one login, ErrNotFound when it touched none.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -210,12 +211,19 @@ func TestTheUpgradeMakesTheFleetChannelTheDefaultTeam(t *testing.T) {
 
 // undo0079 are the statements that take a database back to before team
 // channels; a test unmigrating an earlier migration runs them first, so
-// the next migrate replays 0079 over the shape it rebuilt.
-var undo0079 = []string{
+// the next migrate replays 0079 over the shape it rebuilt. What came after
+// 0079 goes first.
+var undo0079 = append(slices.Clip(undo0081),
 	`DROP INDEX channels_team`,
 	`ALTER TABLE channels DROP COLUMN team`,
 	`ALTER TABLE teams DROP COLUMN home_channel`,
 	`DELETE FROM schema_migrations WHERE version='0079_team_channels.sql'`,
+)
+
+// undo0081 takes a database back to before a team named its Claude login.
+var undo0081 = []string{
+	`ALTER TABLE teams DROP COLUMN claude_login`,
+	`DELETE FROM schema_migrations WHERE version='0081_team_claude_login.sql'`,
 }
 
 // A team's channels hold only its loops: a loop joins the home channel
@@ -376,5 +384,47 @@ func TestAChannelChangesTeamOnlyWhole(t *testing.T) {
 	}
 	if _, err := db.Channels().Get(ctx, store.FleetChannel); err != nil {
 		t.Errorf("the fleet channel went with a team: %v", err)
+	}
+}
+
+// A team names a Claude login its loops read with them; a login the hub
+// doesn't hold is refused, "" clears it, and a login a team names can't
+// be deleted (ADR-0066).
+func TestATeamNamesItsClaudeLogin(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	createLoops(t, db, "l1")
+	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: "ada", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Teams().Create(ctx, &store.Team{Name: "ghost", ClaudeLogin: "nobody", CreatedAt: 1}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a team made on a login the hub doesn't hold: %v, want ErrNotFound", err)
+	}
+	if err := db.Teams().Create(ctx, &store.Team{Name: "red", ClaudeLogin: "ada", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := putInTeam(t, db, "l1", "red"); err != nil {
+		t.Fatal(err)
+	}
+	if loopRecord, err := db.Loops().Get(ctx, "l1"); err != nil || loopRecord.TeamClaudeLogin != "ada" {
+		t.Errorf("l1 in red reads its team's login as %+v, %v; want ada", loopRecord, err)
+	}
+	if err := db.ClaudeLogins().Delete(ctx, "ada"); !errors.Is(err, store.ErrLoginNamedByTeam) {
+		t.Errorf("deleting a login red names: %v, want ErrLoginNamedByTeam", err)
+	}
+
+	nobody, none := "nobody", ""
+	if _, err := db.Teams().Edit(ctx, "red", store.TeamEdit{ClaudeLogin: &nobody}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("red put on a login the hub doesn't hold: %v, want ErrNotFound", err)
+	}
+	red, err := db.Teams().Edit(ctx, "red", store.TeamEdit{ClaudeLogin: &none})
+	if err != nil || red.ClaudeLogin != "" {
+		t.Fatalf("red with its login cleared = %+v, %v", red, err)
+	}
+	if loopRecord, _ := db.Loops().Get(ctx, "l1"); loopRecord.TeamClaudeLogin != "" {
+		t.Errorf("l1 still reads red's cleared login as %q", loopRecord.TeamClaudeLogin)
+	}
+	if err := db.ClaudeLogins().Delete(ctx, "ada"); err != nil {
+		t.Errorf("deleting ada once no team names it: %v", err)
 	}
 }

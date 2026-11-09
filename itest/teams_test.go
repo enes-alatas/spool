@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -181,10 +182,17 @@ func unmigrateTeams(t *testing.T, dataDir string) {
 
 // undo0079 takes a stopped hub's database back to before team channels; a
 // test unmigrating an earlier migration runs it first, so the next start
-// replays 0079 over the shape that test rebuilt.
-var undo0079 = []string{
+// replays 0079 over the shape that test rebuilt. What came after 0079 goes
+// first.
+var undo0079 = append(slices.Clip(undo0081),
 	`DROP INDEX channels_team`,
 	`ALTER TABLE channels DROP COLUMN team`,
 	`ALTER TABLE teams DROP COLUMN home_channel`,
 	`DELETE FROM schema_migrations WHERE version='0079_team_channels.sql'`,
+)
+
+// undo0081 takes a database back to before a team named its Claude login.
+var undo0081 = []string{
+	`ALTER TABLE teams DROP COLUMN claude_login`,
+	`DELETE FROM schema_migrations WHERE version='0081_team_claude_login.sql'`,
 }
