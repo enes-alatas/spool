@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411)
 
 ## Context
 
@@ -250,6 +250,18 @@ channel, item 1 is amended with it.
 
    Each slice is a hub half and its web half (ADR-0060 item 10), and
    amends this ADR where it decides something left open here.
+
+   **Amendment (2026-11-09, #1411): the control room's teams are on the
+   Fleet page.** The operator chose this on 2026-11-09, after reviewing
+   mockups on #1411.
+   - **There is no team page, and the Fleet grouping moves up to
+     slice 1's web half.** The Fleet page shows the fleet as its
+     teams: a card per team with a circle per loop, and the loops in no
+     team in a full-width card last. An admin adds a loop to a team,
+     edits or deletes a team, and makes a new one on that page. A
+     member sees the same cards without those controls.
+   - **A loop's own page** says its team and lets an admin move it.
+   - **New loop asking for the team** stays in slice 4.
 
 ## Alternatives considered
 
