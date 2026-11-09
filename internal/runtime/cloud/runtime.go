@@ -201,6 +201,24 @@ func startFrom(spec runtime.Spec) (runtime.CloudStart, error) {
 	return source, nil
 }
 
+// checkTitle is what a setup check's session is titled on claude.ai.
+const checkTitle = "setup check"
+
+// nameArgs names a session a start makes, for claude.ai's session list,
+// which otherwise titles it by its first message (#1283): "<loop> · what",
+// where what is the loop's repo for its own sessions and checkTitle for a
+// check's. The CLI's --name sends it as the session's title, and its
+// --cloud argument stays the session's description (probed on CLI
+// 2.1.310 and 2.1.318). A start for no loop's name names nothing. The
+// name is no credential and no message: a loop's name and repo are
+// checked shapes (ADR-0061).
+func nameArgs(source runtime.CloudStart, what string) []string {
+	if source.Loop == "" {
+		return nil
+	}
+	return []string{"--name", source.Loop + " · " + what}
+}
+
 // sourceKey is what a state file keeps of the source a session started
 // from, under the account whose ID is account: a session started from
 // another repo, branch or environment, under another login, or under

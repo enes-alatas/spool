@@ -104,7 +104,8 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 
 	check := cloud.waits.awaitCheck(loopID, within)
 	defer cloud.waits.forgetCheck(loopID, check)
-	cmd := exec.Command(cli.Binary, "--cloud", message, "--permission-mode", "auto", "--settings", settings, "--ref", source.Branch, "--debug-file", run.debugLog)
+	args := append([]string{"--cloud", message, "--permission-mode", "auto", "--settings", settings, "--ref", source.Branch, "--debug-file", run.debugLog}, nameArgs(source, checkTitle)...)
+	cmd := exec.Command(cli.Binary, args...)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {

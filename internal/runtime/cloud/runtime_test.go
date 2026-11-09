@@ -227,3 +227,18 @@ func TestSessionURLIsOnlyAClaudeAISessionPage(t *testing.T) {
 		}
 	}
 }
+
+// A start names its session for claude.ai's list after the loop (#1283),
+// and a start for no loop's name names nothing.
+func TestNameArgsTitleASessionAfterTheLoop(t *testing.T) {
+	source := runtime.CloudStart{Repo: "example-org/stratus", Loop: "stratus"}
+	if got := strings.Join(nameArgs(source, source.Repo), " "); got != "--name stratus · example-org/stratus" {
+		t.Errorf("a loop's session is named by %q, want --name stratus · example-org/stratus", got)
+	}
+	if got := strings.Join(nameArgs(source, checkTitle), " "); got != "--name stratus · setup check" {
+		t.Errorf("a check's session is named by %q, want --name stratus · setup check", got)
+	}
+	if got := nameArgs(runtime.CloudStart{Repo: "example-org/stratus"}, "example-org/stratus"); got != nil {
+		t.Errorf("a start for no loop is named by %q, want nothing", got)
+	}
+}

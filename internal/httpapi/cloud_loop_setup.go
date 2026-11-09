@@ -325,7 +325,7 @@ func (server *Server) runCloudLoopCheck(ctx context.Context, loopRecord *store.L
 	defer server.cloudLoopChecks.end(loopRecord.ID)
 	login := loginKey(loopRecord.ClaudeLogin)
 	account := server.loginAccountID(ctx, login)
-	source := runtime.CloudStart{Repo: loopRecord.CloudRepo, Branch: loopRecord.CloudBranch, EnvironmentID: loopRecord.CloudEnvironmentID, Login: loopRecord.ClaudeLogin}
+	source := runtime.CloudStart{Repo: loopRecord.CloudRepo, Branch: loopRecord.CloudBranch, EnvironmentID: loopRecord.CloudEnvironmentID, Login: loopRecord.ClaudeLogin, Loop: loopRecord.Name}
 	stage, detail := server.CloudHooks.CheckSetup(ctx, loopRecord.ID, source, loop.CloudCheckMessage)
 	check := &store.CloudCheck{State: store.CloudCheckOK, CheckedAt: time.Now().UnixMilli(), Address: address, For: store.CloudCheckFor(loopRecord), Account: account}
 	// under the login's lock, which a sign-in takes too, so one landing

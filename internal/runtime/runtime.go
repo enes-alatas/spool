@@ -93,10 +93,13 @@ type Spec struct {
 // Claude login whose account the environment belongs to and the sessions
 // run under, "" for the default (ADR-0061, #1078). It carries no
 // credential: the loop's hub token is the environment's secret, and the
-// login is a name the runtime reads the account by.
+// login is a name the runtime reads the account by. Loop is the loop's
+// name, which titles the sessions a start makes on claude.ai (#1283), ""
+// for none.
 type CloudStart struct {
 	Repo, Branch, EnvironmentID string
 	Login                       string
+	Loop                        string
 }
 
 // Health is a workstation's liveness as the control room reports it.

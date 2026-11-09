@@ -1349,7 +1349,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		// secret, and runs under the account of the loop's login
 		spec.Cloud = runtime.CloudStart{
 			Repo: actor.loop.CloudRepo, Branch: actor.loop.CloudBranch, EnvironmentID: actor.loop.CloudEnvironmentID,
-			Login: actor.loop.ClaudeLogin,
+			Login: actor.loop.ClaudeLogin, Loop: actor.loop.Name,
 		}
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {

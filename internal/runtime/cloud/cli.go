@@ -669,6 +669,7 @@ func (session *cliSession) startSession(text string) error {
 		// default (#1281)
 		args = append(args, "--model", session.model)
 	}
+	args = append(args, nameArgs(session.source, session.source.Repo)...)
 	cmd := exec.Command(cli.Binary, args...)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)

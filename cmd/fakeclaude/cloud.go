@@ -163,7 +163,7 @@ func cloudMain(args []string) int {
 				i++
 				model = args[i]
 			}
-		case "--permission-mode", "--output-format":
+		case "--permission-mode", "--output-format", "--name", "-n":
 			i++
 		}
 	}
