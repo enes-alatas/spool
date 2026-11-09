@@ -148,16 +148,47 @@ ADR instead.*
   #n):**` block that only adds lines, dated in the `Amended:` header; a
   reversal is a new ADR. The exceptions and the reviewer bar: `/amend-adr`
   (`.claude/skills/amend-adr/`).
-- **Releases**: semver, `v0.<rung>.x`; completing rung Ln tags `v0.n+1.0`, and
-  `v1.0.0` is the OSS launch (L6). A docs issue lists the release's additions
-  in the README and says whether the demo video still shows what ships,
-  re-recorded if not, before the tag ask (#684), and the ask links a green
-  `release` dry run on the commit (#770). A change that alters stored data at
-  first start adds its row to OPERATIONS.md's release-specific steps in the
-  same PR (#712).
+
+## Releases
+
+How to cut one is the `/release` skill (`.claude/skills/release/`); these
+are the rules it carries out. The cadence, the patch rule, the milestones,
+the gate and the roles are the release plan the operator agreed on
+2026-11-09 (#1452).
+
+- **Versions**: semver, `v0.<rung>.x`; completing rung Ln tags `v0.n+1.0`,
+  and `v1.0.0` is the OSS launch (L6). A docs issue lists the release's
+  additions in the README and says whether the demo video still shows what
+  ships, re-recorded if not, before the tag ask (#684). A change that
+  alters stored data at first start adds its row to OPERATIONS.md's
+  release-specific steps in the same PR (#712).
 - **The operator tags, never a loop** (#223): notes come from commit titles,
   with no CHANGELOG, and `release.yml` publishes attested artifacts
-  (ADR-0052). Procedure: `/release` (`.claude/skills/release/`).
+  (ADR-0052).
+- **Cadence:** a minor release (`v0.n+1.0`) from `main` no later than two
+  weeks after the last one, sooner once there is enough to ship, and
+  whenever a ladder rung completes.
+- **Patches:** a patch (`v0.n.z+1`) only when `main` holds nothing but
+  fixes since the last tag. Otherwise the fix ships in the next minor. A
+  release that replaces a broken one follows this rule too.
+- **Branching:** trunk-based. Every tag is cut from `main`, with no release
+  branches before 1.0 (ADR-0052, amended 2026-11-09).
+- **Version milestones:** each release has a milestone named for its
+  version (`v0.8.0`), due on its date, holding the PRs it ships. The
+  reviewer sets it on a PR when approving. Issues keep their ladder
+  milestone, because GitHub allows only one milestone per issue.
+- **The gate**, all on the commit to be tagged:
+  - `main`'s CI is green;
+  - `scripts/release-gate.sh` passes (#1446);
+  - no open bug is labelled `severity:high`;
+  - the `release` dry run, `smoke-dry-run` included, is green (#770), and
+    the tag ask links it;
+  - an upgrade from the last tag to this commit passes on a fresh machine.
+- **Roles on release day:** the product owner sends the operator the
+  version, the headlines and the gate's result; the operator tags; then
+  Elliot (DevSecOps) sends the operator the commands to upgrade the running
+  fleet to the tag, and the operator runs them. No loop holds access to the
+  host.
 
 ## Secrets and evidence
 
