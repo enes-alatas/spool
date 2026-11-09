@@ -76,7 +76,7 @@ await member.fill('#password', password)
 await member.click('button[type=submit]')
 await member.waitForSelector('.topbar', { timeout: 15000 })
 const memberShots = [
-  { name: 'member-fleet', path: '/', wait: '.fleet-row' },
+  { name: 'member-fleet', path: '/', wait: '.team-cards' },
   { name: 'member-loop', path: '/loops/gardener', wait: '.side-panel' },
   { name: 'member-connections', path: '/connections', wait: '.connection-row' },
   { name: 'member-settings', path: '/settings', wait: '.account-name' },
@@ -145,7 +145,7 @@ const accountFile = `${outDir}/settings-account.png`
 await page.locator('.account').screenshot({ path: accountFile })
 
 const shots = [
-  { name: 'fleet', path: '/', wait: '.fleet-row' },
+  { name: 'fleet', path: '/', wait: '.team-cards' },
   // The fleet channel's chat, opened from Channels: operator, loop and human
   // posts, a reply's quote, and what each reached (#286, #1443).
   { name: 'channel', path: '/channels/group', wait: '.knot' },
@@ -515,7 +515,7 @@ for (const [state, render] of Object.entries(planStates)) {
   })
   await page.goto(base + '/', { waitUntil: 'networkidle' })
   await page.locator('.plan-strip .plan-title').waitFor({ timeout: 15000 })
-  const head = await page.locator('.fleet-cols').boundingBox()
+  const head = await page.locator('.fleet-bar').boundingBox()
   const file = `${outDir}/fleet-plan-${state}.png`
   await page.screenshot({ path: file, clip: { x: 0, y: 0, width: 1180, height: head.y + head.height + 8 } })
   taken.push(file)
