@@ -6,6 +6,7 @@ import App from './App'
 import { AdminOnly, Session } from './components/Session'
 import { needsLogin } from './session'
 import Home from './pages/Home'
+import ChannelChatPage from './pages/ChannelChatPage'
 import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
       // reaches the loops is now Settings → Users and access.
       { path: 'access', element: <Navigate to="/settings" replace /> },
       { path: 'channels', element: <Channels /> },
+      { path: 'channels/:name', element: <ChannelChatPage /> },
       { path: 'connections', element: <Connections /> },
       { path: 'settings', element: <Settings /> },
       { path: 'rules', element: <Rules /> },

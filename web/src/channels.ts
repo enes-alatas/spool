@@ -9,6 +9,12 @@ import type { ChatMessage } from './api'
 // or deleted, and holds every loop the operator hasn't taken out of it.
 export const FLEET_CHANNEL = 'group'
 
+// Where a channel's chat opens: its own page under Channels (#1443). Only
+// the fleet channel's chat opens so far.
+export function channelChatPath(name: string): string {
+  return `/channels/${name}`
+}
+
 export const CHANNEL_NAME_MAX = 32
 export const CHANNEL_DESCRIPTION_MAX = 280
 

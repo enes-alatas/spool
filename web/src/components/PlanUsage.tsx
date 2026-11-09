@@ -62,7 +62,7 @@ function PlanWindowStat({ name, window, now }: { name: string; window: PlanWindo
   )
 }
 
-// What the fleet is costing, in one line between the header and the tabs:
+// What the fleet is costing, in one line between the header and the fleet:
 // the plan's 5-hour and 7-day usage (#648) and the fleet's spend today, which
 // moved here from the header so it stands over the TODAY column it totals.
 // The spend is the rows' own sum and shows whatever the plan read says; a

@@ -168,6 +168,11 @@ describe('Dashboard', () => {
       vi.unstubAllGlobals()
     }
   })
+  it('shows the fleet and nothing else: no Loops or Fleet channel tabs', () => {
+    const html = renderPage([docs])
+    expect(html).not.toContain('Fleet channel')
+    expect(html).not.toContain('view=channel')
+  })
   it('keeps the title for screen readers only once the teams show', () => {
     const html = renderPage([docs])
     expect(html).toContain('<h1 class="sr-only">Fleet</h1>')

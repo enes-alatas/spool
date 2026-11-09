@@ -1026,7 +1026,7 @@ textarea {
   color: var(--text-muted);
 }
 /* The plan strip (#648): what the fleet is costing, between the header and
-   the tabs. Its windows share the line's width, their bars stretching to take
+   the fleet. Its windows share the line's width, their bars stretching to take
    what the words leave, and the day's spend keeps the right edge, which is
    the edge the TODAY figures below align on. The frame is the container its
    narrow composition asks. */
@@ -1992,36 +1992,6 @@ textarea {
   color: var(--text-muted);
 }
 
-/* The Fleet page's two views, its loops and its conversation (#286). Links
-   rather than buttons: each view has a URL, so a reload keeps the one open. */
-.fleet-tabs {
-  display: flex;
-  gap: 22px;
-  border-bottom: 1px solid var(--hairline);
-  margin: 4px 0 18px;
-}
-.fleet-tabs a {
-  padding: 8px 0;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  font-size: 0.875rem;
-  text-decoration: none;
-}
-.fleet-tabs a:hover {
-  color: var(--text);
-}
-.fleet-tabs a:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 3px;
-  border-radius: 4px;
-  color: var(--text);
-}
-.fleet-tabs a[aria-current='page'] {
-  color: var(--text);
-  border-bottom-color: var(--text);
-}
-
 /* The fleet channel (#286). Its thread is a loop's control room with two
    more lines per message: the quote a reply answers, above, and the loops
    the hub delivered it to, below. Both muted and in the who-line's face, so
@@ -2042,8 +2012,8 @@ textarea {
   font-family: var(--mono);
   font-size: 0.71875rem;
 }
-/* The thread takes the viewport less the header, the tabs and the compose
-   box, so the compose box stays in view below it. */
+/* The thread takes the viewport less the header, the page title and the
+   compose box, so the compose box stays in view below it. */
 .fleet-channel .pane-scroll {
   max-height: max(18rem, calc(100vh - 22rem));
 }
@@ -4543,6 +4513,11 @@ button.panel-link {
 .channel-count {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+/* the fleet channel's way into its chat, at the right end of its head (#1443) */
+.channel-open {
+  margin-left: auto;
+  font-size: 0.8125rem;
 }
 .rule-body.channel-undescribed {
   color: var(--text-muted);

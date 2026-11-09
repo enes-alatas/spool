@@ -1,5 +1,5 @@
 import { RuntimeBadge } from '../components/RuntimeBadge'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import {
@@ -15,7 +15,6 @@ import {
   sumCostToday,
 } from '../format'
 import { StateDot } from '../components/Spool'
-import { ChannelChat } from '../components/ChannelChat'
 import { PlanUsageStrip } from '../components/PlanUsage'
 import { Doing } from '../components/Doing'
 import { HealthNote } from '../components/Health'
@@ -28,6 +27,7 @@ import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 import { cappedBy } from '../dailyCap'
 import { loopPlanCapped } from '../planCap'
+import { channelChatPath, FLEET_CHANNEL } from '../channels'
 import { readFleetLayout, saveFleetLayout, type FleetLayout } from '../teams'
 
 function Countdown({ at }: { at: number }) {
@@ -262,11 +262,11 @@ export default function Dashboard() {
   // — and it is the one number in the room the operator was previously running
   // SQL for.
   const spentToday = sumCostToday(loops ?? [])
-  // The fleet channel is the fleet's own conversation, so it is a tab here
-  // rather than a destination in the nav (#286). In the URL, so a link or a
-  // reload lands on the tab that was open.
+  // The fleet channel's chat was a tab here (#286) until the page became the
+  // fleet and nothing else (#1443); a saved link to the tab lands on the chat
+  // on the Channels page.
   const [params] = useSearchParams()
-  const onChannel = params.get('view') === 'channel'
+  const oldChannelTab = params.get('view') === 'channel'
   // Teams or the rows they replaced (#1411): the cards are new, so the
   // rows stay a click away for an operator who reads the fleet that way.
   // Remembered in this browser, as how one person likes to read the page.
@@ -275,6 +275,8 @@ export default function Dashboard() {
     setLayout(next)
     saveFleetLayout(next)
   }
+
+  if (oldChannelTab) return <Navigate to={channelChatPath(FLEET_CHANNEL)} replace />
 
   return (
     <div className="page">
@@ -296,87 +298,74 @@ export default function Dashboard() {
         <PlanUsageStrip spentToday={spentToday} costDayTitle={costDayTitle(loops)} />
       )}
 
-      <nav className="fleet-tabs" aria-label="Fleet views">
-        <Link to="/" aria-current={onChannel ? undefined : 'page'}>
-          Loops
-        </Link>
-        <Link to="/?view=channel" aria-current={onChannel ? 'page' : undefined}>
-          Fleet channel
-        </Link>
-      </nav>
+      <>
+        {(isLoading || (loops && loops.length > 0 && teamsPending)) && (
+          <div className="fleet-note">Loading the fleet…</div>
+        )}
+        {isError && (
+          <div className="form-error" role="alert">
+            Could not load the fleet: {error instanceof Error ? error.message : String(error)}
+          </div>
+        )}
 
-      {onChannel ? (
-        <ChannelChat />
-      ) : (
-        <>
-          {(isLoading || (loops && loops.length > 0 && teamsPending)) && (
-            <div className="fleet-note">Loading the fleet…</div>
-          )}
-          {isError && (
-            <div className="form-error" role="alert">
-              Could not load the fleet: {error instanceof Error ? error.message : String(error)}
-            </div>
-          )}
+        {loops && loops.length === 0 && (
+          <div className="empty">
+            {may('manage') ? (
+              <>
+                No loops yet. Create one and give it a mission.
+                <div style={{ marginTop: 14 }}>
+                  <Link to="/new" className="btn primary">
+                    New loop
+                  </Link>
+                </div>
+              </>
+            ) : (
+              'No loops yet. An admin creates them.'
+            )}
+          </div>
+        )}
 
-          {loops && loops.length === 0 && (
-            <div className="empty">
-              {may('manage') ? (
-                <>
-                  No loops yet. Create one and give it a mission.
-                  <div style={{ marginTop: 14 }}>
-                    <Link to="/new" className="btn primary">
-                      New loop
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                'No loops yet. An admin creates them.'
-              )}
-            </div>
-          )}
-
-          {loops && loops.length > 0 && teams && (
-            <div className="fleet-bar">
-              {layout === 'teams' && <OrbKey />}
-              {/* Counts only: what needs the operator is on the cards. */}
-              <span className="fleet-summary">
-                {teams.length} {teams.length === 1 ? 'team' : 'teams'} · {loops.length}{' '}
-                {loops.length === 1 ? 'loop' : 'loops'}
-              </span>
-              <div className="figures-windows" role="group" aria-label="Fleet layout">
-                {(['teams', 'list'] as const).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={`figures-window${option === layout ? ' on' : ''}`}
-                    aria-pressed={option === layout}
-                    onClick={() => chooseLayout(option)}
-                  >
-                    {option === 'teams' ? 'Teams' : 'List'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {loops && loops.length > 0 && teams && layout === 'teams' && (
-            <FleetTeams teams={teams} loops={loops} spentToday={spentToday} manage={may('manage')} />
-          )}
-          {loops && loops.length > 0 && ((!teams && !teamsPending) || (teams && layout === 'list')) && (
-            <div className="fleet-list">
-              <FleetColumns />
-              {loops.map((fleetLoop) => (
-                <FleetRow
-                  key={fleetLoop.id}
-                  loop={fleetLoop}
-                  thresholds={thresholds}
-                  spentToday={spentToday}
-                  planCapped={loopPlanCapped(usages, fleetLoop)}
-                />
+        {loops && loops.length > 0 && teams && (
+          <div className="fleet-bar">
+            {layout === 'teams' && <OrbKey />}
+            {/* Counts only: what needs the operator is on the cards. */}
+            <span className="fleet-summary">
+              {teams.length} {teams.length === 1 ? 'team' : 'teams'} · {loops.length}{' '}
+              {loops.length === 1 ? 'loop' : 'loops'}
+            </span>
+            <div className="figures-windows" role="group" aria-label="Fleet layout">
+              {(['teams', 'list'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={`figures-window${option === layout ? ' on' : ''}`}
+                  aria-pressed={option === layout}
+                  onClick={() => chooseLayout(option)}
+                >
+                  {option === 'teams' ? 'Teams' : 'List'}
+                </button>
               ))}
             </div>
-          )}
-        </>
-      )}
+          </div>
+        )}
+        {loops && loops.length > 0 && teams && layout === 'teams' && (
+          <FleetTeams teams={teams} loops={loops} spentToday={spentToday} manage={may('manage')} />
+        )}
+        {loops && loops.length > 0 && ((!teams && !teamsPending) || (teams && layout === 'list')) && (
+          <div className="fleet-list">
+            <FleetColumns />
+            {loops.map((fleetLoop) => (
+              <FleetRow
+                key={fleetLoop.id}
+                loop={fleetLoop}
+                thresholds={thresholds}
+                spentToday={spentToday}
+                planCapped={loopPlanCapped(usages, fleetLoop)}
+              />
+            ))}
+          </div>
+        )}
+      </>
     </div>
   )
 }

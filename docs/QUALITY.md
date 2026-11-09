@@ -204,7 +204,7 @@ window regardless of loop count (ADR-0018).
 - **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
-  walks it: login, Fleet and its channel tab, a loop page with no "Loading…"
+  walks it: login, Fleet, the fleet channel's chat, a loop page with no "Loading…"
   left, Rules, Settings, the old Access address landing on Settings → Users
   and access, the Activity route, and the global stream's
   connection. Each check is a text or role query, never pixels. A failure keeps

@@ -146,9 +146,9 @@ await page.locator('.account').screenshot({ path: accountFile })
 
 const shots = [
   { name: 'fleet', path: '/', wait: '.fleet-row' },
-  // The Fleet page's channel tab: operator, loop and human posts, a reply's
-  // quote, and what each reached (#286).
-  { name: 'channel', path: '/?view=channel', wait: '.knot' },
+  // The fleet channel's chat, opened from Channels: operator, loop and human
+  // posts, a reply's quote, and what each reached (#286, #1443).
+  { name: 'channel', path: '/channels/group', wait: '.knot' },
   // A card per channel, with the fixture's loops in them (#484).
   { name: 'channels', path: '/channels', wait: '.channel-loop' },
   { name: 'loop-timeline', path: '/loops/gardener', wait: '.timeline' },

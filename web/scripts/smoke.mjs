@@ -95,7 +95,13 @@ try {
   }
 
   step = 'Fleet channel'
-  await page.getByRole('link', { name: 'Fleet channel' }).click()
+  await page.goto(base + '/channels')
+  await page.getByRole('link', { name: 'Open chat →' }).click()
+  await heading('Fleet channel')
+  await see(page.getByText('Three pages, all fixed', { exact: false }), "gardener's channel post")
+  // the chat was a tab on Fleet (#286); a saved link to it lands here (#1443)
+  await page.goto(base + '/?view=channel')
+  await heading('Fleet channel')
   await see(page.getByText('Three pages, all fixed', { exact: false }), "gardener's channel post")
 
   step = 'loop page'

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel } from '../api'
@@ -8,6 +8,7 @@ import {
   CHANNEL_DESCRIPTION_MAX,
   CHANNEL_NAME_MAX,
   channelAnchor,
+  channelChatPath,
   channelHash,
   FLEET_CHANNEL,
   descriptionLength,
@@ -115,6 +116,11 @@ function ChannelCard({
         <span className="channel-count">
           {channel.loops.length} loop{channel.loops.length === 1 ? '' : 's'}
         </span>
+        {fleet && (
+          <Link className="channel-open" to={channelChatPath(channel.name)}>
+            Open chat →
+          </Link>
+        )}
         {/* The fleet channel always exists, and what it is for is fixed:
             there is nothing to edit or delete, only who is in it. */}
         {!fleet && manage && (
