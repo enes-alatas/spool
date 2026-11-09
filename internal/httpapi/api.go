@@ -277,6 +277,11 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("DELETE /api/channels/{name}", server.handleDeleteChannel)
 	mux.HandleFunc("PUT /api/channels/{name}/loops/{loop}", server.handleChannelLoop(true))
 	mux.HandleFunc("DELETE /api/channels/{name}/loops/{loop}", server.handleChannelLoop(false))
+	mux.HandleFunc("GET /api/teams", server.handleListTeams)
+	mux.HandleFunc("POST /api/teams", server.handleCreateTeam)
+	mux.HandleFunc("GET /api/teams/{name}", server.handleGetTeam)
+	mux.HandleFunc("PATCH /api/teams/{name}", server.handlePatchTeam)
+	mux.HandleFunc("DELETE /api/teams/{name}", server.handleDeleteTeam)
 	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
 	mux.HandleFunc("GET /api/plan-usage", server.handlePlanUsage)
@@ -792,6 +797,9 @@ type createLoopReq struct {
 	// InFleetChannel places the new loop in the fleet channel or outside
 	// it; absent, the server decides (defaultInFleetChannel).
 	InFleetChannel *bool `json:"in_fleet_channel"`
+	// Team puts the new loop in a team; absent or "", it is in none
+	// (ADR-0066).
+	Team string `json:"team"`
 	// Skills are the skills of an imported bot the operator ticked, as its
 	// draft carried them, installed in the loop's workdir with no fetch
 	// (#1364).
@@ -1061,6 +1069,11 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 	}
 	loopRecord.OutsideFleetChannel = !*inFleet
 
+	if refusal := server.loopTeamRefusal(ctx, req.Team); refusal != nil {
+		return nil, refusal
+	}
+	loopRecord.Team = req.Team
+
 	return loopRecord, nil
 }
 
@@ -1194,6 +1207,8 @@ type patchLoopReq struct {
 	SlackAppToken  *string `json:"slack_app_token"`
 	SlackBotToken  *string `json:"slack_bot_token"`
 	InFleetChannel *bool   `json:"in_fleet_channel"`
+	// Team moves the loop into a team, or out of every team with "".
+	Team *string `json:"team"`
 	// cloud only, while the loop is paused (ADR-0061)
 	cloudSetupReq
 }
@@ -1289,6 +1304,13 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.InFleetChannel != nil {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
+	}
+	if req.Team != nil {
+		if refusal := server.loopTeamRefusal(r.Context(), *req.Team); refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		edit.Team = req.Team
 	}
 	if req.given() && loopRecord.Runtime != store.RuntimeCloud {
 		server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")

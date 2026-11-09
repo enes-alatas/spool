@@ -42,6 +42,7 @@ var memberRoutes = []string{
 	"GET /api/attachments/{id}", "GET /api/undelivered", "GET /api/group",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",
 	"GET /api/channels", "GET /api/channels/{name}", "GET /api/channels/{name}/messages",
+	"GET /api/teams", "GET /api/teams/{name}",
 	"GET /api/settings", "GET /api/settings/egress", "GET /api/settings/cloud", "GET /api/settings/langfuse", "GET /api/onboarding", "GET /api/plan-usage",
 	"GET /api/rules", "GET /api/models", "GET /api/telegram/senders", "GET /api/slack/senders",
 
@@ -83,6 +84,7 @@ var adminRoutes = []string{
 	"PUT /api/connections/{name}/secret", "POST /api/connections/{name}/revoke", "POST /api/connections/{name}/check",
 	"POST /api/channels", "PATCH /api/channels/{name}", "DELETE /api/channels/{name}",
 	"PUT /api/channels/{name}/loops/{loop}", "DELETE /api/channels/{name}/loops/{loop}",
+	"POST /api/teams", "PATCH /api/teams/{name}", "DELETE /api/teams/{name}",
 	"PUT /api/settings", "POST /api/settings/egress/hosts", "DELETE /api/settings/egress/hosts/{entry}",
 	"PUT /api/settings/cloud/address", "DELETE /api/settings/cloud/address", "POST /api/settings/cloud/check",
 	"PUT /api/settings/cloud/listener", "PUT /api/settings/langfuse",

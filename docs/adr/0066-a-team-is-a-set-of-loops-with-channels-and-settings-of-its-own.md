@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410)
 
 ## Context
 
@@ -161,6 +161,29 @@ channel, item 1 is amended with it.
      `claude_login`.
    - The exact routes and fields of each setting are decided by its own
      slice, as an amendment to this item.
+
+   **Amendment (2026-11-09, #1410): the routes and fields of slice 1.**
+   - **A team view** is `name`, `description` (one line, at most 280
+     characters, `""` for none), `created_at`, and `loops`: the names
+     of its loops, sorted, as a channel view lists its loops.
+   - **`GET /api/teams`** lists teams by name. **`POST`** takes `name`
+     and an optional `description`. **`PATCH /api/teams/{name}`** takes
+     either or both, and a rename answers the team under its new name.
+     Refusals: 400 `team_name_invalid`, 409 `team_exists` on a create or
+     a rename, 404 `team_not_found`.
+   - **`DELETE`** while the team has loops is 409 `team_has_loops`, and
+     the error names them. Nothing else holds a team in slice 1, so the
+     delete removes the team alone.
+   - **A loop's `team`** is its team's name, `""` for none. Create and
+     `PATCH` take it the same way: a name puts the loop in that team,
+     and another name moves it, never adds a second. `""` takes it out,
+     and an absent field leaves it where it is. A team that doesn't
+     exist is 404 `team_not_found`.
+   - **The home channel comes with slice 2.** Slice 1 has no team
+     channels, so `POST /api/teams` makes none yet, and it doesn't
+     refuse a name a channel already has. Slice 2 adds both to the
+     create. It also decides what a team made before it gets, since such
+     a team has no home channel.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;
