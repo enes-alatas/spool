@@ -877,7 +877,7 @@ func TestConversationsOfReadsRooms(t *testing.T) {
 	self := &store.Loop{ID: "l1", Name: "terra", TGBotToken: "t", Status: store.StatusActive}
 	channels := []*store.Channel{
 		{Name: "backend", LoopIDs: []string{"l1"}},
-		{Name: "release", LoopIDs: []string{"l1"}},
+		{Name: "release", LoopIDs: []string{"l1"}, Team: "red"},
 		{Name: "design", LoopIDs: []string{"l1"}},
 	}
 	rooms := []*store.Room{
@@ -924,7 +924,7 @@ func TestConversationsOfChannels(t *testing.T) {
 		{Name: store.FleetChannel, LoopIDs: []string{"l1", "l2", "l3", "l4"}},
 		{Name: "backend", Description: "Go core", LoopIDs: []string{"l2", "l1", "l3", "l4"}},
 		{Name: "design", LoopIDs: []string{"l4"}},
-		{Name: "release", LoopIDs: []string{"l1"}},
+		{Name: "release", LoopIDs: []string{"l1"}, Team: "red"},
 	}
 	conv := ConversationsOf(self, channels, loops, nil)
 	if got := strings.Join(conv.Destinations(), " "); got != "group channel:backend channel:release control_room" {
@@ -933,6 +933,9 @@ func TestConversationsOfChannels(t *testing.T) {
 	backend, ok := conv.Channel("backend")
 	if !ok || backend.Description != "Go core" || strings.Join(backend.Loops, " ") != "milo quinn" {
 		t.Errorf("backend = %+v, %v; want its description and the other active loops by name", backend, ok)
+	}
+	if release, _ := conv.Channel("release"); release.Team != "red" {
+		t.Errorf("release = %+v, want red's", release)
 	}
 	if _, ok := conv.Channel("design"); ok {
 		t.Error("a channel the loop is not in is one of its conversations")
@@ -1047,5 +1050,42 @@ func TestTheSystemPromptExplainsACorrection(t *testing.T) {
 		if !strings.Contains(prompt, `carries their new words for ref:N`) || !strings.Contains(prompt, `"deleted ref:N" means they took ref:N back`) {
 			t.Errorf("group=%v: the prompt does not explain a correction", conversations.Group)
 		}
+	}
+}
+
+// A loop in a team is told its team's name and description, its first line
+// with no doubled full stop, above the team's channels, which are listed
+// before its hub channels; a team the loop holds no channel of is one line
+// (ADR-0066).
+func TestTheCatalogNamesTheLoopsTeam(t *testing.T) {
+	loopRecord := &store.Loop{Name: "terra"}
+	conv := Conversations{Group: true, Channels: []Channel{
+		{Name: "ops", Loops: []string{"milo"}},
+		{Name: "red", Team: "red", Loops: []string{"quinn"}},
+	}}
+	inRed := Catalog{Conversations: conv, Team: &Team{Name: "red", Description: "Builds the hub.\nSecond line."}}
+	got := inRed.section(loopRecord)
+	want := "- You are in the team red — Builds the hub.\n" +
+		"  Its channels come first below, and only its loops can be in them.\n" +
+		"- Your other channels, each its own conversation:"
+	if !strings.Contains(got, want) {
+		t.Errorf("the section lacks %q:\n%s", want, got)
+	}
+	if red, ops := strings.Index(got, "channel:red"), strings.Index(got, "channel:ops"); red < 0 || ops < red {
+		t.Errorf("red's channel is not listed before the hub channel:\n%s", got)
+	}
+	if strings.Contains(got, "Second line") {
+		t.Errorf("the team's description shows more than its first line:\n%s", got)
+	}
+
+	hubOnly := Catalog{Conversations: Conversations{Group: true, Channels: conv.Channels[:1]}, Team: &Team{Name: "default"}}
+	got = hubOnly.section(loopRecord)
+	if !strings.Contains(got, "- You are in the team default.\n- Your other channels") || strings.Contains(got, "Its channels come first") {
+		t.Errorf("a team the loop holds no channel of is not one line:\n%s", got)
+	}
+
+	inNone := Catalog{Conversations: Conversations{Group: true, Channels: conv.Channels[:1]}}
+	if got := inNone.section(loopRecord); strings.Contains(got, "team") {
+		t.Errorf("a loop in no team is told of one:\n%s", got)
 	}
 }

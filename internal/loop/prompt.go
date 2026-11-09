@@ -14,6 +14,16 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
+// firstLine is text's first line, trimmed: what a one-line listing shows of
+// a mission or a description.
+func firstLine(text string) string {
+	text = strings.TrimSpace(text)
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		text = text[:i]
+	}
+	return text
+}
+
 // truncate caps text at max bytes without splitting a UTF-8 rune, marking the
 // cut with an ellipsis. Prompt text is model-authored and freely multi-byte;
 // a byte slice through a rune would feed the session invalid UTF-8.
@@ -103,6 +113,8 @@ type Catalog struct {
 	// loop privately, oldest first: the ones it can write to first on their
 	// dm:<name> (ADR-0049).
 	Private []Person
+	// Team is the team the loop is in, nil for none (ADR-0066).
+	Team *Team
 	// Conversations are the destinations this loop has; the prompt teaches
 	// those and no others.
 	Conversations Conversations
@@ -124,6 +136,12 @@ type Conversations struct {
 	Channels []Channel
 }
 
+// Team is the team a loop is in, as its prompt names it.
+type Team struct {
+	Name        string
+	Description string
+}
+
 // Channel is one channel other than the fleet channel that a loop is in, as
 // its prompt shows it.
 type Channel struct {
@@ -132,6 +150,8 @@ type Channel struct {
 	// Loops are the other active loops in it, by name: the ones a mention
 	// there reaches and the prompt can honestly list.
 	Loops []string
+	// Team is the team the channel belongs to, "" for a hub channel.
+	Team string
 	// Room reports that the loop's bot sits in a room bound to the
 	// channel, so people read it there and a mention of one reaches them.
 	Room bool
@@ -159,7 +179,7 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 		if channel.Name == store.FleetChannel || !slices.Contains(channel.LoopIDs, loopRecord.ID) {
 			continue
 		}
-		mine := Channel{Name: channel.Name, Description: channel.Description}
+		mine := Channel{Name: channel.Name, Description: channel.Description, Team: channel.Team}
 		for _, room := range rooms {
 			// a room is carried by the loop's bot, so only on the surface
 			// the loop has
@@ -340,11 +360,7 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		text.WriteString("- The other loops in the fleet channel, and what each is for — @mention\n" +
 			"  one in the group to reach it; a name not on this list reaches nobody:\n")
 		for _, peer := range cat.Peers {
-			mission := strings.TrimSpace(peer.Mission)
-			if i := strings.IndexByte(mission, '\n'); i >= 0 {
-				mission = mission[:i]
-			}
-			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(mission, 120))
+			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(firstLine(peer.Mission), 120))
 			if peer.BotUsername != "" && peer.Surface != "" {
 				fmt.Fprintf(&text, "      (posts as @%s in %s)\n", peer.BotUsername, peer.Surface)
 			}
@@ -353,12 +369,37 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		text.WriteString("- No other loops are in the fleet channel right now.\n")
 	}
 
-	if len(conv.Channels) > 0 {
+	// A loop in a team is told so above its channels, which list the team's
+	// first; a loop in no team is shown what it was before (ADR-0066).
+	channels := conv.Channels
+	if cat.Team != nil {
+		fmt.Fprintf(&text, "- You are in the team %s", cat.Team.Name)
+		// the line ends in its own full stop
+		if description := strings.TrimRight(firstLine(cat.Team.Description), "."); description != "" {
+			fmt.Fprintf(&text, " — %s", truncate(description, 120))
+		}
+		text.WriteString(".\n")
+		channels = nil
+		for _, channel := range conv.Channels {
+			if channel.Team == cat.Team.Name {
+				channels = append(channels, channel)
+			}
+		}
+		if len(channels) > 0 {
+			text.WriteString("  Its channels come first below, and only its loops can be in them.\n")
+		}
+		for _, channel := range conv.Channels {
+			if channel.Team != cat.Team.Name {
+				channels = append(channels, channel)
+			}
+		}
+	}
+	if len(channels) > 0 {
 		text.WriteString(`- Your other channels, each its own conversation: send to one as
   channel:<name> and @mention the loops in it there. A loop not listed under
   a channel is not in it, so a mention of it there reaches nobody:
 `)
-		for _, channel := range conv.Channels {
+		for _, channel := range channels {
 			fmt.Fprintf(&text, "    channel:%s", channel.Name)
 			if channel.Description != "" {
 				fmt.Fprintf(&text, " — %s", channel.Description)

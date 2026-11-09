@@ -1100,8 +1100,8 @@ func sweepUsers(ctx context.Context, hubUsers *users.Users, log *slog.Logger) {
 
 // catalogOf resolves who a loop can address, fresh for each prompt build:
 // its conversations and the channels among them, its peers in the fleet
-// channel, the people allowed to talk to the fleet, and its own owner with
-// whether a private chat to them exists yet (#45, #288).
+// channel, its team, the people allowed to talk to the fleet, and its own
+// owner with whether a private chat to them exists yet (#45, #288).
 func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	ctx := context.Background()
 	// The caller's copy is the actor's, taken when it last loaded the loop;
@@ -1118,6 +1118,12 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	rooms, _ := db.Rooms().List(ctx, self.ID)
 	cat := loop.Catalog{Conversations: loop.ConversationsOf(self, channels, loops, rooms), OwnerDMReady: self.OwnerDMReady()}
 	cat.BotUsername, _ = botOf(self)
+	// a team that cannot be read goes unnamed, as its channels still list
+	if self.Team != "" {
+		if team, err := db.Teams().Get(ctx, self.Team); err == nil {
+			cat.Team = &loop.Team{Name: team.Name, Description: team.Description}
+		}
+	}
 	if loopsErr != nil {
 		return cat
 	}
