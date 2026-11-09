@@ -38,7 +38,7 @@ export function TeamDraft({ team, onCancel }: { team: PromptsChatTeam; onCancel:
     setBusy(true)
     setError('')
     try {
-      const made = await api.createTeam({
+      const made = await api.createPromptsChatTeam({
         channel: team.channel,
         description: team.description,
         runtime: '',

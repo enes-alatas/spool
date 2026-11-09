@@ -1829,7 +1829,7 @@ export const api = {
   // All or nothing: a refusal (a name taken since the draft, a channel that
   // exists, a mission too long) stores none of it. runtime is "" for the
   // hub's default; a team is never cloud.
-  createTeam: (team: {
+  createPromptsChatTeam: (team: {
     channel: string
     description: string
     runtime: string
