@@ -82,7 +82,19 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
     <>
       <div className="plan-strip-frame">
         <div className="plan-strip">
-          <span className="plan-title">plan usage</span>
+          {/* How old the reading is, on hover: it matters only when a
+              number looks wrong, so it no longer takes the strip's middle
+              (#1445). Several logins say it in each ring's details. */}
+          <span
+            className="plan-title"
+            title={
+              !logins && usage?.as_of !== undefined
+                ? `as of ${formatAgo(usage.as_of, now)}, ${new Date(usage.as_of).toLocaleString()}`
+                : undefined
+            }
+          >
+            plan usage
+          </span>
           {logins ? (
             <LoginRings
               logins={logins}
@@ -107,11 +119,6 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
               <>
                 <PlanWindowStat name="5-hour" window={usage.five_hour} now={now} />
                 <PlanWindowStat name="7-day" window={usage.seven_day} now={now} />
-                {usage.as_of !== undefined && (
-                  <span className="plan-as-of" title={new Date(usage.as_of).toLocaleString()}>
-                    as of {formatAgo(usage.as_of, now)}
-                  </span>
-                )}
                 {/* the last reading still caps, but no newer one comes */}
                 {cloud === 'last' && (
                   <span className="plan-window dim" title={CLOUD_ONLY_FROZEN_WHY}>

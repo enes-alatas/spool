@@ -1029,10 +1029,11 @@ textarea {
    the fleet. Its windows share the line's width, their bars stretching to take
    what the words leave, and the day's spend keeps the right edge, which is
    the edge the TODAY figures below align on. The frame is the container its
-   narrow composition asks. */
+   narrow composition asks, and wears the team cards' glass (#1445). */
 .plan-strip-frame {
   container: plan / inline-size;
-  margin: 6px 0 10px;
+  margin: 6px 0 14px;
+  padding: 14px 20px;
 }
 .plan-strip {
   display: flex;
@@ -1055,6 +1056,12 @@ textarea {
   gap: 8px;
   min-width: 0;
   white-space: nowrap;
+}
+/* A window that is a note, not figures (unknown, or the cloud's "won't
+   update"), wraps inside the strip's frame rather than running out past
+   its edge (#1445). */
+.plan-window.dim {
+  white-space: normal;
 }
 .plan-bar {
   flex: 1 1 auto;
@@ -1116,9 +1123,39 @@ textarea {
 .plan-strip .dim {
   opacity: 0.75;
 }
-.plan-as-of {
-  opacity: 0.75;
-  white-space: nowrap;
+/* Short rules between the strip's sections, 5-hour | 7-day | today
+   (#1445): lighter than the hairline and shorter than the line, so they
+   part the sections without boxing them. They sit in the middle of the
+   28px gap. */
+.plan-strip > .plan-window ~ .plan-window,
+.plan-strip > .plan-window ~ .plan-spend {
+  position: relative;
+}
+.plan-strip > .plan-window ~ .plan-window::before,
+.plan-strip > .plan-window ~ .plan-spend::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  height: 1.1em;
+  transform: translateY(-50%);
+  border-left: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+}
+/* Wrapped, a section can start a line, where a rule before it parts
+   nothing. The windows' 16rem bases wrap the strip below about 47rem of
+   container, and the cloud note's third window below about 63rem, so the
+   rules go below those with room to spare: CSS can't see a wrap itself. */
+@container plan (max-width: 52rem) {
+  .plan-strip > .plan-window ~ .plan-window::before,
+  .plan-strip > .plan-window ~ .plan-spend::before {
+    content: none;
+  }
+}
+@container plan (max-width: 68rem) {
+  .plan-strip:has(> .plan-window ~ .plan-window ~ .plan-window) > .plan-window ~ .plan-window::before,
+  .plan-strip:has(> .plan-window ~ .plan-window ~ .plan-window) > .plan-window ~ .plan-spend::before {
+    content: none;
+  }
 }
 .plan-spend {
   margin-left: auto;
@@ -6176,6 +6213,11 @@ button.panel-link {
   gap: 10px;
   min-width: 0;
   padding: 18px 20px 16px;
+}
+/* The Fleet page's one material (#1411, #1445): the team cards and the plan
+   strip over them are the same glass, declared once so they can't drift. */
+.team-card,
+.plan-strip-frame {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 12px;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015) 60%);
