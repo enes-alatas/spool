@@ -40,6 +40,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read # the feat PRs merged since the last tag
+      issues: read # whether each other half they name is closed
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +55,17 @@ jobs:
             echo "::error::$GITHUB_REF_NAME is not on main; a release is cut from main"
             exit 1
           fi
+      # No feature ships half (#1446): a feat PR merged since the last tag
+      # whose Other half: names an open issue holds the tag, and the dry
+      # run with it, so a red one says not to tag yet.
+      - name: no feature since the last tag is half-shipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=()
+          [ "$GITHUB_EVENT_NAME" != push ] || tag=(--tag "$GITHUB_REF_NAME")
+          bash scripts/gate-annotate.sh release-gate -- bash scripts/release-gate.sh "${tag[@]}" "$GITHUB_SHA"
 
   # Both images, once per architecture, each on a runner of that
   # architecture so nothing is emulated. A tag pushes them as

@@ -24,10 +24,13 @@ alone (`v0.4.0`, #485): the rung a tag completes is on its milestone, not
 in the name.
 
 **What a tag builds** (ADR-0052, #756): the tag fires `release.yml`. It
-refuses a tag whose commit is not on `main`. It builds both images on
-native amd64 and arm64 runners (`scripts/release-images.sh`), pushes them
-to `ghcr.io/<owner>/spool-workstation` and `spool-egress` as one
-multi-arch image each, and attests them (#763). Then it runs
+refuses a tag whose commit is not on `main`, and one that would ship a
+feature half (#1446): a `feat` PR merged since the last tag whose
+`Other half:` names an issue still open (`scripts/release-gate.sh`).
+It builds both images on native amd64 and arm64 runners
+(`scripts/release-images.sh`), pushes them to
+`ghcr.io/<owner>/spool-workstation` and `spool-egress` as one multi-arch
+image each, and attests them (#763). Then it runs
 `scripts/release-build.sh` with their digests embedded, attests each
 archive, attaches the archives and `SHA256SUMS`, and adds the digests to
 the notes under **Images**, with the Claude Code version the workstation
@@ -53,6 +56,15 @@ dispatched `release` run, `smoke-dry-run` included, is green. The tag ask
 links that run, and the operator checks that the commit it ran on is the
 commit being tagged. The tag's own smoke then confirms what was published;
 it is not the first time the binary has been run.
+
+**Is main releasable today?** Run `git fetch --tags origin && bash
+scripts/release-gate.sh` (it needs `gh` signed in and `jq`). It lists
+each `feat` PR merged since the last tag whose other half is still open,
+and exits 1 while there is one. The dry run runs the same check first, so
+ask for the tag only once the gate is green: merge each named half, or
+close an issue the work no longer needs. An `Other half: none — <reason>`,
+`API-only` or `UI-only` line passes, so a PR that truly has no other
+half never holds a tag.
 
 **After a tag publishes**, its `smoke` job installs the published release
 on a fresh runner (`scripts/release-smoke.sh <tag>`). Not every step is
