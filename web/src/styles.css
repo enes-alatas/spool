@@ -32,6 +32,10 @@
   --active-wash: rgba(255, 138, 31, 0.07);
   /* --active at its brightest, the prompts.chat mark's shine (#1264) */
   --active-shine: #ffd29e;
+  /* a loop circle's context ring above 40% and 70% full (#1411): cool, so
+     nothing on a circle but its running ring is orange */
+  --orb-context-mid: #8fe3c8;
+  --orb-context-high: #cfd8ff;
   /* meters and fills: data, drawn in the text colour. The token is a plain
      colour; each rule sets its own weight with opacity, so the dimming lives
      in one layer and an emphasised bar can still reach full strength */
@@ -672,10 +676,6 @@ textarea {
 .feed-item .dropped {
   margin-top: 0;
   white-space: nowrap;
-}
-/* the fleet's total in the summary line: a fault among plain numbers */
-.undelivered-total {
-  color: var(--danger);
 }
 /* the Fleet row's count, which opens that loop's Undelivered pane (#281):
    it has to read as a way in among the row's plain notes, without looking
@@ -6117,4 +6117,500 @@ button.panel-link {
   font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--text-muted);
+}
+
+/* The fleet as teams (#1411): a card per team, a circle per loop. The cards
+   are glass over a faint neutral glow, so the glow carries no status colour. */
+.orb-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 14px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+/* The line over the cards or rows: the circles' legend, then the counts
+   and the Teams | List switch at its right end. */
+.fleet-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0 0 14px;
+}
+.fleet-bar .orb-key {
+  margin: 0;
+}
+.fleet-bar .fleet-summary {
+  margin-left: auto;
+}
+.orb-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.key {
+  display: inline-block;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+}
+.key.context {
+  background: linear-gradient(90deg, var(--ready), var(--orb-context-high));
+}
+.key.share {
+  height: 2px;
+  background: var(--text);
+}
+.key.halo {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px var(--danger),
+    0 0 8px var(--danger);
+}
+.key.spin {
+  width: 10px;
+  height: 10px;
+  border: 2px dashed var(--active);
+  border-radius: 50%;
+}
+.team-cards {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  gap: 20px;
+}
+.team-cards::before {
+  content: '';
+  position: absolute;
+  inset: -40px -60px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 18% 30%, rgba(150, 170, 210, 0.07), transparent 70%),
+    radial-gradient(35% 45% at 82% 65%, rgba(120, 130, 170, 0.08), transparent 70%),
+    radial-gradient(30% 40% at 55% 10%, rgba(220, 225, 235, 0.05), transparent 70%);
+  filter: blur(20px);
+}
+.team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px 20px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015) 60%);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 18px 40px -24px rgba(0, 0, 0, 0.9);
+}
+.team-card.alert {
+  border-color: color-mix(in oklab, var(--danger) 50%, transparent);
+}
+.team-card.loose {
+  grid-column: 1 / -1;
+  order: 2;
+}
+.team-card-new {
+  order: 1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+.team-card-new span {
+  font-size: 1.25rem;
+  font-weight: 300;
+}
+.team-card-new:hover,
+.team-card-new:focus-visible {
+  border-color: color-mix(in oklab, var(--text) 40%, transparent);
+  color: var(--text);
+}
+.team-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.team-card-head h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  font-weight: 500;
+}
+.team-card-kind {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.team-card-pulse {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.team-card-pulse.fault {
+  color: var(--danger);
+}
+.team-card-pulse.working {
+  color: var(--active);
+}
+.team-card-edit {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.team-card-edit:hover,
+.team-card-edit:focus-visible {
+  color: var(--text);
+}
+.team-card-desc {
+  margin: -4px 0 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.team-card-loops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  margin-top: auto;
+  padding: 10px 4px 4px;
+}
+.team-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.team-form label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.team-form-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.team-form-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.team-form-note.bad {
+  color: var(--danger);
+}
+.team-form .controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.team-form-delete {
+  margin-left: auto;
+}
+
+/* a loop's circle */
+@keyframes orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes orb-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+.orb svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.orb-track {
+  fill: none;
+  stroke: var(--hairline);
+}
+.orb-core {
+  stroke: color-mix(in oklab, var(--text) 9%, transparent);
+  stroke-width: 0.6;
+}
+.orb-core-top {
+  stop-color: #1c1c22;
+}
+.orb-core-top.fault {
+  stop-color: #3a1018;
+}
+.orb-core-bottom {
+  stop-color: #08080a;
+}
+.orb-halo {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px var(--danger));
+  animation: orb-breathe 2.4s ease-in-out infinite;
+}
+/* slow on purpose: a fast spin across a dozen circles is dizzying */
+.orb-spin {
+  fill: none;
+  stroke: var(--active);
+  stroke-width: 2;
+  stroke-dasharray: 18 10;
+  transform-origin: 60px 60px;
+  opacity: 0.75;
+  animation: orb-spin 24s linear infinite;
+}
+button.orb {
+  z-index: 1;
+  cursor: pointer;
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1.25, 0.36, 1),
+    opacity 0.25s,
+    filter 0.25s;
+}
+button.orb:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+/* hover or focus lifts the circle over its neighbours, which sit back */
+button.orb:hover,
+button.orb:focus-visible {
+  z-index: 5;
+  transform: scale(1.9);
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.25));
+}
+.team-card-loops:has(button.orb:hover) .orb-slot:not(:hover),
+.team-card-loops:has(button.orb:hover) .orb-add {
+  opacity: 0.55;
+  filter: blur(0.6px);
+}
+.orb-slot,
+.orb-add {
+  transition:
+    opacity 0.25s,
+    filter 0.25s;
+}
+.orb-initial {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 1.125rem;
+  font-weight: 600;
+  transition: opacity 0.18s;
+}
+.orb.calm .orb-initial {
+  color: var(--text-muted);
+}
+.orb.fault .orb-initial {
+  color: color-mix(in oklab, var(--danger) 70%, var(--text));
+}
+.orb-peek {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s;
+}
+.orb-peek .orb-name,
+.orb-peek .orb-state {
+  max-width: 86%;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.orb-peek .orb-name {
+  font-size: 0.42rem;
+  line-height: 1.35;
+}
+.orb-peek .orb-state {
+  font-size: 0.31rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.orb-peek .orb-state.fault {
+  color: var(--danger);
+}
+button.orb:hover .orb-initial,
+button.orb:focus-visible .orb-initial {
+  opacity: 0;
+}
+button.orb:hover .orb-peek,
+button.orb:focus-visible .orb-peek {
+  opacity: 1;
+}
+/* the dashed circle that adds: a pick-list in a team, New loop outside one */
+.orb-add {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border: 1.5px dashed color-mix(in oklab, var(--text) 22%, transparent);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  font-weight: 300;
+  text-decoration: none;
+  cursor: pointer;
+}
+.orb-add:hover,
+.orb-add:focus-within,
+.orb-add:focus-visible {
+  border-color: var(--text);
+  color: var(--text);
+}
+.orb-add select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* a loop opened from its circle, in the middle of the page */
+/* a modal <dialog>, stripped of the browser's box: it fills the viewport,
+   and the veil inside it is the backdrop */
+.orb-focus[open] {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.orb-focus::backdrop {
+  background: transparent;
+}
+.orb-veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, #000 42%, transparent);
+  backdrop-filter: blur(6px);
+}
+.orb-detail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 66%;
+  text-align: center;
+  animation: orb-detail-in 420ms 120ms both cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes orb-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+.orb-detail-name {
+  font-family: var(--mono);
+  font-size: 1.0625rem;
+}
+.orb-detail-state {
+  margin-top: -3px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.orb-detail-problem {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--danger);
+}
+.orb-detail-doing {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.orb-detail-facts {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.orb-detail-open {
+  margin-top: 4px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--canvas);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.orb-detail-open:hover,
+.orb-detail-open:focus-visible {
+  background: var(--active-shine);
+}
+@media (prefers-reduced-motion: reduce) {
+  .orb-halo,
+  .orb-spin,
+  .orb-detail {
+    animation: none;
+  }
+  button.orb,
+  .orb-slot,
+  .orb-add {
+    transition: none;
+  }
 }

@@ -174,6 +174,9 @@ export interface LoopView {
   // Whether the loop is in the fleet channel: it receives what addresses it
   // there and may post to it (ADR-0032). Always present since #295.
   in_fleet_channel: boolean
+  // The team the loop is in (ADR-0066), '' when it is in none. A loop is in
+  // one team at most.
+  team: string
   // The connections attached to the loop (ADR-0043), name-sorted, by name
   // and kind only: never a value. Absent from a hub too old to attach.
   connections?: LoopConnection[]
@@ -768,6 +771,24 @@ export interface SkillInstall {
   files: SkillFile[]
 }
 
+// A team (ADR-0066, #1410): a set of loops that work together. Mirrors
+// httpapi's teamView.
+export interface Team {
+  // Under the loop-name rule; refused 400 `team_name_invalid`, and 409
+  // `team_exists` when taken.
+  name: string
+  // One line, at most 280 characters; '' when none.
+  description: string
+  // Unix ms.
+  created_at: number
+  // Its loops' names, sorted.
+  loops: string[]
+  // The channel every loop put in the team joins, '' for none; channels are
+  // all of the team's, by name.
+  home_channel: string
+  channels: string[]
+}
+
 // A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to
 // show before it creates anything: one loop per member, named from its role
 // and suffixed where a name is taken, and the channel holding them all.
@@ -1269,6 +1290,10 @@ export interface CreateLoopReq {
   // Whether the loop is in the fleet channel (ADR-0032). On create, absent
   // means the server's default: out for a fleet's first loop, in otherwise.
   in_fleet_channel?: boolean
+  // The team to put the loop in (ADR-0066): another team moves it, '' takes
+  // it out, and leaving it out leaves the loop where it is. A team the hub
+  // doesn't hold is refused 404 `team_not_found`.
+  team?: string
   // The Claude login a contained loop runs on (ADR-0060): absent or
   // `default` for the default. A bare or cloud loop naming another is
   // refused 409 `claude_login`, and a login the hub doesn't hold 400.
@@ -1835,6 +1860,15 @@ export const api = {
     runtime: string
     loops: { name: string; mission: string; skills?: SkillInstall[] }[]
   }) => req<CreatedTeam>('/api/import/prompts-chat/team', { method: 'POST', body: JSON.stringify(team) }),
+  teams: () => req<Team[]>('/api/teams'),
+  // Refused 400 `team_name_invalid` or 409 `team_exists`.
+  addTeam: (team: { name: string; description: string }) =>
+    req<Team>('/api/teams', { method: 'POST', body: JSON.stringify(team) }),
+  // A rename answers the team under its new name; refused as addTeam is.
+  patchTeam: (name: string, body: { name?: string; description?: string }) =>
+    req<Team>(`/api/teams/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // Refused 409 `team_has_loops` while it has loops, the error naming them.
+  deleteTeam: (name: string) => req<void>(`/api/teams/${name}`, { method: 'DELETE' }),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes
   // nothing. Removal takes the entry exactly as listed.

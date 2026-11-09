@@ -90,7 +90,8 @@ try {
   step = 'Fleet'
   await heading('Fleet')
   for (const name of ['gardener', 'watcher', 'courier', 'archivist']) {
-    await see(page.locator('.fleet-row', { hasText: name }), `the ${name} row`)
+    // a loop is a circle on its team's card, named "<loop>: <state>" (#1411)
+    await see(page.getByRole('button', { name: new RegExp(`^${name}: `) }), `the ${name} circle`)
   }
 
   step = 'Fleet channel'

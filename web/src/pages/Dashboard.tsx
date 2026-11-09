@@ -20,6 +20,7 @@ import { PlanUsageStrip } from '../components/PlanUsage'
 import { Doing } from '../components/Doing'
 import { HealthNote } from '../components/Health'
 import { useMay } from '../components/Session'
+import { FleetTeams, OrbKey } from '../components/FleetTeams'
 import { FleetColumns } from '../components/FleetColumns'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
@@ -27,6 +28,7 @@ import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 import { cappedBy } from '../dailyCap'
 import { loopPlanCapped } from '../planCap'
+import { readFleetLayout, saveFleetLayout, type FleetLayout } from '../teams'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -245,13 +247,14 @@ export default function Dashboard() {
   // cap has fired
   const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
 
-  // The sum of the rows' badges, which are the store's per-loop counts: each
-  // row's badge opens that loop's pane (#281), and the pane lists the same
-  // predicate the badge counts, so the total cannot name a failure no pane
-  // shows.
-  const undelivered = (loops ?? []).reduce((sum, l) => sum + l.undelivered, 0)
-
-  const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
+  // The fleet as its teams (#1411). A hub too old for teams answers 404, and
+  // the fleet shows as rows as it did before. Until the answer comes, neither
+  // shows, so the rows never flash up ahead of the cards.
+  const { data: teams, isPending: teamsPending } = useQuery({
+    queryKey: ['teams'],
+    queryFn: api.teams,
+    retry: false,
+  })
   // Summed from the rows already on screen: the list endpoint carries each
   // loop's daily cost, so the fleet's bill for the day costs no request of its
   // own. It stands on the plan strip, over the TODAY column it totals, because
@@ -264,26 +267,31 @@ export default function Dashboard() {
   // reload lands on the tab that was open.
   const [params] = useSearchParams()
   const onChannel = params.get('view') === 'channel'
+  // Teams or the rows they replaced (#1411): the cards are new, so the
+  // rows stay a click away for an operator who reads the fleet that way.
+  // Remembered in this browser, as how one person likes to read the page.
+  const [layout, setLayout] = useState<FleetLayout>(readFleetLayout)
+  const chooseLayout = (next: FleetLayout) => {
+    setLayout(next)
+    saveFleetLayout(next)
+  }
 
   return (
     <div className="page">
-      <div className="fleet-head">
-        <h1>Fleet</h1>
-        {loops && loops.length > 0 && (
-          <span className="fleet-summary">
-            {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
-            {busy > 0 && ` · ${busy} busy`}
-            {/* Plain text: there is no fleet-wide list to open any more
-                (#281). The rows with a badge are where to go. */}
-            {undelivered > 0 && (
-              <>
-                {' · '}
-                <span className="undelivered-total">{undelivered} undelivered</span>
-              </>
-            )}
-          </span>
-        )}
-      </div>
+      {teams ? (
+        // The nav already names the page, and a title over the cards
+        // outweighed them; the counts sit on the cards' legend row instead.
+        <h1 className="sr-only">Fleet</h1>
+      ) : (
+        <div className="fleet-head">
+          <h1>Fleet</h1>
+          {loops && loops.length > 0 && (
+            <span className="fleet-summary">
+              {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
+            </span>
+          )}
+        </div>
+      )}
       {loops && loops.length > 0 && (
         <PlanUsageStrip spentToday={spentToday} costDayTitle={costDayTitle(loops)} />
       )}
@@ -301,7 +309,9 @@ export default function Dashboard() {
         <ChannelChat />
       ) : (
         <>
-          {isLoading && <div className="fleet-note">Loading the fleet…</div>}
+          {(isLoading || (loops && loops.length > 0 && teamsPending)) && (
+            <div className="fleet-note">Loading the fleet…</div>
+          )}
           {isError && (
             <div className="form-error" role="alert">
               Could not load the fleet: {error instanceof Error ? error.message : String(error)}
@@ -325,7 +335,33 @@ export default function Dashboard() {
             </div>
           )}
 
-          {loops && loops.length > 0 && (
+          {loops && loops.length > 0 && teams && (
+            <div className="fleet-bar">
+              {layout === 'teams' && <OrbKey />}
+              {/* Counts only: what needs the operator is on the cards. */}
+              <span className="fleet-summary">
+                {teams.length} {teams.length === 1 ? 'team' : 'teams'} · {loops.length}{' '}
+                {loops.length === 1 ? 'loop' : 'loops'}
+              </span>
+              <div className="figures-windows" role="group" aria-label="Fleet layout">
+                {(['teams', 'list'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`figures-window${option === layout ? ' on' : ''}`}
+                    aria-pressed={option === layout}
+                    onClick={() => chooseLayout(option)}
+                  >
+                    {option === 'teams' ? 'Teams' : 'List'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {loops && loops.length > 0 && teams && layout === 'teams' && (
+            <FleetTeams teams={teams} loops={loops} spentToday={spentToday} manage={may('manage')} />
+          )}
+          {loops && loops.length > 0 && ((!teams && !teamsPending) || (teams && layout === 'list')) && (
             <div className="fleet-list">
               <FleetColumns />
               {loops.map((fleetLoop) => (

@@ -71,6 +71,7 @@ import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 import { StepDialog } from '../components/StepDialog'
 import { SideColumn } from '../components/SideColumn'
+import { LoopTeam } from '../components/LoopTeam'
 import { LoopControls } from '../components/LoopControls'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
 import { Marked } from '../components/Marked'
@@ -2203,6 +2204,8 @@ export default function LoopDetail() {
           </div>
 
           <LoopControls loop={loop} paused={paused} />
+
+          <LoopTeam loop={loop} />
 
           <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
 
