@@ -827,7 +827,7 @@ func (actor *Actor) holdsWork() bool {
 // than told, so a turn whose own usage report crossed a threshold, or whose
 // cost reached the loop's cap, stops the next turn from starting (ADR-0047).
 func (actor *Actor) capped() bool {
-	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(actor.loop.ClaudeLogin, now()) || actor.dailyCapUntil() > 0
+	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(actor.login(), now()) || actor.dailyCapUntil() > 0
 }
 
 // held reports whether a cap stops the loop's next turn, its login's plan
@@ -981,7 +981,7 @@ func (actor *Actor) wake() {
 			actor.crashBackoff()
 			return
 		case token == "":
-			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.loop.ClaudeLogin))
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.login()))
 			actor.crashBackoff()
 			return
 		}
@@ -1349,7 +1349,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		// secret, and runs under the account of the loop's login
 		spec.Cloud = runtime.CloudStart{
 			Repo: actor.loop.CloudRepo, Branch: actor.loop.CloudBranch, EnvironmentID: actor.loop.CloudEnvironmentID,
-			Login: actor.loop.ClaudeLogin, Loop: actor.loop.Name,
+			Login: actor.login(), Loop: actor.loop.Name,
 		}
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
@@ -1689,7 +1689,7 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 	case ev.Type == "rate_limit_event":
 		actor.storeClaudeEvent(ev)
 		if observed, ok := planUsageFrom(ev.RateLimit, now()); ok && actor.deps.PlanUsage != nil {
-			if err := actor.deps.PlanUsage.Observe(context.Background(), actor.loop.ClaudeLogin, observed); err != nil {
+			if err := actor.deps.PlanUsage.Observe(context.Background(), actor.login(), observed); err != nil {
 				actor.log().Error("plan usage", "err", err)
 			} else if actor.deps.PlanCap != nil {
 				// judged before the turn ends, so its end is the boundary
@@ -2691,7 +2691,7 @@ func (actor *Actor) claudeToken(ctx context.Context) (string, error) {
 	if actor.deps.ClaudeToken == nil {
 		return "", nil
 	}
-	return actor.deps.ClaudeToken(ctx, actor.loop.ClaudeLogin)
+	return actor.deps.ClaudeToken(ctx, actor.login())
 }
 
 // power carries out one operator power control, in the actor's goroutine.
@@ -2886,7 +2886,7 @@ func (actor *Actor) checkWorkstation() {
 		case token == "":
 			// A contained loop can't run without the operator token; say so
 			// here too, so the poll doesn't overwrite it with "not found".
-			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.loop.ClaudeLogin))
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.login()))
 			return
 		}
 	}
@@ -3342,4 +3342,11 @@ func newUUID() string {
 	dst := make([]byte, 32)
 	hex.Encode(dst, random[:])
 	return fmt.Sprintf("%s-%s-%s-%s-%s", dst[0:8], dst[8:12], dst[12:16], dst[16:20], dst[20:32])
+}
+
+// login is the Claude login the loop runs on, "" for the hub's default:
+// its own, else its team's (ADR-0066).
+func (actor *Actor) login() string {
+	login, _ := actor.loop.Login()
+	return login
 }

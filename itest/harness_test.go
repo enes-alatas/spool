@@ -417,6 +417,8 @@ type loopView struct {
 	DailyCapReached    bool    `json:"daily_cap_reached"`
 	DailyCapUSD        float64 `json:"daily_cap_usd"`
 	ClaudeLogin        string  `json:"claude_login"`
+	EffectiveLogin     string  `json:"effective_claude_login"`
+	LoginFrom          string  `json:"claude_login_from"`
 	Doing              string  `json:"doing"`
 	DoingAt            int64   `json:"doing_at"`
 	Problems           []struct {

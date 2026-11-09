@@ -1,6 +1,6 @@
 # ADR-0060: A hub holds several Claude logins, and a loop runs on one of them
 
-Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27, 2026-10-28, 2026-10-31 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
+Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27, 2026-10-28, 2026-10-31, 2026-11-09 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
 
 ## Context
 
@@ -83,6 +83,13 @@ refreshes it.
      revokes the loop's hub token, which the old account's environment
      keeps as its secret, so the loop waits for Rotate token. Its
      setup check stands again only after a pass on the new login.
+
+   **Amendment (2026-11-09, #1440):** an empty `claude_login` on a
+   contained loop now means its team's login when its team names one,
+   and the default otherwise (ADR-0066 item 3 and its #1440 amendment).
+   A bare loop and a cloud loop never inherit a team's login. A change
+   of a contained loop's team login closes its process at its next
+   quiet boundary, as a move does.
 
 4. **Plan usage is kept per login.** A loop's rate-limit event is
    recorded against the login it ran on.

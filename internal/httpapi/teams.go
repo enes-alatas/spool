@@ -43,6 +43,9 @@ type teamView struct {
 	// for none; Channels are all of the team's, by name.
 	HomeChannel string   `json:"home_channel"`
 	Channels    []string `json:"channels"`
+	// ClaudeLogin is the Claude login the team's contained loops run on
+	// when they name none, "" for the hub's default (ADR-0066).
+	ClaudeLogin string `json:"claude_login"`
 }
 
 func (server *Server) teamViews(r *http.Request, teams ...*store.Team) ([]teamView, error) {
@@ -53,7 +56,7 @@ func (server *Server) teamViews(r *http.Request, teams ...*store.Team) ([]teamVi
 	views := make([]teamView, 0, len(teams))
 	for _, team := range teams {
 		view := teamView{Name: team.Name, Description: team.Description, CreatedAt: team.CreatedAt, Loops: namesOf(names, team.LoopIDs),
-			HomeChannel: team.HomeChannel, Channels: team.Channels}
+			HomeChannel: team.HomeChannel, Channels: team.Channels, ClaudeLogin: team.ClaudeLogin}
 		if view.Channels == nil {
 			view.Channels = []string{}
 		}
@@ -158,12 +161,16 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		// HomeChannel names the channel made with the team, the team's own
 		// name when absent.
 		HomeChannel *string `json:"home_channel"`
+		// ClaudeLogin is the team's default Claude login, "" or "default"
+		// for the hub's.
+		ClaudeLogin string `json:"claude_login"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	team := &store.Team{Name: req.Name, Description: strings.TrimSpace(req.Description), CreatedAt: time.Now().UnixMilli()}
+	team := &store.Team{Name: req.Name, Description: strings.TrimSpace(req.Description), CreatedAt: time.Now().UnixMilli(),
+		ClaudeLogin: loopLoginName(req.ClaudeLogin)}
 	if refusal := teamNameRefusal(team.Name); refusal != nil {
 		server.refuse(w, refusal)
 		return
@@ -185,7 +192,14 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 			"the home channel %q is not a channel name, which is 1 to 32 of a-z, 0-9 and '-'; name it with home_channel", team.HomeChannel)
 		return
 	}
-	if err := server.Store.Teams().Create(r.Context(), team); err != nil {
+	refusal, err := server.putOnLogin(r.Context(), team.ClaudeLogin, func() error {
+		return server.Store.Teams().Create(r.Context(), team)
+	})
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	if err != nil {
 		if errors.Is(err, store.ErrChannelTaken) {
 			server.jsonErrCode(w, 409, codeChannelExists, "a channel named %q already exists; name the team's home channel with home_channel", team.HomeChannel)
 			return
@@ -203,16 +217,22 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 		HomeChannel *string `json:"home_channel"`
+		ClaudeLogin *string `json:"claude_login"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	if req.Name == nil && req.Description == nil && req.HomeChannel == nil {
-		server.jsonErr(w, 400, "nothing to change: a team's name, description and home channel are the fields that change")
+	if req.Name == nil && req.Description == nil && req.HomeChannel == nil && req.ClaudeLogin == nil {
+		server.jsonErr(w, 400, "nothing to change: a team's name, description, home channel and Claude login are the fields that change")
 		return
 	}
 	edit := store.TeamEdit{Name: req.Name, HomeChannel: req.HomeChannel, At: time.Now().UnixMilli()}
+	putOn := ""
+	if req.ClaudeLogin != nil {
+		putOn = loopLoginName(*req.ClaudeLogin)
+		edit.ClaudeLogin = &putOn
+	}
 	if req.HomeChannel != nil && *req.HomeChannel != "" {
 		if _, err := server.Store.Channels().Get(r.Context(), *req.HomeChannel); errors.Is(err, store.ErrNotFound) {
 			server.jsonErrCode(w, 404, codeChannelNotFound, "channel %q not found", *req.HomeChannel)
@@ -237,7 +257,11 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 		edit.Description = &description
 	}
 	name := r.PathValue("name")
-	team, err := server.Store.Teams().Edit(r.Context(), name, edit)
+	wasLogin, team, refusal, err := server.editTeam(r.Context(), name, putOn, edit)
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
 	if errors.Is(err, store.ErrChannelNotInTeam) {
 		server.jsonErrCode(w, 409, codeChannelNotInTeam, "channel %q is not team %q's; give it to the team first", *req.HomeChannel, name)
 		return
@@ -249,10 +273,29 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 		server.teamErr(w, err, name)
 		return
 	}
-	if req.Name != nil {
-		server.teamRenamed(r, team)
+	if req.Name != nil || team.ClaudeLogin != wasLogin {
+		server.teamLoopsChanged(r, team, wasLogin)
 	}
 	server.writeTeam(w, r, 200, team)
+}
+
+// editTeam writes edit to the team name, putting it on the Claude login
+// putOn when the edit names one, and returns the login the team named
+// before. Reading that login and writing the new one sit under
+// teamEditMu, so two concurrent edits can't both read the same login and
+// leave a loop the second one moved unrefreshed.
+func (server *Server) editTeam(ctx context.Context, name, putOn string, edit store.TeamEdit) (wasLogin string, team *store.Team, refusal *requestError, err error) {
+	server.teamEditMu.Lock()
+	defer server.teamEditMu.Unlock()
+	before, err := server.Store.Teams().Get(ctx, name)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	refusal, err = server.putOnLogin(ctx, putOn, func() (err error) {
+		team, err = server.Store.Teams().Edit(ctx, name, edit)
+		return err
+	})
+	return before.ClaudeLogin, team, refusal, err
 }
 
 // handleDeleteTeam deletes a team with no loops in it, and its channels
@@ -287,12 +330,26 @@ func (server *Server) teamHasLoops(w http.ResponseWriter, r *http.Request, name 
 		name, strings.Join(namesOf(names, team.LoopIDs), ", "))
 }
 
-// teamRenamed hands each of the team's loops its row as it now stands,
-// in it under the new name, as a loop's PATCH does.
-func (server *Server) teamRenamed(r *http.Request, team *store.Team) {
+// teamLoopsChanged hands each of the team's loops its row as it now stands,
+// as a loop's PATCH does: in it under a new name, or on its new Claude
+// login. A loop the team's login moved, one that names none of its own,
+// closes its process at its next quiet boundary, as a loop's own move does
+// (ADR-0060, ADR-0066); wasLogin is the team's login before the edit.
+func (server *Server) teamLoopsChanged(r *http.Request, team *store.Team, wasLogin string) {
 	for _, loopID := range team.LoopIDs {
-		if updated, err := server.Store.Loops().Get(r.Context(), loopID); err == nil {
-			server.Manager.UpdateLoop(updated)
+		updated, err := server.Store.Loops().Get(r.Context(), loopID)
+		if err != nil {
+			continue
+		}
+		server.Manager.UpdateLoop(updated)
+		was := *updated
+		was.TeamClaudeLogin = wasLogin
+		if effectiveLogin(updated) == effectiveLogin(&was) {
+			continue
+		}
+		server.loopChanged(r.Context(), updated.ID)
+		if actor, ok := server.Manager.Get(updated.ID); ok {
+			actor.RefreshEnv()
 		}
 	}
 }

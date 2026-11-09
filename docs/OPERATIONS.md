@@ -274,7 +274,8 @@ and never puts one in a workstation (ADR-0058, ADR-0060).
 A hub can hold several Claude logins, each under a name. The one named
 `default` is the one **Sign in with Claude** signs in, on the setup card
 and in Settings → Cloud. A contained loop runs on the login it names, its
-`claude_login`, and one that names none on `default`. A bare loop runs on
+`claude_login`. One that names none runs on its team's login, if its
+team names one, and otherwise on `default`. A bare loop runs on
 this machine's own login, so naming a login on one is refused (409). A
 cloud loop names one too, and its environment must be one of that
 login's account's ([Cloud loops](#cloud-loops), #1078). Moving a
@@ -346,13 +347,21 @@ and a passed check before it runs again (#1228).
 - `POST /api/claude-logins/ada/sign-out` revokes it at the source and
   keeps it, so the loops on it keep a valid name. Sign out is never
   refused.
-- `DELETE /api/claude-logins/ada` removes it. It is refused while loops
-  run on it, and `default` counts every loop that names none.
+- `DELETE /api/claude-logins/ada` removes it. It is refused while a team
+  names it or loops run on it, and `default` counts every loop on no
+  other login.
 - An admin puts a loop on a login with `"claude_login": "ada"` in the
   loop's create or `PATCH`, and `"default"` or `""` moves it back. A
   member changes no loop's config. Put a loop on another user's login
   only with that user's say-so: nothing enforces it until loops have
   owners (#100).
+- An admin puts a team's contained loops on a login with
+  `"claude_login": "ada"` in the team's create or `PATCH`. Each loop that
+  names none of its own moves at its next quiet boundary, and a loop
+  joining or leaving the team moves with it. A bare loop and a cloud
+  loop never take a team's login. The loop view's
+  `effective_claude_login` and `claude_login_from` say which login a loop
+  runs on and why (ADR-0066).
 
 ## Management tokens
 

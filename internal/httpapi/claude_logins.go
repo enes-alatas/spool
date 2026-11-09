@@ -291,8 +291,8 @@ func (server *Server) defaultTokenUnset(ctx context.Context) bool {
 
 // handleRemoveClaudeLogin removes a login, signing it out at the source
 // first and ending its sign-in waiting for a code. It is refused while a
-// loop runs on it, the default counting every loop that names no login,
-// and the refusal names them (ADR-0060).
+// team names it or a loop runs on it, the default counting every loop on
+// no other login, and the refusal names them (ADR-0060, ADR-0066).
 func (server *Server) handleRemoveClaudeLogin(w http.ResponseWriter, r *http.Request) {
 	login := server.managedLogin(w, r)
 	if login == nil {
@@ -302,6 +302,17 @@ func (server *Server) handleRemoveClaudeLogin(w http.ResponseWriter, r *http.Req
 	// under the login's lock, which a loop naming it takes too, so no loop
 	// is put on it between the count and the delete
 	server.lockLogin(login.Name)
+	teams, err := server.teamsOnLogin(ctx, login.Name)
+	if err != nil {
+		server.unlockLogin(login.Name)
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if len(teams) > 0 {
+		server.unlockLogin(login.Name)
+		server.jsonErrCode(w, 409, codeClaudeLogin, "teams name the Claude login %s as theirs: %s; give them another first", login.Name, strings.Join(teams, ", "))
+		return
+	}
 	onIt, err := server.loopsOnLogin(ctx, login.Name)
 	if err != nil {
 		server.unlockLogin(login.Name)
@@ -330,9 +341,25 @@ func (server *Server) handleRemoveClaudeLogin(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// teamsOnLogin names the teams that name the login called name as theirs
+// (ADR-0066). The default is never named: a team on it names none.
+func (server *Server) teamsOnLogin(ctx context.Context, name string) ([]string, error) {
+	teams, err := server.Store.Teams().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, team := range teams {
+		if team.ClaudeLogin == name {
+			names = append(names, team.Name)
+		}
+	}
+	return names, nil
+}
+
 // loopsOnLogin names the loops not archived that run on the login called
-// name: those that name it, or for the default every loop that names no
-// login (ADR-0060).
+// name: those that name it or inherit it from their team, or for the
+// default every loop on no other login (ADR-0060, ADR-0066).
 func (server *Server) loopsOnLogin(ctx context.Context, name string) ([]string, error) {
 	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
@@ -340,7 +367,7 @@ func (server *Server) loopsOnLogin(ctx context.Context, name string) ([]string, 
 	}
 	var names []string
 	for _, loopRecord := range loops {
-		if loopRecord.Status != store.StatusArchived && loginKey(loopRecord.ClaudeLogin) == name {
+		if loopRecord.Status != store.StatusArchived && loginKey(effectiveLogin(loopRecord)) == name {
 			names = append(names, loopRecord.Name)
 		}
 	}
@@ -403,6 +430,13 @@ func loopLoginName(name string) string {
 		return ""
 	}
 	return name
+}
+
+// effectiveLogin is the Claude login the loop runs on, as a loop names it:
+// "" for the hub's default (ADR-0066).
+func effectiveLogin(loopRecord *store.Loop) string {
+	login, _ := loopRecord.Login()
+	return login
 }
 
 // loopLoginRefusal says why a loop of runtime loopRuntime may not name the

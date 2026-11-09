@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411); 2026-11-09 (item 6: the Claude login by scope, #1440)
 
 ## Context
 
@@ -238,6 +238,34 @@ channel, item 1 is amended with it.
      for byte as before.
    - **A rename** carries the team's rules to the new name, and deleting
      the team deletes them, both by the store's foreign key.
+
+   **Amendment (2026-11-09, #1440): the routes and fields of the Claude
+   login by scope.**
+   - **A team view** carries `claude_login`: the login the team's
+     contained loops run on when they name none, `""` for the hub's
+     default. `POST /api/teams` and `PATCH /api/teams/{name}` take it.
+     `""` or `"default"` clears it, as on a loop. A login the hub
+     doesn't hold is 400 `claude_login`, as on a loop.
+   - **Item 3's rule binds contained loops.** A loop's login is its
+     own, else its team's for a contained loop, else the hub's default.
+     A bare loop runs on the host's own login, as ADR-0060 item 3 says.
+     A cloud loop runs on its own login, else the hub's default, and
+     never its team's. A cloud loop changes login only while stopped,
+     and the change drops its session, revokes its hub token and needs
+     an environment of the new account (ADR-0060's #1078 amendment). A
+     team edit can't wait for that, so it would strand a running cloud
+     loop.
+   - **A loop view** keeps `claude_login` as the loop's own and gains
+     `effective_claude_login`, the login it runs on (`"default"` for
+     the hub's, `""` for a bare loop), and `claude_login_from`: `loop`,
+     `team`, `hub` or `host`.
+   - **A change of a loop's effective login** closes its process at its
+     next quiet boundary, as ADR-0060 item 3 does for a loop's own move.
+     That covers a team's new login, and a loop joining or leaving a
+     team with one. The Claude proxy takes the new login from the next
+     request.
+   - **`DELETE /api/claude-logins/{name}`** for a login a team names is
+     409 `claude_login`, and the error names the teams.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;

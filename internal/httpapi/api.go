@@ -186,6 +186,10 @@ type Server struct {
 	// cloudEnvironmentMu serializes changes to the chosen environment: a
 	// confirm reads it and the list to paste before it writes.
 	cloudEnvironmentMu sync.Mutex
+	// teamEditMu serializes team edits from reading the team to writing
+	// it: each compares the login it read with the one it wrote to say
+	// which loops to refresh, and the login locks it takes may differ.
+	teamEditMu sync.Mutex
 	// cloudChecks are the address-check values issued and not yet seen
 	// back on the cloud listener (ADR-0056).
 	cloudChecks cloudChecks
@@ -590,6 +594,12 @@ type loopView struct {
 	// traces whatever the settings say (ADR-0064). Absent on any other loop:
 	// the Langfuse settings say whether those export.
 	Langfuse string `json:"langfuse,omitempty"`
+	// EffectiveClaudeLogin is the Claude login the loop runs on, by name,
+	// "default" for the hub's default and "" for a bare loop, which runs on
+	// this machine's own; ClaudeLoginFrom is where it comes from: loop,
+	// team, hub, or host (ADR-0066).
+	EffectiveClaudeLogin string `json:"effective_claude_login"`
+	ClaudeLoginFrom      string `json:"claude_login_from"`
 }
 
 // loopConnectionView is one connection a loop holds.
@@ -626,6 +636,11 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
 		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel,
 		Connections: []loopConnectionView{}, Problems: []store.Problem{}, Health: loop.HealthOK}
+	login, from := loopRecord.Login()
+	out.ClaudeLoginFrom = from
+	if from != store.LoginFromHost {
+		out.EffectiveClaudeLogin = loginKey(login)
+	}
 	if connections, err := server.Store.Connections().ListByLoop(ctx, loopRecord.ID); err == nil {
 		for _, connection := range connections {
 			out.Connections = append(out.Connections, loopConnectionView{Name: connection.Name, Kind: connection.Kind})
@@ -662,7 +677,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 			nowMS := time.Now().UnixMilli()
 			out.CappedUntil = dailyUntil
 			if server.PlanCap != nil {
-				if planCap := server.PlanCap.At(loopRecord.ClaudeLogin, nowMS); planCap.Holds(nowMS) {
+				if planCap := server.PlanCap.At(effectiveLogin(loopRecord), nowMS); planCap.Holds(nowMS) {
 					out.CappedUntil = max(out.CappedUntil, planCap.Until)
 				}
 			}
@@ -1430,8 +1445,9 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	// The proxy picks the token at each request, and a move also closes the
 	// process at its next quiet boundary, as an env-var change does, so the
 	// session goes on in a process that has only known the new login
-	// (ADR-0060).
-	if updated.ClaudeLogin != loopRecord.ClaudeLogin {
+	// (ADR-0060). Joining or leaving a team with a login of its own is a move
+	// too, for a loop that names none (ADR-0066).
+	if effectiveLogin(updated) != effectiveLogin(loopRecord) {
 		if actor, ok := server.Manager.Get(updated.ID); ok {
 			actor.RefreshEnv()
 			if edit.RevokeHubToken {
