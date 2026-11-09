@@ -70,12 +70,12 @@ func (server *Server) handleImportPromptsChatTeam(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, team)
 }
 
-// handleCreateTeam creates a team's loops and its channel, holding them
+// handleImportTeam creates a team's loops and its channel, holding them
 // all, from the draft the operator read (ADR-0063). It fetches nothing. It
 // is all or nothing: every loop is checked before any is stored, and none
 // starts until all of them and the channel are stored, so a failure on
 // the way removes what it stored and answers why.
-func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleImportTeam(w http.ResponseWriter, r *http.Request) {
 	var req createTeamReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
