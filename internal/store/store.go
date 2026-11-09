@@ -587,6 +587,9 @@ type Loop struct {
 	// for a loop paused before the hub kept it (ADR-0067). A management
 	// token resumes only a loop whose PausedBy is one's.
 	PausedBy string `json:"paused_by"`
+	// Team is the team the loop is in, "" for none (ADR-0066). The operator
+	// puts it in or takes it out; a loop never chooses its own.
+	Team string `json:"team"`
 }
 
 // Surface names the platform the loop has an identity on, or "" when it has
@@ -1051,6 +1054,10 @@ type LoopEdit struct {
 	// OutsideFleetChannel moves the loop out of the fleet channel (true) or
 	// back in (false); nil leaves it where it is.
 	OutsideFleetChannel *bool
+	// Team puts the loop in the named team, which moves it out of any
+	// other, or takes it out of every team with ""; nil leaves it where it
+	// is. ErrNotFound if no team has that name.
+	Team *string
 
 	UpdatedAt int64
 }
@@ -1642,6 +1649,7 @@ type SlackSenderStore interface {
 type Store interface {
 	Loops() LoopStore
 	Channels() ChannelStore
+	Teams() TeamStore
 	Rooms() RoomStore
 	Reactions() ReactionStore
 	Polls() PollStore
@@ -1802,6 +1810,43 @@ type ChannelStore interface {
 	// put back in finds its group where it was.
 	AddLoop(ctx context.Context, name, loopID string, at int64) error
 	RemoveLoop(ctx context.Context, name, loopID string, at int64) error
+}
+
+// Team is a named set of loops on one hub, with channels and settings of
+// its own (ADR-0066). A loop is in at most one; its own Team names it.
+type Team struct {
+	Name        string
+	Description string
+	CreatedAt   int64
+	// LoopIDs are the loops in the team, in no promised order.
+	LoopIDs []string
+}
+
+// TeamEdit names what a team edit changes; nil leaves a field alone.
+type TeamEdit struct {
+	// Name renames the team, and every loop in it follows.
+	Name        *string
+	Description *string
+}
+
+// TeamStore holds the hub's teams (ADR-0066). Which team a loop is in is
+// the loop's own Team, written through LoopStore, so a loop can never be in
+// two.
+type TeamStore interface {
+	// List returns every team, by name.
+	List(ctx context.Context) ([]*Team, error)
+	// Get returns one team, or ErrNotFound.
+	Get(ctx context.Context, name string) (*Team, error)
+	// Create adds a team with no loops in it; ErrDuplicate if the name is
+	// taken.
+	Create(ctx context.Context, team *Team) error
+	// Edit writes what edit names and returns the team as it stands
+	// afterwards, under its new name if it was renamed; ErrNotFound if
+	// there is none by that name, ErrDuplicate if the new name is taken.
+	Edit(ctx context.Context, name string, edit TeamEdit) (*Team, error)
+	// Delete removes a team; ErrNotFound if there is none, ErrTeamHasLoops
+	// while any loop is in it.
+	Delete(ctx context.Context, name string) error
 }
 
 // Room is a surface's chat as one loop's bot knows it (ADR-0038): a
@@ -2028,6 +2073,10 @@ const (
 	// ErrLastOwner refuses removing or demoting the hub's only owner: a
 	// hub with no owner has nobody who may make one (ADR-0048).
 	ErrLastOwner = sentinelError("store: last owner")
+	// ErrTeamHasLoops refuses deleting a team that still has loops: each
+	// one is moved out first, which is the operator choosing where it goes
+	// (ADR-0066).
+	ErrTeamHasLoops = sentinelError("store: team has loops")
 )
 
 // Connection is an org-level tool credential or config, defined once under

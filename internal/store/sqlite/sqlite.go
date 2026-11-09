@@ -121,6 +121,7 @@ func (database *DB) Close() error { return database.db.Close() }
 
 func (database *DB) Loops() store.LoopStore         { return loops{database.db, database.sealer} }
 func (database *DB) Channels() store.ChannelStore   { return channels{database.db} }
+func (database *DB) Teams() store.TeamStore         { return teams{database.db} }
 func (database *DB) Rooms() store.RoomStore         { return rooms{database.db} }
 func (database *DB) Reactions() store.ReactionStore { return reactions{database.db} }
 func (database *DB) Polls() store.PollStore         { return polls{database.db} }
@@ -200,7 +201,7 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
 	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
-	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by`
+	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by, COALESCE(team, '')`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -221,7 +222,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
-		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy)
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy, &loopRecord.Team)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -265,8 +266,8 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		hash = tokenHash(loopRecord.HubMCPToken)
 	}
 	sealer := table.sealer
-	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash, team) VALUES
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
 		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, loopRecord.DailyCapUSD, loopRecord.ClaudeLogin,
@@ -278,9 +279,12 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
 		sealer.seal(loopRecord.SlackAppToken), sealer.seal(loopRecord.SlackBotToken), loopRecord.SlackBotUserID, loopRecord.SlackBotName,
 		loopRecord.SlackTeamID, loopRecord.SlackTeamName,
-		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, hash)
+		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, hash, loopRecord.Team)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
+	}
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound // no team by that name
 	}
 	if err != nil {
 		return err
@@ -367,6 +371,9 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	if edit.OutsideFleetChannel != nil {
 		set("outside_fleet_channel", *edit.OutsideFleetChannel)
 	}
+	if edit.Team != nil {
+		set("team", sql.NullString{String: *edit.Team, Valid: *edit.Team != ""})
+	}
 	if slack := edit.Slack; slack != nil {
 		set("slack_app_token", table.sealer.seal(slack.AppToken))
 		set("slack_bot_token", table.sealer.seal(slack.BotToken))
@@ -389,6 +396,9 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE loops SET `+strings.Join(sets, ", ")+` WHERE id=?`, append(args, id)...); err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY") {
+			return nil, store.ErrNotFound // no team by that name
+		}
 		return nil, err
 	}
 	if edit.ClearTelegramRooms {
