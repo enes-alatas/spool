@@ -251,6 +251,12 @@ jobs:
       - name: the welcome step still replies once, and only with its note
         if: github.event_name == 'pull_request' || inputs.pr
         run: bash scripts/gate-annotate.sh community-welcome-test -- bash scripts/community-welcome-test.sh
+      # The community-pr step runs on pull_request_target, which no PR from this
+      # repo fires, so this is its run before it ships: under `bash -e`, with a
+      # stub gh (ADR-0069, #1473).
+      - name: the community-pr step labels a fork PR once, and only with its note
+        if: github.event_name == 'pull_request' || inputs.pr
+        run: bash scripts/gate-annotate.sh community-pr-test -- bash scripts/community-pr-test.sh
       - name: scan the lines this PR adds
         if: github.event_name == 'pull_request' || inputs.pr
         env:

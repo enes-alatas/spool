@@ -54,13 +54,13 @@ STUB
 chmod +x "$stub/gh"
 
 # A completed run, in the shape the API and the event both use.
-run_json() { # name conclusion branch
+run_json() { # name conclusion branch [event]
   # Built with jq, so a fixture branch name holding quotes is valid JSON —
   # the hostile-name case below is worthless if the payload it travels in is
   # malformed, because then the step fails on the fixture, not on the name.
-  jq -nc --arg name "$1" --arg conclusion "$2" --arg branch "$3" '{
+  jq -nc --arg name "$1" --arg conclusion "$2" --arg branch "$3" --arg event "${4:-issues}" '{
     name: $name, conclusion: $conclusion, head_branch: $branch,
-    html_url: "https://github.com/o/r/actions/runs/42", event: "issues",
+    html_url: "https://github.com/o/r/actions/runs/42", event: $event,
     head_sha: "0123456789abcdef", updated_at: "2026-09-20T12:00:00Z", id: 42
   }'
 }
@@ -241,6 +241,21 @@ elif ! grep -qF 'rm -rf' "$SENT_FILE"; then
   fail 'the branch name did not reach the comment as data'
 else
   pass 'a hostile branch name is data, not shell'
+fi
+
+# On pull_request_target, head_branch is a fork's branch name: PR text that
+# a stranger picks, which may close the code span and carry a mention or a
+# link (ADR-0069 item 2). It never reaches the comment; a fixed phrase does.
+printf '{"workflow_run":%s}' "$(run_json community-pr failure 'x`@quinn [see](https://evil.example) `' pull_request_target)" > "$work/e.json"
+run workflow_run "$work/e.json"
+if [ "$STATUS" -ne 0 ]; then
+  fail "a fork PR's run broke the step: $(cat "$ERR_FILE")"
+elif grep -qF -e 'evil.example' -e '@quinn' "$SENT_FILE"; then
+  fail "a fork's branch name reached the CI-health comment"
+elif ! grep -qF 'on a fork PR branch.' "$SENT_FILE"; then
+  fail "a fork PR's run is not named by the fixed phrase: $(head -1 "$SENT_FILE")"
+else
+  pass "a fork's branch name never reaches the comment"
 fi
 
 if [ "$failures" -gt 0 ]; then

@@ -50,6 +50,7 @@ scripts/security-paths*
 # Scripts a workflow runs with a write token (secret-* is listed above).
 scripts/advisories.sh
 scripts/community-welcome.sh
+scripts/community-pr.sh
 .github/security-review-paths
 go.mod
 go.sum

@@ -15,7 +15,7 @@ on:
   # sentinel silently unless it is added here. scripts/workflow-lint.awk has
   # a rule that fails CI when one is missing — same failure class as #209.
   workflow_run:
-    workflows: [issue-guards, advisories, release, queue, unqueue, perf, claude-code-watch]
+    workflows: [issue-guards, advisories, release, queue, unqueue, perf, claude-code-watch, community-pr]
     types: [completed]
   # Runnable from a branch against a known-failed run, which is the only way
   # to prove the posting path: a healthy repo never fires the real trigger
@@ -162,8 +162,12 @@ jobs:
 
           # Built with jq from the run's own fields rather than interpolated,
           # so a branch or workflow name cannot close the quoting (#207).
+          # A pull_request_target run's head_branch is a fork's branch name,
+          # which a stranger picks: PR text, which never reaches an issue
+          # (ADR-0069 item 2). It is named by a fixed phrase instead.
           jq -r '
-            "**`" + .name + "` concluded `" + .conclusion + "` on `" + (.head_branch // "?") + "`.**\n\n"
+            (if .event == "pull_request_target" then "a fork PR branch" else "`" + (.head_branch // "?") + "`" end) as $branch
+            | "**`" + .name + "` concluded `" + .conclusion + "` on " + $branch + ".**\n\n"
             + "- run: " + .html_url + "\n"
             + "- event: `" + .event + "`\n"
             + "- head: `" + .head_sha[0:7] + "`\n"
