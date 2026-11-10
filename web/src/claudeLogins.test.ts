@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ClaudeLogin, LoopView, Me } from './api'
+import type { ClaudeLogin, LoopView, Me, Team } from './api'
 import {
   checking,
+  cloudTeamLoginNote,
   defaultFirst,
   checksHostLogin,
   defaultLineState,
@@ -9,13 +10,17 @@ import {
   loginLineState,
   loginNameError,
   loginOptions,
+  loginSource,
   loginWho,
   loginAccount,
   loopLogin,
   loopsOn,
   mayManageLogin,
   noLoginChoice,
+  loopLoginOptions,
+  removeRefusal,
   signOutConfirm,
+  teamsOn,
 } from './claudeLogins'
 
 const login = (over: Partial<ClaudeLogin> = {}): ClaudeLogin => ({
@@ -208,7 +213,17 @@ describe('defaultLineState', () => {
 })
 
 describe('loopLogin', () => {
-  it('names the login a loop runs on, by runtime', () => {
+  it("names the login the hub resolved, a team's included", () => {
+    expect(loopLogin({ runtime: 'docker', claude_login: '', effective_claude_login: 'ada' })).toBe('ada')
+    expect(loopLogin({ runtime: 'cloud', claude_login: '', effective_claude_login: 'default' })).toBe(
+      'default',
+    )
+    expect(loopLogin({ runtime: 'bare', claude_login: '', effective_claude_login: '' })).toBe(
+      "this machine's own",
+    )
+  })
+
+  it('names the login a loop runs on, by runtime, on a hub too old to resolve it', () => {
     expect(loopLogin({ runtime: 'docker', claude_login: 'ada' })).toBe('ada')
     expect(loopLogin({ runtime: 'docker', claude_login: '' })).toBe('default')
     expect(loopLogin({ runtime: 'cloud', claude_login: '' })).toBe('default')
@@ -266,5 +281,115 @@ describe('hostLoginLineState', () => {
       text: 'check inconclusive',
       tone: 'warn',
     })
+  })
+})
+
+describe('loopsOn, with team logins', () => {
+  it('counts a loop on the login its team names', () => {
+    const loops = [
+      { name: 'scout', runtime: 'docker', claude_login: '', effective_claude_login: 'ada', status: 'active' },
+      {
+        name: 'triage',
+        runtime: 'cloud',
+        claude_login: '',
+        effective_claude_login: 'default',
+        status: 'active',
+      },
+    ] as LoopView[]
+    expect(loopsOn(loops, 'ada')).toEqual(['scout'])
+    expect(loopsOn(loops, 'default')).toEqual(['triage'])
+  })
+})
+
+const team = (name: string, claude_login?: string): Team => ({
+  name,
+  description: '',
+  created_at: 0,
+  loops: [],
+  home_channel: '',
+  channels: [],
+  claude_login,
+})
+
+describe('loginSource', () => {
+  it("says a loop's login comes from its team, or the hub's default", () => {
+    expect(loginSource({ claude_login_from: 'team', team: 'red' })).toBe(
+      "Team red's default login, as the loop names none of its own.",
+    )
+    expect(loginSource({ claude_login_from: 'hub', team: '' })).toBe("The hub's default.")
+  })
+
+  it('says nothing for a login the loop names, a bare loop, or a hub too old to say', () => {
+    expect(loginSource({ claude_login_from: 'loop', team: 'red' })).toBe('')
+    expect(loginSource({ claude_login_from: 'host', team: '' })).toBe('')
+    expect(loginSource({ team: 'red' })).toBe('')
+  })
+})
+
+describe('cloudTeamLoginNote', () => {
+  it("says a cloud loop doesn't take the login its team names", () => {
+    expect(cloudTeamLoginNote({ runtime: 'cloud', team: 'red' }, team('red', 'ada'))).toBe(
+      "Team red's default login is ada, but a cloud loop doesn't take its team's default: it runs on its own login, or the hub's default.",
+    )
+  })
+
+  it('says nothing for a contained loop, or a team that names none', () => {
+    expect(cloudTeamLoginNote({ runtime: 'docker', team: 'red' }, team('red', 'ada'))).toBe('')
+    expect(cloudTeamLoginNote({ runtime: 'cloud', team: 'red' }, team('red', ''))).toBe('')
+    expect(cloudTeamLoginNote({ runtime: 'cloud', team: '' }, undefined)).toBe('')
+  })
+})
+
+describe('loopLoginOptions', () => {
+  const none = (options: { value: string; label: string }[]) =>
+    options.find((o) => o.value === 'default')?.label
+  const signedIn = [login({ name: 'default', default: true }), login({ name: 'ada' })]
+  const defaultOut = [login({ name: 'default', default: true, signed_in: false }), login({ name: 'ada' })]
+  const adaOut = [login({ name: 'default', default: true }), login({ name: 'ada', signed_in: false })]
+
+  it("names naming none after the team's login, for a contained loop", () => {
+    expect(none(loopLoginOptions({ runtime: 'docker' }, team('red', 'ada'), signedIn))).toBe(
+      'team default: ada',
+    )
+    expect(none(loopLoginOptions({ runtime: 'cloud' }, team('red', 'ada'), signedIn))).toBe('default')
+    expect(none(loopLoginOptions({ runtime: 'docker' }, team('red', ''), signedIn))).toBe('default')
+    expect(none(loopLoginOptions({ runtime: 'docker' }, undefined, signedIn))).toBe('default')
+  })
+
+  it("carries the team login's signed-out state, not the hub default's", () => {
+    expect(none(loopLoginOptions({ runtime: 'docker' }, team('red', 'ada'), defaultOut))).toBe(
+      'team default: ada',
+    )
+    expect(none(loopLoginOptions({ runtime: 'docker' }, team('red', 'ada'), adaOut))).toBe(
+      'team default: ada (signed out)',
+    )
+    expect(none(loopLoginOptions({ runtime: 'docker' }, undefined, defaultOut))).toBe('default (signed out)')
+  })
+
+  it('leaves the other logins as they are', () => {
+    expect(loopLoginOptions({ runtime: 'docker' }, team('red', 'ada'), adaOut)[1]).toEqual({
+      value: 'ada',
+      label: 'ada (signed out)',
+    })
+  })
+})
+
+describe('teamsOn and removeRefusal', () => {
+  const teams = [team('red', 'ada'), team('blue', ''), team('green', 'ada')]
+
+  it('finds the teams that name a login', () => {
+    expect(teamsOn(teams, 'ada')).toEqual(['red', 'green'])
+    expect(teamsOn(teams, 'bob')).toEqual([])
+    expect(teamsOn(undefined, 'ada')).toEqual([])
+  })
+
+  it('names the teams that hold a login from removal', () => {
+    expect(removeRefusal('ada', ['red'])).toBe(
+      'Team red has the Claude login ada as its default team login. Give it another first, under Edit on its card on the Fleet page.',
+    )
+    expect(removeRefusal('ada', ['red', 'green'])).toBe(
+      'Teams red and green have the Claude login ada as their default team login. Give them another first, under Edit on their cards on the Fleet page.',
+    )
+    expect(removeRefusal('ada', [])).toBe('')
   })
 })

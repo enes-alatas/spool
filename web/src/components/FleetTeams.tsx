@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView, type Team } from '../api'
 import { descriptionLength } from '../channels'
+import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
 import {
   loopsToAdd,
@@ -153,6 +154,9 @@ function TeamCard({
           <p className="team-card-desc" title={team?.description || undefined}>
             {team ? team.description || 'No description' : "Loops that aren't in a team."}
           </p>
+          {/* Only a login the team names: the hub's default is every loop's
+              unless something says otherwise. */}
+          {team?.claude_login && <p className="team-card-login">Default team login: {team.claude_login}</p>}
           <div className="team-card-loops">
             {group.loops.map((loop) => (
               <span
@@ -237,6 +241,9 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
   const refresh = useRefresh()
   const [name, setName] = useState(team.name)
   const [description, setDescription] = useState(team.description)
+  // '' is the hub's default (ADR-0066).
+  const [login, setLogin] = useState(team.claude_login ?? '')
+  const { data: logins } = useQuery({ queryKey: ['claude-logins'], queryFn: api.claudeLogins })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const badName = !validTeamName(name)
@@ -258,7 +265,12 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
 
   const save = () =>
     run(() =>
-      api.patchTeam(team.name, { ...(name !== team.name && { name }), description: description.trim() }),
+      api.patchTeam(team.name, {
+        ...(name !== team.name && { name }),
+        description: description.trim(),
+        // Only when it changes, so a hub too old for it is asked what it was.
+        ...(login !== (team.claude_login ?? '') && { claude_login: login }),
+      }),
     )
 
   // Said before asking the hub, which refuses a team with loops the same way.
@@ -278,6 +290,12 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
       badName={badName}
       tooLong={tooLong}
       error={error}
+      login={
+        // A hub too old for team logins sends none, and offers no picker.
+        logins && team.claude_login !== undefined
+          ? { value: login, onChange: setLogin, options: loginOptions(logins.logins) }
+          : undefined
+      }
     >
       <button type="button" className="btn primary sm" onClick={save} disabled={busy || badName || tooLong}>
         {busy ? 'Saving…' : 'Save'}
@@ -370,6 +388,7 @@ function TeamForm({
   badName,
   tooLong,
   error,
+  login,
   children,
 }: {
   id: string
@@ -380,6 +399,8 @@ function TeamForm({
   badName: boolean
   tooLong: boolean
   error: string
+  // The team's Claude login picker, on an edit.
+  login?: { value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }
   children: React.ReactNode
 }) {
   return (
@@ -411,6 +432,23 @@ function TeamForm({
         placeholder="What it is for (optional)"
         aria-invalid={tooLong}
       />
+      {login && (
+        <>
+          <label htmlFor={`${id}-login`}>Default team login</label>
+          <select id={`${id}-login`} value={login.value} onChange={(e) => login.onChange(e.target.value)}>
+            {login.options.map((o) => (
+              // The default is named by naming none.
+              <option key={o.value} value={o.value === 'default' ? '' : o.value}>
+                {o.value === 'default' ? "the hub's default" : o.label}
+              </option>
+            ))}
+          </select>
+          <div className="team-form-note">
+            The Claude login the team's loops run on when they name none. A loop can still name its own on its
+            page. Cloud loops keep their own, or the hub's default.
+          </div>
+        </>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}

@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, type CreateLoopReq, type LoopView } from '../api'
-import { LOGIN_SAY_SO, loginAccount, loginOptions, loopLogin } from '../claudeLogins'
+import {
+  cloudTeamLoginNote,
+  LOGIN_SAY_SO,
+  loginAccount,
+  loginSource,
+  loopLogin,
+  loopLoginOptions,
+} from '../claudeLogins'
 import { EnvironmentPick } from './CloudLoopSetup'
 import { useMay } from './Session'
 
@@ -10,6 +17,9 @@ import { useMay } from './Session'
 // admin moves a contained or cloud loop to another; a bare loop names
 // none, so its row only says which it runs on. A loop on a signed-out
 // login waits for it, which the row says wherever it is read.
+//
+// A contained loop that names none runs on its team's login, or the hub's
+// default when its team names none (ADR-0066), and the row says which.
 //
 // A cloud loop's session runs under its login's account, in an
 // environment of that account (#1078), so it moves only while paused, and
@@ -22,8 +32,20 @@ export function LoopLogin({ loop }: { loop: LoopView }) {
   // The login a cloud loop is moving to while its new environment is picked.
   const [moving, setMoving] = useState('')
   const { data } = useQuery({ queryKey: ['claude-logins'], queryFn: api.claudeLogins })
-  const current = loopLogin(loop)
-  const login = data?.logins.find((l) => l.name === current)
+  const { data: teams } = useQuery({
+    queryKey: ['teams'],
+    queryFn: api.teams,
+    retry: false,
+    enabled: !!loop.team,
+  })
+  const team = teams?.find((t) => t.name === loop.team)
+  // The login the loop runs on, and the one it names: the picker's value,
+  // where 'default' is naming none.
+  const runsOn = loopLogin(loop)
+  const current = loop.runtime === 'bare' ? runsOn : loop.claude_login || 'default'
+  const login = data?.logins.find((l) => l.name === runsOn)
+  const source = loginSource(loop)
+  const cloudNote = cloudTeamLoginNote(loop, team)
   const move = useMutation({
     mutationFn: (change: Partial<CreateLoopReq>) => api.patchLoop(loop.name, change),
     onSuccess: () => {
@@ -61,12 +83,13 @@ export function LoopLogin({ loop }: { loop: LoopView }) {
             disabled={move.isPending || (cloud && !paused)}
             onChange={(e) => pick(e.target.value)}
           >
-            {loginOptions(data.logins).map((o) => (
+            {loopLoginOptions(loop, team, data.logins).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
           </select>
+          {source && <div className="panel-note">{source}</div>}
           {moving && (
             <div className="panel-note">
               Its environment, <code>{loop.cloud_environment_id}</code>, is on {loginAccount(current)}. Pick
@@ -95,14 +118,18 @@ export function LoopLogin({ loop }: { loop: LoopView }) {
           </div>
         </>
       ) : (
-        <div className="row">
-          <span className="k">claude login</span>
-          <span className="v">{current}</span>
-        </div>
+        <>
+          <div className="row">
+            <span className="k">claude login</span>
+            <span className="v">{runsOn}</span>
+          </div>
+          {source && <div className="panel-note">{source}</div>}
+        </>
       )}
+      {cloudNote && <div className="panel-note">{cloudNote}</div>}
       {signedOut && (
         <div className="panel-note bad">
-          The login {current} is signed out, so this loop waits until it is signed in again
+          The login {runsOn} is signed out, so this loop waits until it is signed in again
           {loop.runtime !== 'bare' && ' or the loop moves to another'}. Sign in under{' '}
           <Link className="text-link" to="/settings">
             Settings → Claude logins

@@ -49,6 +49,13 @@ export interface LoopView {
   // The Claude login a contained loop runs on, '' for the default; a bare
   // or cloud loop's is always '' (ADR-0060).
   claude_login: string
+  // The Claude login the loop runs on, resolved from loop to team to hub
+  // (ADR-0066): 'default' for the hub's default, '' for a bare loop, which
+  // runs on this machine's own. A cloud loop never takes its team's.
+  // Absent from a hub too old to resolve it.
+  effective_claude_login?: string
+  // Where effective_claude_login comes from.
+  claude_login_from?: 'loop' | 'team' | 'hub' | 'host'
   // A cloud loop's current session on claude.ai, absent before its first
   // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
   cloud_session_url?: string
@@ -806,6 +813,9 @@ export interface Team {
   // all of the team's, by name.
   home_channel: string
   channels: string[]
+  // The Claude login the team's contained loops run on when they name none,
+  // '' for the hub's default (ADR-0066). Absent from a hub too old for it.
+  claude_login?: string
 }
 
 // A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to
@@ -1845,7 +1855,8 @@ export const api = {
   // The hub's Claude logins (ADR-0060): any user lists them and adds one of
   // their own; its owner or an admin signs it in, checks it, signs it out and
   // removes it, the default included (#1173). Removal is refused (409
-  // `claude_login`) while loops run on the login, and the refusal names them.
+  // `claude_login`) while a team names the login or loops run on it, and the
+  // refusal names them (ADR-0066).
   // The sign-in is the CLI's own login, run by the hub (#864): it answers the
   // claude.ai link to open, and the code claude.ai then shows finishes it. A
   // sign-in is refused with `cloud_sign_in`, a code with 400 when the CLI
@@ -1891,7 +1902,9 @@ export const api = {
   addTeam: (team: { name: string; description: string }) =>
     req<Team>('/api/teams', { method: 'POST', body: JSON.stringify(team) }),
   // A rename answers the team under its new name; refused as addTeam is.
-  patchTeam: (name: string, body: { name?: string; description?: string }) =>
+  // claude_login '' or 'default' puts the team back on the hub's default; a
+  // login the hub doesn't hold is 400 `claude_login`.
+  patchTeam: (name: string, body: { name?: string; description?: string; claude_login?: string }) =>
     req<Team>(`/api/teams/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   // Refused 409 `team_has_loops` while it has loops, the error naming them.
   deleteTeam: (name: string) => req<void>(`/api/teams/${name}`, { method: 'DELETE' }),

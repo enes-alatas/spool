@@ -19,6 +19,8 @@ import {
   loginNameError,
   loginWho,
   loopsOn,
+  removeRefusal,
+  teamsOn,
   mayManageLogin,
   signOutConfirm,
 } from '../claudeLogins'
@@ -66,6 +68,8 @@ export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
     refetchInterval: (q) => (checking(q.state.data?.logins) ? 2000 : false),
   })
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // A hub too old for teams answers 404, and no team holds a login.
+  const { data: teams } = useQuery({ queryKey: ['teams'], queryFn: api.teams, retry: false })
   const may = useMay()
   const [signingIn, setSigningIn] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -79,8 +83,9 @@ export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
       <p className="page-lede">
         A Claude login is a claude.ai account this hub signs in to. Contained loops reach the model through
         the hub, which adds the login, and cloud loops' sessions run under it. The hub keeps each login
-        sealed, renews it before it runs out, and never shows it. A contained or cloud loop runs on the login
-        it names, or on default when it names none. Bare loops keep this machine's own login.
+        sealed, renews it before it runs out, and never shows it. A contained loop runs on the login it names,
+        or its team's when it names none, or default when its team names none too. A cloud loop runs on the
+        login it names, or on default. Bare loops keep this machine's own login.
       </p>
       {loadError ? (
         <div className="form-error" role="alert">
@@ -104,6 +109,7 @@ export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
                 key={login.name}
                 login={login}
                 held={loopsOn(loops, login.name)}
+                teams={teamsOn(teams, login.name)}
                 manages={mayManageLogin(me, login)}
                 cli={view?.account.cli ?? true}
                 onSignIn={() => setSigningIn(login.name)}
@@ -310,16 +316,20 @@ function LoginName({ login }: { login: ClaudeLogin }) {
 // Any login but the default as an admin sees it, and the default as a
 // member does: its state from its own check, and, for its owner or an
 // admin, its actions. Sign out is never refused (ADR-0060); Remove
-// is refused while loops run on the login, and the refusal names them.
+// is refused while a team names the login or loops run on it, and the
+// refusal names them (ADR-0066).
 function NamedLogin({
   login,
   held,
+  teams,
   manages,
   cli,
   onSignIn,
 }: {
   login: ClaudeLogin
   held: string[]
+  // The teams that name the login as theirs.
+  teams: string[]
   manages: boolean
   cli: boolean
   onSignIn: () => void
@@ -350,7 +360,10 @@ function NamedLogin({
       void act('sign-out', () => api.signOutClaudeLogin(login.name))
   }
   const remove = () => {
-    if (confirm(`Remove the Claude login ${login.name}? The hub signs it out first.`))
+    // Said before asking the hub, which refuses it the same way.
+    const refusal = removeRefusal(login.name, teams)
+    if (refusal) setError(refusal)
+    else if (confirm(`Remove the Claude login ${login.name}? The hub signs it out first.`))
       void act('remove', () => api.removeClaudeLogin(login.name))
   }
 

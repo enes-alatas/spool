@@ -6325,6 +6325,12 @@ button.panel-link {
   text-overflow: ellipsis;
   color: var(--text-muted);
 }
+/* the Claude login a team names (ADR-0066); none says nothing */
+.team-card-login {
+  margin: -6px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 .team-card-loops {
   display: flex;
   flex-wrap: wrap;

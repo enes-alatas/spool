@@ -2,7 +2,7 @@
 // and who may act on it. The hub decides both; the room mirrors it so it
 // draws no button the hub would refuse.
 
-import type { ClaudeLogin, LoginCheckRecord, LoopView, Me } from './api'
+import type { ClaudeLogin, LoginCheckRecord, LoopView, Me, Team } from './api'
 import type { Tone } from './cloud'
 import { may } from './roles'
 
@@ -72,8 +72,23 @@ export function defaultFirst(logins: ClaudeLogin[]): ClaudeLogin[] {
 // it runs on the login once resumed.
 export function loopsOn(loops: LoopView[] | undefined, name: string): string[] {
   return (loops ?? [])
-    .filter((l) => l.runtime !== 'bare' && l.status !== 'archived' && (l.claude_login || 'default') === name)
+    .filter((l) => l.runtime !== 'bare' && l.status !== 'archived' && loopLogin(l) === name)
     .map((l) => l.name)
+}
+
+// The teams that name the login called name as theirs (ADR-0066): the hub
+// refuses to remove it while any does.
+export function teamsOn(teams: Team[] | undefined, name: string): string[] {
+  return (teams ?? []).filter((team) => team.claude_login === name).map((team) => team.name)
+}
+
+// Why Remove is refused before the hub is asked, or '' when only the hub can
+// say: a team naming the login holds it until it is given another.
+export function removeRefusal(name: string, teams: string[]): string {
+  if (teams.length === 0) return ''
+  const list = teams.length > 1 ? `${teams.slice(0, -1).join(', ')} and ${teams[teams.length - 1]}` : teams[0]
+  const many = teams.length > 1
+  return `Team${many ? 's' : ''} ${list} ${many ? 'have' : 'has'} the Claude login ${name} as ${many ? 'their' : 'its'} default team login. Give ${many ? 'them' : 'it'} another first, under Edit on ${many ? 'their cards' : 'its card'} on the Fleet page.`
 }
 
 // What Sign out asks first: which loops it holds, since a loop on a signed
@@ -137,9 +152,54 @@ export function defaultLineState(
 // The login a loop runs on, as its page names it: a bare loop on this
 // machine's own (ADR-0060), and a contained or cloud loop on the one it
 // names, or the default when it names none (#1078).
-export function loopLogin(loop: Pick<LoopView, 'runtime' | 'claude_login'>): string {
+export function loopLogin(
+  loop: Pick<LoopView, 'runtime' | 'claude_login' | 'effective_claude_login'>,
+): string {
   if (loop.runtime === 'bare') return "this machine's own"
-  return loop.claude_login || 'default'
+  // A hub too old to resolve the login: the loop's own, or the default.
+  return loop.effective_claude_login || loop.claude_login || 'default'
+}
+
+// Where a loop's login comes from, as its page says it under the login, or
+// '' when the loop names its own or is bare (ADR-0066). A hub too old to
+// say gives none.
+export function loginSource(loop: Pick<LoopView, 'claude_login_from' | 'team'>): string {
+  switch (loop.claude_login_from) {
+    case 'team':
+      return `Team ${loop.team}'s default login, as the loop names none of its own.`
+    case 'hub':
+      return "The hub's default."
+    default:
+      return ''
+  }
+}
+
+// What a cloud loop's page says when its team names a login (ADR-0066): a
+// cloud loop changes login only while stopped, which drops its session, so
+// it never takes its team's.
+export function cloudTeamLoginNote(loop: Pick<LoopView, 'runtime' | 'team'>, team: Team | undefined): string {
+  if (loop.runtime !== 'cloud' || !team?.claude_login) return ''
+  return `Team ${team.name}'s default login is ${team.claude_login}, but a cloud loop doesn't take its team's default: it runs on its own login, or the hub's default.`
+}
+
+// What a loop's login picker offers. Its 'default' option is naming none,
+// so it is called after the login the loop then runs on: its team's when
+// the team names one and the loop isn't a cloud loop, with that login's own
+// signed-out state, not the hub default's.
+export function loopLoginOptions(
+  loop: Pick<LoopView, 'runtime'>,
+  team: Team | undefined,
+  logins: ClaudeLogin[],
+): { value: string; label: string }[] {
+  const inherited = loop.runtime !== 'cloud' && team?.claude_login
+  return loginOptions(logins).map((o) => {
+    if (o.value !== 'default' || !inherited) return o
+    const teamLogin = logins.find((l) => l.name === inherited)
+    return {
+      value: o.value,
+      label: `team default: ${inherited}${teamLogin?.signed_in === false ? ' (signed out)' : ''}`,
+    }
+  })
 }
 
 // The account behind a login, as the hub's refusals name it: a cloud
