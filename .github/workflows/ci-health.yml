@@ -15,7 +15,7 @@ on:
   # sentinel silently unless it is added here. scripts/workflow-lint.awk has
   # a rule that fails CI when one is missing — same failure class as #209.
   workflow_run:
-    workflows: [issue-guards, advisories, release, queue, unqueue, perf]
+    workflows: [issue-guards, advisories, release, queue, unqueue, perf, claude-code-watch]
     types: [completed]
   # Runnable from a branch against a known-failed run, which is the only way
   # to prove the posting path: a healthy repo never fires the real trigger

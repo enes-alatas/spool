@@ -165,6 +165,14 @@ window regardless of loop count (ADR-0018).
      never how it would be reached.
   A scan that cannot run (the database unreachable, a report that isn't
   one) fails the workflow, and `ci-health` posts it to the pinned issue.
+- **A newer Claude Code, the same week** (#1454). The `claude-code-watch`
+  workflow reads Anthropic's apt repo every Monday. When it serves a newer
+  CLI than `docker/workstation/claude-code.version`, it files one `chore`
+  issue with the bump checklist (`scripts/claude-code-watch.sh`), once per
+  version, and only issues the workflow or a maintainer wrote count. The
+  bump is a reviewed PR after a loop has run the new CLI, and it ships in
+  the next release. A check that cannot run fails the workflow, and
+  `ci-health` posts it to the pinned issue.
 - **No telemetry, ever.** The binary never phones home. This is a product promise.
   An operator's own Langfuse, opt-in and self-hosted, isn't that: loops'
   traces go to a host the operator set, and nowhere else (ADR-0064).

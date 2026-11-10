@@ -1,0 +1,58 @@
+# The weekly Claude Code check (#1454). The workstation image pins the CLI
+# a release ships (docker/workstation/claude-code.version, #1223), and
+# Dependabot does not watch that file, so a newer CLI, and any newer model
+# its aliases map to, went unnoticed until someone looked. This reads the
+# apt repo the Dockerfile installs from, and when it is ahead of the pin,
+# files one chore issue asking for the bump (scripts/claude-code-watch.sh).
+# The bump itself stays a reviewed PR.
+name: claude-code-watch
+
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  # Runnable from a branch, which is how the check and the filing are
+  # proved (CONVENTIONS.md, "Proving an event-driven workflow"). A dispatch
+  # is a dry run unless told otherwise: it prints the issue it would file.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: print the issue it would file, and file nothing
+        type: boolean
+        default: true
+
+# Every job names its own grant.
+permissions: {}
+
+# Two runs filing at once could each miss the other's issue.
+concurrency:
+  group: claude-code-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write # the one issue, filed or brought up to date
+    steps:
+      # The pin and the script only; nothing from the tree is built or run
+      # but the script.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            scripts/claude-code-watch.sh
+            docker/workstation/claude-code.version
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: file an issue when the repo serves a newer CLI than the pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
+          fi
+          bash scripts/claude-code-watch.sh "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"

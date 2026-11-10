@@ -498,6 +498,11 @@ jobs:
       - name: the release gate still holds what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/gate-annotate.sh release-gate-test -- bash scripts/release-gate-test.sh
+      # claude-code-watch runs weekly and on a dispatch, which PR CI never
+      # fires; the fixtures are what say it still files what it claims (#1454).
+      - name: the Claude Code watch still files what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gate-annotate.sh claude-code-watch-test -- bash scripts/claude-code-watch-test.sh
       # The advisory scan runs on a schedule, so this is what a PR can see
       # of its filing step: the tools' real output, a stubbed `gh` (#737).
       - name: the advisory scan still files what it claims to

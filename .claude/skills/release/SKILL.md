@@ -44,7 +44,10 @@ has run, before the dry run. That PR moves four things together (#1235):
 the pin file, `internal/claude.TestedVersion`, fakeclaude's `--version`
 line, and the stream-json check on the new build in
 `cmd/fakeclaude/FIDELITY.md`. `TestTestedVersionIsTheReleasePin` fails
-when the first three disagree. The first release that pushes images creates
+when the first three disagree. The weekly `claude-code-watch` workflow
+files the chore issue that asks for the bump when Anthropic's apt repo
+serves a newer CLI than the pin, with these and a `models.go` row per new
+model as its checklist (#1454). The first release that pushes images creates
 the two packages: check on the repository's Packages page that both are
 public, or an operator's `docker pull` is refused. The workflow creates
 the release, with generated notes, when a bare `git push` of the tag left
