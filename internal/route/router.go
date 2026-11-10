@@ -4,6 +4,7 @@ package route
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -46,29 +47,20 @@ func (router *Router) broadcastTargets(loops []*store.Loop, fromLoopID string, m
 	return targets
 }
 
-// inGroup says whether a group message addressed to loopRecord — by mention, by
-// reply or by the composer it was posted from — is delivered to it. A loop
-// outside the fleet channel has no group, so a message naming it there reaches
-// nobody (ADR-0032).
-func inGroup(loopRecord *store.Loop) bool {
-	return loopRecord.Status != store.StatusArchived && !loopRecord.OutsideFleetChannel
-}
-
-// inChannel says whether a message said in a channel other than the fleet
-// channel, and addressed to loopRecord, is delivered to it: a loop in the
-// channel as stored, not as its prompt lists it, so a paused member is
-// reached by a mention as in the fleet channel and only @all leaves it be.
+// inChannel says whether a message said in a channel, and addressed to
+// loopRecord, is delivered to it: a loop in the channel as stored, not as
+// its prompt lists it, so a paused member is reached by a mention and only
+// @all leaves it be.
 func inChannel(channel *store.Channel) func(*store.Loop) bool {
 	return func(loopRecord *store.Loop) bool {
 		return loopRecord.Status != store.StatusArchived && slices.Contains(channel.LoopIDs, loopRecord.ID)
 	}
 }
 
-// memberOf is inGroup for the fleet channel and inChannel for any other,
-// named as a message names it ("" is the fleet channel).
+// memberOf is inChannel for the channel a message names.
 func (router *Router) memberOf(ctx context.Context, name string) (func(*store.Loop) bool, error) {
-	if name == "" || name == store.FleetChannel {
-		return inGroup, nil
+	if name == "" {
+		return nil, errors.New("a group message names the channel it is said in")
 	}
 	channel, err := router.store.Channels().Get(ctx, name)
 	if err != nil {
@@ -110,7 +102,7 @@ type InboundMessage struct {
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
 	// Channel is the channel a group message was said in, as the room it
-	// came through carries it; "" is the fleet channel.
+	// came through carries it. A group message always names one.
 	Channel string
 	// DMPerson is who a private conversation is with, owner_dm or
 	// dm:<name> (ADR-0049, ADR-0050), set by the surface that heard the
@@ -258,10 +250,14 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		msg.Channel = in.Channel
 	}
 	// Mentions, @all and a reply resolve among the loops of the channel the
-	// message was said in (ADR-0038).
-	member, err := router.memberOf(ctx, msg.Channel)
-	if err != nil {
-		return err
+	// message was said in (ADR-0038). A private message is in no channel,
+	// and nothing below asks for it.
+	var member func(*store.Loop) bool
+	if conv == store.ConversationGroup {
+		var err error
+		if member, err = router.memberOf(ctx, msg.Channel); err != nil {
+			return err
+		}
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write

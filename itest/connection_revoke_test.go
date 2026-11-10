@@ -79,11 +79,11 @@ func TestRevokingAConnectionTakesItFromItsLoops(t *testing.T) {
 	}, nil)
 	s.mustJSON("POST", "/api/connections/github/revoke", nil, nil)
 	s.wantRefusal("POST", "/api/connections/github/share", nil, 409, "connection_revoked")
-	s.mustJSON("POST", "/api/channels/group/messages", map[string]any{"text": "the revoked key is " + value}, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "the revoked key is " + value}, nil)
 	var said []struct {
 		Text string `json:"text"`
 	}
-	s.mustJSON("GET", "/api/channels/group/messages", nil, &said)
+	s.mustJSON("GET", "/api/channels/fleet/messages", nil, &said)
 	if len(said) != 1 || said[0].Text != "the revoked key is <redacted:GH_TOKEN>" {
 		t.Errorf("a revoked value was not redacted from a message: %+v", said)
 	}

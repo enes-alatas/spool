@@ -19,8 +19,8 @@ func TestAGroupTheLoopsShareMovesTogether(t *testing.T) {
 	srv, _ := startTelegramFleet(t, operator)
 	groupID := strconv.FormatInt(groupChatID, 10)
 	for _, name := range []string{"alpha", "beta"} {
-		if room, _ := srv.room(name, groupID); room.Channel != "group" {
-			t.Fatalf("%s's first group = %+v, want it bound to the fleet channel", name, room)
+		if room, _ := srv.room(name, groupID); room.Channel != fleetChannel {
+			t.Fatalf("%s's first group = %+v, want it bound to fleet", name, room)
 		}
 	}
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "solo"}, nil)
@@ -30,8 +30,8 @@ func TestAGroupTheLoopsShareMovesTogether(t *testing.T) {
 		t.Fatalf("moving a group beta carries to a channel beta isn't in = %d %s, want 409 not_in_channel naming beta", resp.StatusCode, out)
 	}
 	for _, name := range []string{"alpha", "beta"} {
-		if room, _ := srv.room(name, groupID); room.Channel != "group" {
-			t.Fatalf("a refused move left %s's group as %+v, want it on the fleet channel", name, room)
+		if room, _ := srv.room(name, groupID); room.Channel != fleetChannel {
+			t.Fatalf("a refused move left %s's group as %+v, want it on fleet", name, room)
 		}
 	}
 
@@ -47,9 +47,6 @@ func TestAGroupTheLoopsShareMovesTogether(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		if room, _ := srv.room(name, groupID); room.Channel != "backend" || room.BoundAt == 0 {
 			t.Fatalf("%s's group after the move = %+v, want it bound to backend", name, room)
-		}
-		if loop := srv.loop(name); loop.TGGroupChatID != 0 {
-			t.Fatalf("the fleet channel still carries the group for %s", name)
 		}
 	}
 }

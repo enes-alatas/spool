@@ -78,7 +78,7 @@ func TestATelegramPollCarriesVotesToTheHub(t *testing.T) {
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const question = "@beta ship on friday?"
 
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": question,
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": question,
 		"poll": map[string]any{"options": []string{"yes", "no"}}}); res.IsError {
 		t.Fatalf("poll refused: %s", resultText(res))
 	}

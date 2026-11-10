@@ -19,7 +19,8 @@ func TestAPollDueWhileTheHubWasDownClosesAtStartup(t *testing.T) {
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	const question = "ship on friday?"
-	s.mustJSON("POST", "/api/group", map[string]any{"text": question}, nil)
+	s.mustJSON("POST", "/api/channels", map[string]any{"name": fleetChannel}, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": question}, nil)
 	s.waitForMessage(question)
 	messageID := s.activityWith(question)[0].ID
 	s.stop()

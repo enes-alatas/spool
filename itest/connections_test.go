@@ -106,11 +106,11 @@ func TestConnectionsRoundTrip(t *testing.T) {
 
 	// Stored is known: a message carrying the value keeps only its
 	// variable's name.
-	s.mustJSON("POST", "/api/channels/group/messages", map[string]any{"text": "the key is " + value}, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "the key is " + value}, nil)
 	var said []struct {
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(keep("GET", "/api/channels/group/messages", nil, 200), &said); err != nil {
+	if err := json.Unmarshal(keep("GET", "/api/channels/fleet/messages", nil, 200), &said); err != nil {
 		t.Fatal(err)
 	}
 	if len(said) != 1 || said[0].Text != "the key is <redacted:GH_TOKEN>" {

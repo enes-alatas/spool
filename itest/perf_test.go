@@ -28,7 +28,7 @@ const (
 	bootRecoveryLimit = 3 * time.Second
 
 	// wakeBursts of envelopeAwake asleep loops are messaged at once, as a
-	// message to every loop in the fleet channel wakes them: wakes that
+	// message to every loop in a channel wakes them: wakes that
 	// queue behind each other are what a lone wake cannot show. Three
 	// bursts, so a p95 is a p95 of something.
 	wakeBursts = 3

@@ -813,9 +813,18 @@ func startTelegramFleetArgs(t *testing.T, dataDir string, hubArgs []string, oper
 	}
 
 	// The operator links on alpha, which makes them an allowed sender; their
-	// group message then binds every bot to the group, and reaches no loop.
+	// group message records the group unbound for every bot and reaches no
+	// loop. Once each has recorded it, the operator binds each fleet loop's
+	// room to fleet, as from the loop page (ADR-0068).
 	srv.allowOwner(tg, "alpha", operator)
 	tg.post(groupChatID, "supergroup", "binding", operator)
+	for i, name := range []string{"alpha", "beta"} {
+		if i >= len(overrides) || overrides[i]["fleet"] != false {
+			srv.bindGroup(name)
+		} else {
+			srv.waitRoom(name, strconv.FormatInt(groupChatID, 10))
+		}
+	}
 	settleBindings()
 	return srv, tg
 }
@@ -963,12 +972,12 @@ func TestOperatorWordsStayOnTheHub(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 4848, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta loop words go out"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@beta loop words go out"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
 
 	srv.message("alpha", "private control room note")
-	srv.mustJSON("POST", "/api/loops/alpha/message",
-		map[string]any{"author": "operator", "text": "operator words stay home", "destination": "group"}, nil)
+	srv.mustJSON("POST", "/api/channels/fleet/messages",
+		map[string]any{"author": "operator", "text": "@alpha operator words stay home"}, nil)
 
 	// alpha answering in the group is the proof it received the operator's
 	// post, and it is also the barrier for the negative check: the mirror
@@ -985,7 +994,7 @@ func TestOperatorWordsStayOnTheHub(t *testing.T) {
 
 	// And the post is still the group's, delivered to the loop it named:
 	// staying on the hub is not the same as going nowhere.
-	posts := srv.activityWith("operator words stay home")
+	posts := srv.activityWith("@alpha operator words stay home")
 	if len(posts) != 1 {
 		t.Fatalf("the operator's group post is stored %d times, want once: %s", len(posts), dump(posts))
 	}
@@ -1031,29 +1040,25 @@ func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
 	}
 }
 
-// The per-loop composer declares its destination (ADR-0026): group posts to
-// the shared conversation and is delivered to the loop, and a destination
-// outside the picker's two is refused. It is not mirrored to the bound
-// telegram group — nothing the operator writes leaves the hub (ADR-0032),
-// which TestOperatorWordsStayOnTheHub asserts.
-func TestComposerGroupDestination(t *testing.T) {
+// The per-loop composer posts to the loop's control-room thread only: a
+// channel is posted to at its own route, since the fleet channel retired
+// (ADR-0026, ADR-0068). Every other destination is refused, the old group
+// and the channel it became included, and nothing of a refused post is
+// stored.
+func TestTheComposerPostsOnlyToTheControlRoom(t *testing.T) {
 	t.Parallel()
-	operator := user{ID: 5050, First: "Operator", Username: "operator"}
-	srv, _ := startTelegramFleet(t, operator)
+	srv := startServer(t, t.TempDir())
+	srv.createLoop("alpha", nil)
 
-	srv.mustJSON("POST", "/api/loops/alpha/message",
-		map[string]any{"author": "operator", "text": "to the group", "destination": "group"}, nil)
-	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
-		return strings.Contains(tn.ResultText, "to the group")
-	})
-	stored := srv.activityWith("to the group")
-	if len(stored) != 1 || stored[0].Conversation != "group" {
-		t.Fatalf("group-destination message stored as: %s", dump(stored))
-	}
-
-	if resp, _ := srv.do("POST", "/api/loops/alpha/message",
-		map[string]any{"text": "x", "destination": "owner_dm"}); resp.StatusCode != 400 {
-		t.Fatalf("owner_dm composer destination accepted: %d", resp.StatusCode)
+	for _, destination := range []string{"group", "channel:fleet", "owner_dm"} {
+		resp, body := srv.do("POST", "/api/loops/alpha/message",
+			map[string]any{"text": "to " + destination, "destination": destination})
+		if resp.StatusCode != 400 {
+			t.Errorf("a composer post to %s = %d %s, want 400", destination, resp.StatusCode, body)
+		}
+		if stored := srv.activityWith("to " + destination); len(stored) != 0 {
+			t.Errorf("a refused composer post to %s was stored: %s", destination, dump(stored))
+		}
 	}
 }
 
@@ -1105,7 +1110,7 @@ func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
 	// send to its own destination
 	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n"+
 		`!send {"destination":"owner_dm","text":"private answer"} handled dm hello`+"\n"+
-		`!send {"destination":"group","text":"@operator group answer"} handled group hello`+"\n")
+		`!send {"destination":"channel:fleet","text":"@operator group answer"} handled group hello`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	tg.dm("alpha", operator, "start hanging")
@@ -1262,5 +1267,18 @@ func TestARefusedTelegramTokenIsNotStored(t *testing.T) {
 	srv.mustJSON("GET", "/api/loops/alpha", nil, &alpha)
 	if alpha.TGBotUsername != botUsername("alpha") {
 		t.Errorf("alpha's bot after a refused edit = %q, want %q kept", alpha.TGBotUsername, botUsername("alpha"))
+	}
+}
+
+// bindGroup binds each loop's room for the harness's Telegram group to the
+// channel fleet once the loop has recorded it, as the operator does from the
+// loop page (ADR-0068). Waiting for the record first keeps the message that
+// recorded it out of the channel, as it was before the room was bound.
+func (srv *server) bindGroup(names ...string) {
+	srv.t.Helper()
+	groupID := strconv.FormatInt(groupChatID, 10)
+	for _, name := range names {
+		srv.waitRoom(name, groupID)
+		srv.bindRoom(name, "telegram", groupID, fleetChannel)
 	}
 }

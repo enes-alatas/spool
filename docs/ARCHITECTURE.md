@@ -38,7 +38,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **fleet rule** | An operator-defined rule the loops in its scope follow: a hub rule binds every loop, a team's binds that team's loops (ADR-0066). Enabled rules render into the system prompt as the `FLEET RULES` section ahead of the mission, the hub's then the team's, and win where they conflict with the mission; a hub rule wins over a team's (ADR-0024). |
 | **workspace** | The loop's working directory (`none` \| plain dir \| git worktree). A loop-level concept only. |
 | **org** | The tenant: the people sharing a hub's loops, teams, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
-| **team** | A named set of loops on one hub, with channels and settings of its own: a loop is in at most one team or none, a team channel takes only the team's loops, and a setting resolves from the loop to its team to the hub, "all" meaning the hub. A team is not a tenant and has no people of its own; the fleet stays every loop, and the fleet channel stays `group`. Being built under #1289. (ADR-0066) |
+| **team** | A named set of loops on one hub, with channels and settings of its own: a loop is in at most one team or none, a team channel takes only the team's loops, and a setting resolves from the loop to its team to the hub, "all" meaning the hub. A team is not a tenant and has no people of its own; the fleet stays every loop, and no channel is fleet-wide. Being built under #1289. (ADR-0066, ADR-0068) |
 | **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything but users, which only owners manage; members talk to loops and read the fleet, less its owner DMs (ADR-0048). |
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). A cloud turn reports no cost, so the hub estimates it from each call's tokens and model by its own price table and sets `cost_estimated`; a call on a model the table lacks leaves `cost_usd` null, unknown rather than free (ADR-0059). |
@@ -51,10 +51,10 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **doing** | The one line a loop sets with a `[doing: …]` trailer to say what it is working on, at most 60 characters. The hub keeps it on the loop, with when it was set, until the loop sets another or clears it, or a fresh session starts with none (#1284), and serves it on the loop record. It is not the status note, which is a turn's whole reply. (ADR-0026) |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
 | **attachment** | A file that crosses a surface with a message: kept once by the hub for 30 days, and shown to a loop in its envelope as a path it can read in its workstation (ADR-0037). A loop sends one with `send_message`'s `attach`, and only a file it owns (ADR-0026); the operator sends one from the control room by uploading it first (ADR-0037). |
-| **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's DM with its owner on its attached surface), `dm:<name>` (its DM with any other allowed sender, one per person), `group` (a channel the loop is in, the fleet channel being the one named `group`), or `control_room` (its web thread, which every user of the hub reads). (ADR-0026, ADR-0032, ADR-0038, ADR-0048, ADR-0049) |
-| **channel** | A conversation several loops and people share, held by the hub: a name, an optional description, and the loops the operator put in it. The kind on the wire is `group`, and a group message names its channel. A loop sends to one as `channel:<name>`, and the fleet channel keeps `group`. A surface's room mirrors a channel; it never creates one. (ADR-0038) |
+| **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's DM with its owner on its attached surface), `dm:<name>` (its DM with any other allowed sender, one per person), `group` (a channel the loop is in, which it addresses as `channel:<name>`), or `control_room` (its web thread, which every user of the hub reads). (ADR-0026, ADR-0032, ADR-0038, ADR-0048, ADR-0049) |
+| **channel** | A conversation several loops and people share, held by the hub: a name, an optional description, and the loops the operator put in it. The kind on the wire is `group`, and a group message names its channel. A loop sends to every one as `channel:<name>`; `group` names no channel and stays a reserved name. A surface's room mirrors a channel; it never creates one. (ADR-0038, ADR-0068) |
 | **room** | A chat on a surface as one loop's bot knows it — a Telegram group or a Slack channel — bound to one of the loop's channels or, until the operator binds it, to none. A bound room carries its channel both ways for that loop; an unbound one carries nothing. A chat carries one channel, whichever loops bound it. (ADR-0038) |
-| **fleet channel** | The channel named `group`, which every hub has and every loop is in unless taken out; every other channel is opt-in. The conversation the operator and the loops share, living on the hub and native to the control room. Spelled `group` on the wire, in `send_message` and in stored rows; *fleet channel* everywhere a human reads it. A loop is *in* it or is not — membership is per loop, and there is deliberately no loop-noun for it, since **member** names a human org role. (ADR-0032, ADR-0038) |
+| **fleet channel** | Retired. It was the channel named `group` that every hub had and every loop was in unless taken out. The v0.8.0 upgrade makes it the ordinary channel `fleet`, or drops it when it holds nothing, and no channel is fleet-wide any more. Don't use the term for a current channel. (ADR-0032, ADR-0068) |
 | **send** | A loop's explicit outgoing message: destination, optional reply reference, text — expressed through the hub-served `send_message` tool. A send with `react` puts one emoji on the message it replies to instead, and says nothing. A send with `poll` is a poll, its text the question; one with `vote` is the loop's choice in the poll it replies to, and one with `close_poll` closes the loop's own poll. (ADR-0026, ADR-0040, ADR-0041) |
 | **status note** | A turn's final reply text: stored on the turn and shown in the timeline, carries the trailers, delivered to no conversation. (ADR-0026) |
 | **surface** | A chat platform adapter (Telegram today, Slack at L3), attached to a loop after the loop exists and detachable; at most one per loop, and a loop may have none. The web control room is not a surface; it talks to the hub directly. (ADR-0029, ADR-0032) |
@@ -105,17 +105,15 @@ loops (mentions, or the private conversation's loop; unaddressed group chatter
 wakes nobody) → loop turn — one turn per conversation, never batching private
 and group input into one answer. A loop sends through the hub-served
 `send_message` MCP tool — immediate, validated in-turn, capped per turn — to
-`owner_dm`, `dm:<name>` (ADR-0049), `group` (recipients from @mentions), or
-`control_room`; the bridge
+`owner_dm`, `dm:<name>` (ADR-0049), `channel:<name>` (recipients from
+@mentions), or `control_room`; the bridge
 and web deliver each send by its conversation, and the final reply text becomes
-a status note delivered nowhere. ADR-0032 puts `group` on the hub as the
-fleet channel, with an attached surface mirroring it: the channel has
-endpoints of its own, keyed by no loop (`GET`/`POST /api/group`), and a chat
-page of its own in the control room, opened from Channels (#286, #1443); a
-loop is in it or not, and a new loop starts outside it when it is the fleet's
-only loop and in it otherwise
-(#287); every channel, the fleet channel included, answers the same pair by
-name (`GET`/`POST /api/channels/{name}/messages`, ADR-0038, #549); the
+a status note delivered nowhere. Every channel lives on the hub, with an
+attached surface mirroring it, and has a chat page of its own in the control
+room, opened from Channels (ADR-0032, #1443); a new loop joins its team's home
+channel when the team has one, and no channel otherwise (ADR-0068); every
+channel answers the same pair by name
+(`GET`/`POST /api/channels/{name}/messages`, ADR-0038, #549); the
 operator's words never leave the hub; and every
 message's `mirror` says whether it is on the surface too (`not_mirrored`,
 `pending`, `mirrored`), its failures staying on the send fields.
@@ -393,7 +391,7 @@ opportunistically, not big-bang.
   Slack, the first app to store it under its channel and ts — while
   the router still fans it out to every mentioned loop and `delivered_to` lists
   them all. Ingest is transport detail; delivery is the hub's. It elects across
-  the mirror rather than into the fleet channel, which is the hub's own and has
+  the mirror rather than into the channel, which is the hub's own and has
   no pollers. Any multi-identity surface inherits this rule.
 - **GitHub is not a surface** (ADR-0019): loops do GitHub work — branch, PR,
   review, issues — themselves with `git`/`gh` inside the workstation. Spool models

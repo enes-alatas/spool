@@ -21,8 +21,8 @@ func TestALoopsResendResolvesTheFailureItNames(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7781, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged (saying it again)","resends":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged (saying it again)","resends":"$ref"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -87,7 +87,7 @@ func TestAResendToAnotherDestinationIsRefused(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7782, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
 		`!send {"destination":"control_room","text":"the deploy is wedged","resends":"$ref"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
@@ -188,9 +188,9 @@ func TestAFailedResendIsResolvedByTheNextOne(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7783, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged (second time)","resends":"$ref"}`+"\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged (third time)","resends":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged (second time)","resends":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged (third time)","resends":"$ref"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 

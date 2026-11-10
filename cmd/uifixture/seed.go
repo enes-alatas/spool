@@ -269,7 +269,7 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		// the Undelivered pane has one row of each kind to draw.
 		left bool
 		// to is the loops the hub delivered it to, by id as the store keeps
-		// them, which the fleet channel names under a message (#286). Only
+		// them, which a channel's timeline names under a message (#286). Only
 		// the loops a post addresses: a fixture that listed the same two
 		// everywhere would shoot a page claiming every loop reads
 		// everything, and one that stored names would shoot a page that
@@ -351,6 +351,7 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 			TGChatID:     -1001000000000,
 			TGMessageID:  int64(4100 + i),
 			Conversation: store.ConversationGroup,
+			Channel:      fixtureFleet,
 			DeliveredTo:  message.to,
 		}
 		// Mirrored as the hub records it (#285): a post that came in from
@@ -554,7 +555,11 @@ func seedSecrets(ctx context.Context, db store.Store, loopID string) error {
 	return nil
 }
 
-// Three channels besides the fleet channel, for the Channels page and the
+// fixtureFleet is the ordinary channel an upgraded hub's fleet channel
+// became (ADR-0068).
+const fixtureFleet = "fleet"
+
+// Three channels besides fleet, for the Channels page and the
 // loop page's Channels panel (#484, #549). They differ in the ways the pages
 // draw differently: several loops, one loop, and a loop that is in more than
 // one. Gardener is in releases for the release notes, and no group carries
@@ -584,9 +589,9 @@ func seedChannels(ctx context.Context, db store.Store, ids map[string]string) er
 	return nil
 }
 
-// Traffic in docs, a channel besides the fleet channel (#549): Activity's
+// Traffic in docs, a channel besides fleet (#549): Activity's
 // channel filter narrows to it, and every row names its channel. A fixture
-// whose channel traffic was all the fleet channel's shoots a filter that
+// whose channel traffic was all fleet's shoots a filter that
 // could be ignoring its pick and a label that could be hard-coded.
 func seedChannelTraffic(ctx context.Context, db store.Store, ids map[string]string) error {
 	docs := []struct {
@@ -617,7 +622,7 @@ func seedChannelTraffic(ctx context.Context, db store.Store, ids map[string]stri
 }
 
 // Two polls (#554), each its channel's newest message, since a thread runs
-// in insert order: an open single-choice one in the fleet channel, with
+// in insert order: an open single-choice one in fleet, with
 // a close time still ahead and votes from a person, the operator and a
 // loop, and a closed multiple-choice one in docs. A fixture with one poll
 // shoots a ballot that could be ignoring its close, its choice kind, or a
@@ -635,7 +640,7 @@ func seedPolls(ctx context.Context, db store.Store, ids map[string]string) error
 		votes                 []store.Vote
 	}{
 		{
-			author: "gardener", channel: store.FleetChannel, at: -4 * time.Minute,
+			author: "gardener", channel: fixtureFleet, at: -4 * time.Minute,
 			text:     "@watcher @archivist the handbook freeze for the release: which day?",
 			to:       []string{ids["watcher"], ids["archivist"]},
 			options:  []string{"Thursday", "Friday", "after the release"},
@@ -690,12 +695,12 @@ func seedPolls(ctx context.Context, db store.Store, ids map[string]string) error
 }
 
 // The rooms the loop page lists under gardener's Telegram rows (#515): the
-// fleet channel's group, a group carrying docs, and one the bot has heard
+// fleet's group, a group carrying docs, and one the bot has heard
 // from that nobody has bound yet, the row the page asks the operator about.
 // Watcher's bot is in that same chat and carries releases there, so a
 // channel's pane shows two loops in one channel whose bots differ (#549).
-// Each loop's fleet channel room is the group its loop record already
-// names, so the two agree.
+// Each loop's fleet room is the group the seed bound it to, so the two
+// agree.
 type fixtureRoom struct {
 	id, title, channel string
 }
@@ -710,11 +715,11 @@ func seedRooms(ctx context.Context, db store.Store, ids map[string]string) error
 		if err != nil {
 			return fmt.Errorf("rooms: %w", err)
 		}
-		group := store.BoundRoom(bound, store.SurfaceTelegram, store.FleetChannel)
+		group := store.BoundRoom(bound, store.SurfaceTelegram, fixtureFleet)
 		if group == nil {
 			return fmt.Errorf("rooms: %s has no group", name)
 		}
-		fleetRoom := fixtureRoom{id: group.RoomID, channel: store.FleetChannel}
+		fleetRoom := fixtureRoom{id: group.RoomID, channel: fixtureFleet}
 		var rooms []fixtureRoom
 		switch name {
 		case "gardener":

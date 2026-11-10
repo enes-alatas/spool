@@ -116,7 +116,7 @@ func TestMCPSendGroupDeliversToMentionedLoop(t *testing.T) {
 	s.createLoop("briar", nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
-	res := callSend(t, sess, map[string]any{"destination": "group", "text": "@briar ping from aster"})
+	res := callSend(t, sess, map[string]any{"destination": "channel:fleet", "text": "@briar ping from aster"})
 	if res.IsError {
 		t.Fatalf("group send refused: %s", resultText(res))
 	}
@@ -154,10 +154,10 @@ func TestMCPSendRefusals(t *testing.T) {
 		code string
 	}{
 		{"unknown destination", map[string]any{"destination": "shoutbox", "text": "hi"}, "invalid_destination"},
-		{"empty text", map[string]any{"destination": "group", "text": "   "}, "empty_text"},
-		{"group without recipients", map[string]any{"destination": "group", "text": "talking to nobody"}, "no_recipients"},
-		{"group mentioning only unknowns", map[string]any{"destination": "group", "text": "@stranger hi"}, "no_recipients"},
-		{"reply to a reference that names nothing", map[string]any{"destination": "group", "text": "@aster hi", "reply_to": "ref:9999"}, "unknown_reply_to"},
+		{"empty text", map[string]any{"destination": "channel:fleet", "text": "   "}, "empty_text"},
+		{"group without recipients", map[string]any{"destination": "channel:fleet", "text": "talking to nobody"}, "no_recipients"},
+		{"group mentioning only unknowns", map[string]any{"destination": "channel:fleet", "text": "@stranger hi"}, "no_recipients"},
+		{"reply to a reference that names nothing", map[string]any{"destination": "channel:fleet", "text": "@aster hi", "reply_to": "ref:9999"}, "unknown_reply_to"},
 		{"owner_dm without a surface", map[string]any{"destination": "owner_dm", "text": "hello owner"}, "no_such_destination"},
 	}
 	for _, c := range cases {

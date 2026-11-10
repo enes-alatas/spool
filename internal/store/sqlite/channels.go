@@ -9,16 +9,13 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
-// channels keeps two shapes of membership behind one interface (ADR-0038).
-// The fleet channel holds every loop unless the operator took it out, so its
-// membership is the loops' outside_fleet_channel exception (0024); every
-// other channel is opt-in, so its membership is a channel_loops row per loop
-// put there.
+// channels holds the hub's channels. Every channel is opt-in, so its
+// membership is a channel_loops row per loop put there (ADR-0068).
 type channels struct{ db *sql.DB }
 
 func (table channels) List(ctx context.Context) ([]*store.Channel, error) {
 	rows, err := table.db.QueryContext(ctx, `SELECT name, description, created_at, COALESCE(team, '') FROM channels
-		ORDER BY name <> ?, name`, store.FleetChannel)
+		ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -59,13 +56,9 @@ func (table channels) Get(ctx context.Context, name string) (*store.Channel, err
 	return &channel, nil
 }
 
-// loopIDs is the membership of one channel, in whichever shape it is kept.
+// loopIDs is the membership of one channel.
 func (table channels) loopIDs(ctx context.Context, name string) ([]string, error) {
-	statement, args := `SELECT loop_id FROM channel_loops WHERE channel=? ORDER BY loop_id`, []any{name}
-	if name == store.FleetChannel {
-		statement, args = `SELECT id FROM loops WHERE outside_fleet_channel=0 ORDER BY id`, nil
-	}
-	rows, err := table.db.QueryContext(ctx, statement, args...)
+	rows, err := table.db.QueryContext(ctx, `SELECT loop_id FROM channel_loops WHERE channel=? ORDER BY loop_id`, name)
 	if err != nil {
 		return nil, err
 	}
@@ -133,18 +126,6 @@ func (table channels) RemoveLoop(ctx context.Context, name, loopID string, at in
 }
 
 func (table channels) setMember(ctx context.Context, name, loopID string, in bool, at int64) error {
-	if name == store.FleetChannel {
-		// The same write as a loop edit's OutsideFleetChannel, stamped the
-		// same way, so the loop reads as changed whichever route moved it.
-		res, err := table.db.ExecContext(ctx, `UPDATE loops SET outside_fleet_channel=?, updated_at=? WHERE id=?`, !in, at, loopID)
-		if err != nil {
-			return err
-		}
-		if affected, _ := res.RowsAffected(); affected == 0 {
-			return store.ErrNotFound
-		}
-		return nil
-	}
 	if _, err := table.Get(ctx, name); err != nil {
 		return err
 	}
@@ -213,9 +194,9 @@ func (table channels) SetTeam(ctx context.Context, name, team string) (*store.Ch
 	return table.Get(ctx, name)
 }
 
-// addLoop puts a loop in a channel other than the fleet channel. A team's
-// channel takes only that team's loops (ADR-0066), checked in the same
-// statement as the insert, so a loop moving team meanwhile can't slip in.
+// addLoop puts a loop in a channel. A team's channel takes only that
+// team's loops (ADR-0066), checked in the same statement as the insert,
+// so a loop moving team meanwhile can't slip in.
 func (table channels) addLoop(ctx context.Context, name, loopID string, at int64) error {
 	res, err := table.db.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
 		SELECT ?1, loops.id, ?3 FROM loops, channels

@@ -181,8 +181,11 @@ func (table teams) Edit(ctx context.Context, name string, edit store.TeamEdit) (
 	return table.Get(ctx, name)
 }
 
-// setHome makes one of the team's channels its home and puts every loop of
-// the team in it, or with "" leaves the team with none.
+// setHome makes a channel the team's home and puts every loop of the team
+// in it, or with "" leaves the team with none. A hub channel is given to
+// the team in the same write (ADR-0068), as a channel's own move gives it:
+// refused while it holds a loop outside the team. Another team's channel
+// is refused.
 func setHome(ctx context.Context, tx *sql.Tx, team, channel string, at int64) error {
 	if channel == "" {
 		_, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=NULL WHERE name=?`, team)
@@ -190,12 +193,27 @@ func setHome(ctx context.Context, tx *sql.Tx, team, channel string, at int64) er
 	}
 	var owner string
 	err := tx.QueryRowContext(ctx, `SELECT COALESCE(team, '') FROM channels WHERE name=?`, channel).Scan(&owner)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && owner != team {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return store.ErrChannelNotInTeam
-	}
-	if err != nil {
+	case err != nil:
 		return err
+	case owner == "":
+		var outsiders int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_loops JOIN loops ON loops.id = channel_loops.loop_id
+			WHERE channel_loops.channel=? AND COALESCE(loops.team, '') <> ?`, channel, team).Scan(&outsiders); err != nil {
+			return err
+		}
+		if outsiders > 0 {
+			return store.ErrChannelHasOutsiders
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE channels SET team=? WHERE name=?`, team, channel); err != nil {
+			return err
+		}
+	case owner != team:
+		return store.ErrChannelInOtherTeam
 	}
+
 	if _, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=? WHERE name=?`, channel, team); err != nil {
 		return err
 	}

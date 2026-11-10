@@ -17,7 +17,7 @@ func TestASendAnsweredTooLateIsLoggedAsAPossibleDuplicate(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7800, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta said to a slow Telegram"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta said to a slow Telegram"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 

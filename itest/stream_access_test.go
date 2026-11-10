@@ -254,11 +254,11 @@ func TestAMembersStreamCarriesNoReactionOrVoteOnAPrivateMessage(t *testing.T) {
 	const groupAsk = "@alpha a group ask"
 	tg.post(groupChatID, "supergroup", groupAsk, operator)
 	group := idOf(groupAsk)
-	send(map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", group), "react": "👀"})
+	send(map[string]any{"destination": "channel:fleet", "reply_to": fmt.Sprintf("ref:%d", group), "react": "👀"})
 	const groupQuestion = "@beta a group poll?"
-	send(map[string]any{"destination": "group", "text": groupQuestion, "poll": map[string]any{"options": []string{"yes", "no"}}})
+	send(map[string]any{"destination": "channel:fleet", "text": groupQuestion, "poll": map[string]any{"options": []string{"yes", "no"}}})
 	groupPoll := idOf(groupQuestion)
-	send(map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", groupPoll), "vote": []int{1}})
+	send(map[string]any{"destination": "channel:fleet", "reply_to": fmt.Sprintf("ref:%d", groupPoll), "vote": []int{1}})
 
 	for _, want := range []string{reaction(private), `"emoji":"🎉"`, reaction(group), ballot(groupPoll)} {
 		admin.waitFor(t, want)

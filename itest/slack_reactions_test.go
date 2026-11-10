@@ -52,9 +52,9 @@ func TestSlackReactionsTravelBothWays(t *testing.T) {
 	srv, slack := startSlackFleet(t)
 	const morning = "1727600000.000010"
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", morning)
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	srv.waitRoom("terra", slackChannel)
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": "@milo the build is green"}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": "@milo the build is green"}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	post := slack.waitPost(t, "the build is green")
@@ -74,7 +74,7 @@ func TestSlackReactionsTravelBothWays(t *testing.T) {
 	morningMessage := srv.waitGroupMessage("morning", func(activityMessage) bool { return true })
 	ref := fmt.Sprintf("ref:%d", morningMessage.ID)
 	for _, emoji := range []string{"🎉", ":partyparrot:"} {
-		if res := callSend(t, terra, map[string]any{"destination": "group", "reply_to": ref, "react": emoji}); res.IsError {
+		if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": emoji}); res.IsError {
 			t.Fatalf("terra's %s refused: %s", emoji, resultText(res))
 		}
 	}

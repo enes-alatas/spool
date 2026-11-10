@@ -41,7 +41,7 @@ func (table *memReactions) Remove(_ context.Context, messageID int64, reactorKey
 type groupMessages struct{ store.MessageStore }
 
 func (groupMessages) Get(_ context.Context, id int64) (*store.Message, error) {
-	return &store.Message{ID: id, Conversation: store.ConversationGroup, FromLoopID: "l1"}, nil
+	return &store.Message{ID: id, Conversation: store.ConversationGroup, Channel: "fleet", FromLoopID: "l1"}, nil
 }
 
 type reactionsOnly struct {

@@ -22,10 +22,10 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 	// terra's app binds to the channel an allowed sender speaks in; milo's
 	// hears nothing, so it is bound to none
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	srv.waitRoom("terra", slackChannel)
 
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": "@milo terra's words"}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": "@milo terra's words"}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	post := slack.waitPost(t, "terra's words")
@@ -41,7 +41,7 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 	}
 	srv.waitInput("terra", "why?", fmt.Sprintf("in reply to ref:%d", sent.ID))
 
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": "because",
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": "because",
 		"reply_to": fmt.Sprintf("ref:%d", reply.ID)}); res.IsError {
 		t.Fatalf("terra's reply refused: %s", resultText(res))
 	}
@@ -50,7 +50,7 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 	}
 
 	slack.setFailPosts(-1)
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": "@milo words that fail"}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": "@milo words that fail"}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	failed := srv.waitGroupMessage("@milo words that fail", func(m activityMessage) bool { return m.SendFailedAt != 0 })
@@ -59,8 +59,10 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 	slack.waitPost(t, "words that fail")
 	srv.waitGroupMessage("@milo words that fail", mirrorIs("mirrored"))
 
+	// the operator unbinds milo's room, so its app is in no channel
+	srv.mustJSON("DELETE", "/api/loops/milo/rooms/slack/"+slackChannel, nil, nil)
 	milo := mcpSession(t, srv, hubMCPToken(t, srv, "milo"))
-	if res := callSend(t, milo, map[string]any{"destination": "group", "text": "@terra milo's app is in no channel"}); res.IsError {
+	if res := callSend(t, milo, map[string]any{"destination": "channel:fleet", "text": "@terra milo's app is in no channel"}); res.IsError {
 		t.Fatalf("milo's group send refused: %s", resultText(res))
 	}
 	srv.waitGroupMessage("@terra milo's app is in no channel", mirrorIs("not_mirrored"))
@@ -136,7 +138,7 @@ func TestSlackCatalog(t *testing.T) {
 		"Your owner is @u0oper",
 		"owner_dm reaches them privately",
 		"your owner's private Slack chat",
-		`"[message from @enes via slack · group · ref:42 · ...]"`,
+		`"[message from enes via web · channel:fleet · ref:42 · ...]"`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("a Slack loop's prompt lacks %q:\n%s", want, prompt)
@@ -191,12 +193,12 @@ func TestSlackLostSendsAreFailures(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	srv.waitRoom("terra", slackChannel)
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 
 	long := "@milo the start " + strings.Repeat("filler ", 600) + "the lost tail"
 	slack.failPostsContaining("the lost tail")
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": long}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": long}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	slack.waitPost(t, "the start")
@@ -209,7 +211,7 @@ func TestSlackLostSendsAreFailures(t *testing.T) {
 	slack.setFailPosts(-1) // retried with a backoff of seconds: the window
 	before := slack.postAttempts()
 	const held = "@milo held when the app went"
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": held}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": held}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	for deadline := time.Now().Add(10 * time.Second); slack.postAttempts() == before; time.Sleep(50 * time.Millisecond) {
@@ -230,13 +232,13 @@ func TestSlackSendInterruptedByAShutdownIsAFailure(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	srv.waitRoom("terra", slackChannel)
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 
 	slack.setFailPosts(-1) // retried with a backoff of seconds: the window
 	before := slack.postAttempts()
 	const held = "@milo held when the hub went"
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": held}); res.IsError {
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": held}); res.IsError {
 		t.Fatalf("terra's group send refused: %s", resultText(res))
 	}
 	for deadline := time.Now().Add(10 * time.Second); slack.postAttempts() == before; time.Sleep(50 * time.Millisecond) {

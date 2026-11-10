@@ -139,7 +139,7 @@ func TestALoopCannotRelayASecretToATeammate(t *testing.T) {
 	const secret = "fixture-relay-secret-0000"
 	// alpha's first turn is its startup tick, before it holds the secret,
 	// so it echoes; the turn the test asks for sends
-	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"@bravo the key is `+secret+`"}`+"\n")
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"channel:fleet","text":"@bravo the key is `+secret+`"}`+"\n")
 	wsBravo := workspaceWithScript(t, "!contains "+secret+"\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("alpha", map[string]any{"workspace_path": wsAlpha})

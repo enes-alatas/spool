@@ -34,20 +34,19 @@ func (s *server) wantRefusal(method, path string, body any, status int, code str
 }
 
 // The operator creates a channel, describes it and chooses its loops, and
-// the fleet channel answers the same routes: its membership is the loops'
-// own in_fleet_channel, written from either side, and it is what routing
-// obeys (ADR-0038).
+// the membership is what routing obeys (ADR-0038). A fresh hub has no
+// channel, and group stays a name no channel takes (ADR-0068).
 func TestChannelsRoundTrip(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar"} {
-		s.createLoop(name, nil)
+		s.createLoop(name, map[string]any{"fleet": false})
 	}
 
 	var list []channelJSON
 	s.mustJSON("GET", "/api/channels", nil, &list)
-	if len(list) != 1 || list[0].Name != "group" || !reflect.DeepEqual(list[0].Loops, []string{"aster", "briar"}) {
-		t.Fatalf("a fresh hub's channels = %+v, want the fleet channel with both loops", list)
+	if len(list) != 0 {
+		t.Fatalf("a fresh hub's channels = %+v, want none", list)
 	}
 
 	var created channelJSON
@@ -75,9 +74,6 @@ func TestChannelsRoundTrip(t *testing.T) {
 	if got := s.channel("backend").Loops; !reflect.DeepEqual(got, []string{"aster"}) {
 		t.Fatalf("backend = %v, want aster once", got)
 	}
-	if got := s.channel("group").Loops; !reflect.DeepEqual(got, []string{"aster", "briar"}) {
-		t.Fatalf("joining backend moved the fleet channel: %v", got)
-	}
 
 	var described channelJSON
 	s.mustJSON("PATCH", "/api/channels/backend", map[string]any{"description": "the Go core"}, &described)
@@ -87,18 +83,11 @@ func TestChannelsRoundTrip(t *testing.T) {
 	s.wantRefusal("PATCH", "/api/channels/nowhere", map[string]any{"description": "x"}, 404, "channel_not_found")
 	s.wantRefusal("PATCH", "/api/channels/backend", map[string]any{"description": "the Go\r core"}, 400, "")
 
-	// The fleet channel, from its side and from the loop's.
-	s.wantRefusal("DELETE", "/api/channels/group/loops/briar", nil, 204, "")
-	if s.loop("briar").InFleetChannel {
-		t.Fatal("briar left the fleet channel through its route and its loop still says it is in")
-	}
+	s.mustJSON("PUT", "/api/channels/backend/loops/briar", nil, nil)
 	aster := mcpSession(t, s, hubMCPToken(t, s, "aster"))
-	wantSendError(t, callSend(t, aster, map[string]any{"destination": "group", "text": "@briar are you there"}), "no_recipients")
-	s.mustJSON("PATCH", "/api/loops/briar", map[string]any{"in_fleet_channel": true}, nil)
-	if got := s.channel("group").Loops; !reflect.DeepEqual(got, []string{"aster", "briar"}) {
-		t.Fatalf("briar came back through its loop and the fleet channel reads %v", got)
-	}
-	s.wantRefusal("DELETE", "/api/channels/group", nil, 400, "channel_reserved")
+	s.wantRefusal("DELETE", "/api/channels/backend/loops/briar", nil, 204, "")
+	wantSendError(t, callSend(t, aster, map[string]any{"destination": "channel:backend", "text": "@briar are you there"}), "no_recipients")
+	s.wantRefusal("GET", "/api/channels/group", nil, 404, "channel_not_found")
 
 	s.wantRefusal("DELETE", "/api/channels/backend/loops/aster", nil, 204, "")
 	s.wantRefusal("DELETE", "/api/channels/backend/loops/aster", nil, 204, "")
@@ -112,31 +101,37 @@ type channelMessage struct {
 	Channel      string `json:"channel"`
 }
 
-// An existing fleet upgrades without anyone doing anything: every message
-// it said in the fleet channel is in the channel named group, every private
-// one is in none, and the fleet channel holds exactly the loops it held, so
-// nobody's fleet goes quiet on upgrade (ADR-0038).
-func TestChannelsMigrationKeepsAnExistingFleet(t *testing.T) {
+// An existing fleet upgrades without anyone doing anything: the fleet
+// channel becomes the ordinary channel fleet, with the loops it held, every
+// message said in it, and no team, while a loop the operator took out stays
+// out and a private message stays in no channel (ADR-0068).
+func TestAnUpgradedHubKeepsItsFleetChannelAsFleet(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	for _, name := range []string{"aster", "briar", "cedar"} {
 		s.createLoop(name, nil)
 	}
-	s.mustJSON("PATCH", "/api/loops/cedar", map[string]any{"in_fleet_channel": false}, nil)
-	s.mustJSON("POST", "/api/group", map[string]any{"text": "@all standup at ten"}, nil)
+	s.mustJSON("DELETE", "/api/channels/fleet/loops/cedar", nil, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "@all standup at ten"}, nil)
 	s.message("aster", "just between us")
 	s.stop()
 
-	unmigrateChannels(t, dataDir)
+	unmigrateFleetChannel(t, dataDir, "cedar")
 	s = startServer(t, dataDir)
 
-	if got := s.channel("group").Loops; !reflect.DeepEqual(got, []string{"aster", "briar"}) {
-		t.Errorf("the fleet channel after the upgrade = %v, want aster and briar as before", got)
+	if got := s.channel("fleet"); !reflect.DeepEqual(got.Loops, []string{"aster", "briar"}) || got.Team != "" {
+		t.Errorf("fleet after the upgrade = %+v, want aster and briar as before, in no team", got)
+	}
+	s.wantRefusal("GET", "/api/channels/group", nil, 404, "channel_not_found")
+	var teams []teamJSON
+	s.mustJSON("GET", "/api/teams", nil, &teams)
+	if len(teams) != 0 {
+		t.Errorf("the upgrade made teams %+v, want none", teams)
 	}
 	var activity []channelMessage
 	s.mustJSON("GET", "/api/activity", nil, &activity)
-	want := map[string]string{"@all standup at ten": "group", "just between us": ""}
+	want := map[string]string{"@all standup at ten": "fleet", "just between us": ""}
 	for _, message := range activity {
 		channel, ok := want[message.Text]
 		if !ok {
@@ -152,24 +147,33 @@ func TestChannelsMigrationKeepsAnExistingFleet(t *testing.T) {
 	}
 }
 
-// unmigrateChannels returns a stopped hub's database to its shape before
-// channels existed, so the next start runs the shipped migration over a
-// fleet with history.
-func unmigrateChannels(t *testing.T, dataDir string) {
+// unmigrateFleetChannel returns a stopped hub's database to its shape
+// before ADR-0068: the channel fleet is the fleet channel group again, its
+// membership is the loops' exception column, with outside the loops the
+// operator took out, and the next start runs the shipped migration over it.
+func unmigrateFleetChannel(t *testing.T, dataDir string, outside ...string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, stmt := range append(undo0079,
-		`DROP TABLE channel_loops`,
-		`DROP TABLE channels`,
-		`ALTER TABLE messages DROP COLUMN channel`,
-		`DELETE FROM schema_migrations WHERE version='0033_channels.sql'`,
-	) {
+	for _, stmt := range []string{
+		`INSERT INTO channels (name, description, created_at) SELECT 'group', description, created_at FROM channels WHERE name = 'fleet'`,
+		`UPDATE messages SET channel = 'group' WHERE channel = 'fleet'`,
+		`UPDATE rooms SET channel = 'group' WHERE channel = 'fleet'`,
+		`DELETE FROM channel_loops WHERE channel = 'fleet'`,
+		`DELETE FROM channels WHERE name = 'fleet'`,
+		`ALTER TABLE loops ADD COLUMN outside_fleet_channel INTEGER NOT NULL DEFAULT 0`,
+		`DELETE FROM schema_migrations WHERE version='0082_fleet_channel_ordinary.sql'`,
+	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	for _, name := range outside {
+		if _, err := db.Exec(`UPDATE loops SET outside_fleet_channel = 1 WHERE name = ?`, name); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

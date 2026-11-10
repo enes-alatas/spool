@@ -51,17 +51,23 @@ func TestReplyTargetOnlyTheAuthorsBotSaw(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { db.Close() })
+			if err := db.Channels().Create(ctx, &store.Channel{Name: "fleet", CreatedAt: 1}); err != nil {
+				t.Fatal(err)
+			}
 			for _, id := range []string{"loop_a", "loop_b"} {
 				if err := db.Loops().Create(ctx, &store.Loop{ID: id, Name: id, Status: store.StatusActive, WorkspaceMode: "none", Pacing: "fixed", Runtime: store.RuntimeBare,
 					TGBotToken: id, TGBotUsername: id + "_bot"}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := db.Rooms().Bind(ctx, id, store.SurfaceTelegram, strconv.FormatInt(chat, 10), store.FleetChannel, 0); err != nil {
+				if err := db.Channels().AddLoop(ctx, "fleet", id, 1); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Rooms().Bind(ctx, id, store.SurfaceTelegram, strconv.FormatInt(chat, 10), "fleet", 0); err != nil {
 					t.Fatal(err)
 				}
 			}
 			post := &store.Message{Origin: store.OriginLoop, Author: "loop_b", FromLoopID: "loop_b",
-				Text: "approved, please merge", Conversation: store.ConversationGroup}
+				Text: "approved, please merge", Conversation: store.ConversationGroup, Channel: "fleet"}
 			if err := db.Messages().Insert(ctx, post); err != nil {
 				t.Fatal(err)
 			}
@@ -90,7 +96,7 @@ func TestReplyTargetOnlyTheAuthorsBotSaw(t *testing.T) {
 			handle := func(bot *poller, message *Message) {
 				target := br.ownReplyTarget(ctx, bot, message)
 				br.recordSighting(ctx, bot, message, target)
-				br.ingestGroupMessage(ctx, bot, message, store.FleetChannel, "operator", message.Text, nil, target)
+				br.ingestGroupMessage(ctx, bot, message, "fleet", "operator", message.Text, nil, target)
 			}
 			if order == "author first" {
 				handle(beta, seenByBeta)

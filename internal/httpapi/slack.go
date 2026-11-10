@@ -83,8 +83,8 @@ func (server *Server) slackIdentity(ctx context.Context, loopID, appToken, botTo
 	if err != nil {
 		return identity, &requestError{status: http.StatusBadGateway, msg: "slack did not answer: " + err.Error()}
 	}
-	// The fleet channel is one channel, and a channel lives in one
-	// workspace, so a hub's Slack loops share one (#230).
+	// A channel a room mirrors lives in one workspace, and any two loops
+	// may share a channel, so a hub's Slack loops share one (#230).
 	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
 		return identity, &requestError{status: http.StatusInternalServerError, msg: err.Error()}
@@ -123,19 +123,9 @@ func (server *Server) handleSlackStatus(w http.ResponseWriter, r *http.Request) 
 		"bot_name":    loopRecord.SlackBotName,
 		"team_id":     loopRecord.SlackTeamID,
 		"team_name":   loopRecord.SlackTeamName,
-		"channel_id":  server.fleetRoom(r.Context(), loopRecord, store.SurfaceSlack),
-		// the link asks Slack for it; "" until it has
-		"channel_name": "",
 	}
 	if slack := server.Surfaces[store.SurfaceSlack]; slack != nil {
-		bridge := slack.Status(loopRecord.ID)
-		if link, ok := bridge.(map[string]any); ok {
-			if name, ok := link["channel_name"].(string); ok {
-				status["channel_name"] = name
-			}
-			delete(link, "channel_name")
-		}
-		status["bridge"] = bridge
+		status["bridge"] = slack.Status(loopRecord.ID)
 	}
 	writeJSON(w, http.StatusOK, status)
 }

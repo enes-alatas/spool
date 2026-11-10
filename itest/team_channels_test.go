@@ -56,7 +56,7 @@ func TestATeamsChannelsAreKeptToItsLoops(t *testing.T) {
 	if resp.StatusCode != http.StatusConflict || errorCode(out) != "channel_has_outsiders" || !strings.Contains(string(out), "beta") || strings.Contains(string(out), "alpha") {
 		t.Errorf("giving red ops with beta in it = %d %s, want 409 channel_has_outsiders naming beta alone", resp.StatusCode, out)
 	}
-	hub.wantRefusal("PATCH", "/api/channels/group", map[string]any{"team": "red"}, 400, "channel_reserved")
+	hub.wantRefusal("PATCH", "/api/channels/group", map[string]any{"team": "red"}, 404, "channel_not_found")
 	hub.wantRefusal("PATCH", "/api/channels/red", map[string]any{"team": ""}, 409, "channel_is_home")
 	hub.wantRefusal("DELETE", "/api/channels/ops/loops/beta", nil, 204, "")
 	var given channelJSON
@@ -64,7 +64,7 @@ func TestATeamsChannelsAreKeptToItsLoops(t *testing.T) {
 	if given.Team != "red" {
 		t.Fatalf("ops given to red = %+v", given)
 	}
-	hub.wantRefusal("PATCH", "/api/teams/red_ops", map[string]any{"home_channel": "ops"}, 409, "channel_not_in_team")
+	hub.wantRefusal("PATCH", "/api/teams/red_ops", map[string]any{"home_channel": "ops"}, 409, "channel_in_other_team")
 	hub.wantRefusal("PATCH", "/api/teams/red", map[string]any{"home_channel": "nowhere"}, 404, "channel_not_found")
 
 	// a loop in red can't send to another team's channel: it isn't in it
@@ -78,7 +78,7 @@ func TestATeamsChannelsAreKeptToItsLoops(t *testing.T) {
 	hub.mustJSON("POST", "/api/channels", map[string]any{"name": "hubwide"}, nil)
 	hub.wantRefusal("PUT", "/api/channels/hubwide/loops/alpha", nil, 204, "")
 	hub.mustJSON("PATCH", "/api/loops/alpha", map[string]any{"team": ""}, nil)
-	for channel, want := range map[string][]string{"red": {}, "red-side": {}, "ops": {}, "hubwide": {"alpha"}, "group": {"alpha", "beta"}} {
+	for channel, want := range map[string][]string{"red": {}, "red-side": {}, "ops": {}, "hubwide": {"alpha"}, fleetChannel: {"alpha", "beta"}} {
 		if got := hub.channel(channel).Loops; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s after alpha left red = %v, want %v", channel, got, want)
 		}

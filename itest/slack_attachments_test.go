@@ -127,7 +127,7 @@ func TestSlackALoopSendsAFileAfterItsWords(t *testing.T) {
 	// in the channel, a reply's words and file both go in its thread
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "screenshot please", "1727600000.000800")
 	asked := srv.waitGroupMessage("screenshot please", func(activityMessage) bool { return true })
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": "here it is",
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": "here it is",
 		"attach": "shots/home.png", "reply_to": fmt.Sprintf("ref:%d", asked.ID)}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}

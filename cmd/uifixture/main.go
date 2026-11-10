@@ -208,6 +208,12 @@ var loops = []fixtureLoop{
 }
 
 func seed(ctx context.Context, db store.Store, files *attach.Files) error {
+	// the fixture is an upgraded hub: its fleet channel is the ordinary
+	// channel fleet, with every loop in it (ADR-0068)
+	if err := db.Channels().Create(ctx, &store.Channel{Name: fixtureFleet,
+		Description: "Everyone on the hub, as the fleet channel was.", CreatedAt: ms(-21 * 24 * time.Hour)}); err != nil {
+		return fmt.Errorf("channel %s: %w", fixtureFleet, err)
+	}
 	ids := map[string]string{}
 	for i, fl := range loops {
 		loopRecord := &store.Loop{
@@ -257,10 +263,13 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 		if err := db.Loops().Create(ctx, loopRecord); err != nil {
 			return fmt.Errorf("create %s: %w", fl.name, err)
 		}
+		if err := db.Channels().AddLoop(ctx, fixtureFleet, loopRecord.ID, ms(-21*24*time.Hour)); err != nil {
+			return fmt.Errorf("%s in %s: %w", fl.name, fixtureFleet, err)
+		}
 		if fl.botUser != "" {
-			// its bot carries the fleet channel in a group of its own
+			// its bot carries fleet in a group of its own
 			group := strconv.FormatInt(-1001000000000-int64(i), 10)
-			if _, err := db.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, group, store.FleetChannel, ms(-20*24*time.Hour)); err != nil {
+			if _, err := db.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, group, fixtureFleet, ms(-20*24*time.Hour)); err != nil {
 				return fmt.Errorf("group %s: %w", fl.name, err)
 			}
 		}

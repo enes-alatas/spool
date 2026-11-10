@@ -75,7 +75,7 @@ const (
 	// A message's conversation: the unit of privacy and addressing
 	// (ADR-0026). The per-loop kinds are keyed to a loop; group is shared.
 	ConversationOwnerDM     = "owner_dm"     // a loop's Telegram DM with its owner
-	ConversationGroup       = "group"        // a channel: the fleet channel, or another by Message.Channel
+	ConversationGroup       = "group"        // a channel, named by Message.Channel
 	ConversationControlRoom = "control_room" // a loop's web thread, read by every hub user
 	// A loop's private conversation with an allowed sender who is not its
 	// owner is dm:<name> (ADR-0049): see DMDestinationPrefix.
@@ -495,11 +495,6 @@ type Loop struct {
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
 	// down_reason, not as a field of its own.
 	WorkstationOff bool `json:"-"`
-	// OutsideFleetChannel says the operator took this loop out of the fleet
-	// channel: it has no group (ADR-0032). Stored as the exception so
-	// the zero value is the ordinary loop, which is in it. Surfaced to the
-	// API as in_fleet_channel, the way round a reader asks the question.
-	OutsideFleetChannel bool `json:"-"`
 	// OwnerTGUserID is the allowlisted Telegram sender configured as this
 	// loop's owner (0 = none). Being known to Spool does not make someone
 	// an owner; the operator chooses (#73).
@@ -739,9 +734,8 @@ type Message struct {
 	// conversation, and on an owner_dm older than #703. Storage detail,
 	// not surfaced.
 	DMPerson string `json:"-"`
-	// Channel names the channel a group message was said in, FleetChannel
-	// for the fleet channel; empty for the per-loop kinds, which are in none
-	// (ADR-0038).
+	// Channel names the channel a group message was said in; empty for the
+	// per-loop kinds, which are in none (ADR-0038).
 	Channel string `json:"channel,omitempty"`
 	// ReplyToID is the message this one explicitly replies to (0 = none).
 	// A reply is always chosen, never inferred from ordering (ADR-0025).
@@ -1075,9 +1069,6 @@ type LoopEdit struct {
 	// another workspace is attached: the kept owner is not a sender there,
 	// so its bot could never reach them.
 	ClearSlackOwner bool
-	// OutsideFleetChannel moves the loop out of the fleet channel (true) or
-	// back in (false); nil leaves it where it is.
-	OutsideFleetChannel *bool
 	// Team puts the loop in the named team, which moves it out of any
 	// other, or takes it out of every team with ""; nil leaves it where it
 	// is. ErrNotFound if no team has that name. Leaving a team takes the
@@ -1370,8 +1361,8 @@ type MessageStore interface {
 	// dm:<name> messages under any name. An owner_dm older than #703
 	// records nobody, and those make one thread with DMPerson "".
 	ListPrivateThreads(ctx context.Context, loopID string) ([]PrivateThread, error)
-	// ListChannel returns the messages said in one channel, newest first:
-	// the fleet channel's under FleetChannel, and no other's (ADR-0038).
+	// ListChannel returns the messages said in one channel, newest first
+	// (ADR-0038).
 	ListChannel(ctx context.Context, name string, limit int) ([]*Message, error)
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
@@ -1706,11 +1697,10 @@ type Store interface {
 	Close() error
 }
 
-// FleetChannel is the channel every fleet starts with: the group
-// conversation of ADR-0032, under the name everything already used for it
-// (ADR-0038). It cannot be created or deleted, and a loop is in it unless
-// the operator took it out.
-const FleetChannel = "group"
+// RetiredChannel is the name the fleet channel had, which no channel takes
+// again (ADR-0068): a loop or a reader that remembers group meets a
+// refusal, never another channel under the name.
+const RetiredChannel = "group"
 
 // Channel is a conversation several loops and people share (ADR-0038).
 type Channel struct {
@@ -1720,7 +1710,7 @@ type Channel struct {
 	// LoopIDs are the loops in the channel, in no promised order.
 	LoopIDs []string
 	// Team is the team the channel belongs to, "" for a hub channel
-	// (ADR-0066). The fleet channel is always a hub channel.
+	// (ADR-0066).
 	Team string
 }
 
@@ -1744,9 +1734,9 @@ func validHandle(name string) bool {
 	return true
 }
 
-// ChannelDestinationPrefix is how send_message names a channel other than
-// the fleet channel: channel:<name>. The fleet channel keeps its plain name,
-// group, so no prompt or row written before channels changes (ADR-0038).
+// ChannelDestinationPrefix is how send_message names a channel:
+// channel:<name> (ADR-0038). The fleet channel's plain group is retired
+// (ADR-0068).
 const ChannelDestinationPrefix = "channel:"
 
 // DMDestinationPrefix is how a loop's private conversation with an allowed
@@ -1797,15 +1787,11 @@ func PersonSurface(person string) string {
 
 // ChannelDestination names a channel as a send destination.
 func ChannelDestination(name string) string {
-	if name == FleetChannel {
-		return ConversationGroup
-	}
 	return ChannelDestinationPrefix + name
 }
 
 // Destination names the conversation a message is in the way a loop sends
-// to it: its kind, or channel:<name> for a channel other than the fleet
-// channel.
+// to it: its kind, or channel:<name> for a channel.
 func (message *Message) Destination() string {
 	if message.Conversation == ConversationGroup && message.Channel != "" {
 		return ChannelDestination(message.Channel)
@@ -1813,12 +1799,9 @@ func (message *Message) Destination() string {
 	return message.Conversation
 }
 
-// ChannelStore holds the hub's channels and who is in them. The fleet
-// channel's membership is the loops' own OutsideFleetChannel, read and
-// written through here as any other channel's is, so a caller never asks
-// which channel it holds.
+// ChannelStore holds the hub's channels and who is in them.
 type ChannelStore interface {
-	// List returns every channel, the fleet channel first, then by name.
+	// List returns every channel, by name.
 	List(ctx context.Context) ([]*Channel, error)
 	// Get returns one channel, or ErrNotFound.
 	Get(ctx context.Context, name string) (*Channel, error)
@@ -1831,24 +1814,19 @@ type ChannelStore interface {
 	SetDescription(ctx context.Context, name, description string) (*Channel, error)
 	// Delete removes a channel and its membership, and unbinds every room
 	// bound to it; ErrNotFound if there is none. Messages said in it keep
-	// its name. The fleet channel is not deletable, and the caller refuses
-	// it before asking.
+	// its name.
 	Delete(ctx context.Context, name string) error
 	// SetTeam gives a channel to a team, or with "" makes it a hub channel
 	// again, and returns it (ADR-0066); ErrNotFound if there is no such
 	// channel or team. ErrChannelHasOutsiders while it holds a loop outside
 	// the team, and ErrChannelIsHome for a team's home channel, which the
-	// team gives up first. The fleet channel is always a hub channel, and
-	// the caller refuses it before asking.
+	// team gives up first.
 	SetTeam(ctx context.Context, name, team string) (*Channel, error)
 	// AddLoop puts a loop in a channel and RemoveLoop takes it out; both
 	// are no-ops when it already is, or is not, there, and ErrNotFound when
 	// the channel is not. A team's channel takes only that team's loops:
 	// ErrChannelInOtherTeam for any other (ADR-0066). at stamps the write.
-	// Taking a loop out of a
-	// channel other than the fleet channel unbinds its room for it; the
-	// fleet channel's room stays bound, as it did before rooms, so a loop
-	// put back in finds its group where it was.
+	// Taking a loop out of a channel unbinds its room for it.
 	AddLoop(ctx context.Context, name, loopID string, at int64) error
 	RemoveLoop(ctx context.Context, name, loopID string, at int64) error
 }
@@ -1903,7 +1881,9 @@ type TeamStore interface {
 	// Edit writes what edit names and returns the team as it stands
 	// afterwards, under its new name if it was renamed; ErrNotFound if
 	// there is none by that name, ErrDuplicate if the new name is taken,
-	// ErrChannelNotInTeam for a home channel that is not one of the team's.
+	// ErrChannelInOtherTeam for a home channel another team has, and
+	// ErrChannelHasOutsiders for a hub channel holding a loop outside the
+	// team: a hub channel named as the home is given to the team (ADR-0068).
 	// A ClaudeLogin naming no login the hub holds is ErrNotFound too.
 	Edit(ctx context.Context, name string, edit TeamEdit) (*Team, error)
 	// Delete removes a team and its channels, which keep their history and

@@ -69,7 +69,7 @@ func TestAPollPostShowsTheCounts(t *testing.T) {
 func TestAClickOnAPollIsAVote(t *testing.T) {
 	adapter, db, _ := inboundFixture(t)
 	ctx := context.Background()
-	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup,
+	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup, Channel: "fleet",
 		Text: "ship friday?", SlackChannelID: "C0FLEET", SlackTS: "1.7"}
 	if err := db.Messages().Insert(ctx, msg); err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestANotAllowedSendersClickAndReactionAreDroppedFirst(t *testing.T) {
 		Username: "trudy", Status: store.SenderBlocked, CreatedAt: 1, UpdatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup,
+	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup, Channel: "fleet",
 		Text: "ship friday?", SlackChannelID: "C0FLEET", SlackTS: "1.7"}
 	if err := db.Messages().Insert(ctx, msg); err != nil {
 		t.Fatal(err)

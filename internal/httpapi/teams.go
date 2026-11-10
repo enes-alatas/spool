@@ -184,8 +184,8 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		team.HomeChannel = *req.HomeChannel
 	}
 	switch {
-	case team.HomeChannel == store.FleetChannel:
-		server.jsonErrCode(w, 409, codeChannelExists, "%q is the fleet channel; name the team's home channel with home_channel", store.FleetChannel)
+	case team.HomeChannel == store.RetiredChannel:
+		server.jsonErrCode(w, 400, codeChannelReserved, "%q was the fleet channel's name, and no channel takes it again; name the team's home channel with home_channel", store.RetiredChannel)
 		return
 	case !store.ValidChannelName(team.HomeChannel):
 		server.jsonErrCode(w, 400, codeChannelNameInvalid,
@@ -262,7 +262,14 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 		server.refuse(w, refusal)
 		return
 	}
-	if errors.Is(err, store.ErrChannelNotInTeam) {
+	switch {
+	case errors.Is(err, store.ErrChannelHasOutsiders):
+		server.channelHasOutsiders(w, r, *req.HomeChannel, name)
+		return
+	case errors.Is(err, store.ErrChannelInOtherTeam):
+		server.jsonErrCode(w, 409, codeChannelInOtherTeam, "channel %q is another team's, so it can't be team %q's home", *req.HomeChannel, name)
+		return
+	case errors.Is(err, store.ErrChannelNotInTeam):
 		server.jsonErrCode(w, 409, codeChannelNotInTeam, "channel %q is not team %q's; give it to the team first", *req.HomeChannel, name)
 		return
 	}

@@ -16,7 +16,9 @@ func TestCatalogFollowsTheFleet(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!sysprompt\n")
-	s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
+	// made in no team, aster starts in no channel (ADR-0068); the operator
+	// puts it in one later
+	s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir", "fleet": false})
 
 	at := time.Now().UnixMilli()
 	s.message("aster", "who is there")
@@ -24,11 +26,11 @@ func TestCatalogFollowsTheFleet(t *testing.T) {
 	for _, want := range []string{
 		"WHO YOU CAN ADDRESS",
 		"You are @aster",
-		"No other loops are in the fleet channel right now",
+		"You are in no channel: no other loop can reach you",
 		"You have no surface attached, so there is no owner_dm",
 	} {
 		if !strings.Contains(first.ResultText, want) {
-			t.Fatalf("a lone loop's catalog lacks %q:\n%s", want, first.ResultText)
+			t.Fatalf("a new loop's catalog lacks %q:\n%s", want, first.ResultText)
 		}
 	}
 
@@ -39,6 +41,7 @@ func TestCatalogFollowsTheFleet(t *testing.T) {
 	// itself catches up at the loop's next rotation.
 	s.waitState("aster", "asleep", 30*time.Second)
 	s.createLoop("briar", map[string]any{"mission": "review what aster writes"})
+	s.joinChannel(fleetChannel, "aster")
 	at = time.Now().UnixMilli()
 
 	s.message("aster", "and now")
@@ -77,11 +80,11 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 	for _, want := range []string{
 		"posting in telegram as @alpha_bot",
 		"    owner_dm      your owner's private Telegram chat",
-		"    group         the fleet channel",
+		"    channel:<name>\n                  one of your channels",
 		"Your owner is @operator, but there is no private chat with",
 		"@beta —",
 		"The people who can talk to this fleet",
-		"@mentioning a person in the group is public",
+		"@mentioning a person in a channel is public",
 		"Only owner_dm and dm:<name> are kept from the hub's members; every user\n  of this hub reads control_room.",
 		"- Keep what your owner tells you in owner_dm, and what anyone tells you in",
 		"    dm:<name>     a private Telegram chat with anyone else allowed",
@@ -127,14 +130,14 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 
 // The addressing half of the prompt is rendered from the conversations the
 // loop has (#288): a loop is taught owner_dm only with a surface attached and
-// group only while it is in the fleet channel, and the hub refuses the
+// channel:<name> only while it is in a channel, and the hub refuses the
 // others with a hint that lists the same destinations.
 func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 	t.Parallel()
-	t.Run("no surface, outside the fleet channel", func(t *testing.T) {
+	t.Run("no surface, in no channel", func(t *testing.T) {
 		s := startServer(t, t.TempDir())
 		ws := workspaceWithScript(t, "!sysprompt\n")
-		s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir", "in_fleet_channel": false})
+		s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir", "fleet": false})
 		s.createLoop("briar", nil)
 
 		at := time.Now().UnixMilli()
@@ -142,9 +145,9 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		prompt := waitPrompt(t, s, "aster", at).ResultText
 		for _, want := range []string{
 			"    control_room  your thread in the Spool web UI, which every user of",
-			"You have no group, so nothing you send fans out",
+			"You are in no channel, so nothing you send fans out",
 			"You have no surface attached, so there is no owner_dm",
-			"You are not in the fleet channel",
+			"You are in no channel: no other loop can reach you",
 		} {
 			if !strings.Contains(prompt, want) {
 				t.Errorf("prompt lacks %q:\n%s", want, prompt)
@@ -166,10 +169,10 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		}
 	})
 
-	t.Run("Telegram, outside the fleet channel", func(t *testing.T) {
+	t.Run("Telegram, in no channel", func(t *testing.T) {
 		operator := user{ID: 7272, First: "Operator", Username: "operator"}
 		ws := workspaceWithScript(t, "!sysprompt\n")
-		srv, _ := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws, "in_fleet_channel": false})
+		srv, _ := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws, "fleet": false})
 
 		at := time.Now().UnixMilli()
 		srv.message("alpha", "who is there")
@@ -177,7 +180,7 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		for _, want := range []string{
 			"    owner_dm      your owner's private Telegram chat",
 			"posting in telegram as @alpha_bot",
-			"You are not in the fleet channel",
+			"You are in no channel: no other loop can reach you",
 		} {
 			if !strings.Contains(prompt, want) {
 				t.Errorf("prompt lacks %q:\n%s", want, prompt)
@@ -190,7 +193,7 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		}
 
 		sess := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
-		res := callSend(t, sess, map[string]any{"destination": "group", "text": "@beta hello"})
+		res := callSend(t, sess, map[string]any{"destination": "channel:fleet", "text": "@beta hello"})
 		wantSendError(t, res, "no_such_destination")
 		if text := resultText(res); !strings.Contains(text, "you can send to owner_dm, dm:<name>, control_room") {
 			t.Errorf("the group refusal does not name alpha's destinations: %s", text)

@@ -362,7 +362,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// a fixed path and the workstation's size
 			"Rehome": false,
 			// Slack ids and a timestamp, the counterparts of the two
-			// Telegram setters above and the fleet channel's room.
+			// Telegram setters above.
 			"SetSlackOwner": false, "SetSlackOwnerDM": false,
 		},
 		"TurnStore": {

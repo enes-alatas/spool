@@ -38,9 +38,9 @@ mk_loop() {
     \"mission\": \"You are half of a ping-pong relay test. When a message you receive contains a number N, reply with exactly: @$other M   (where M = N + 1). Nothing else, no extra words. On tick turns reply exactly: standing by. Never use the next-wake trailer.\",
     \"model\": \"$MODEL\",
     \"tick_interval_sec\": 3600,
-    \"idle_timeout_sec\": 300,
-    \"in_fleet_channel\": true
+    \"idle_timeout_sec\": 300
   }" >/dev/null
+  api -X PUT "$BASE/api/channels/fleet/loops/$me" >/dev/null
 }
 
 loop_msgs() { # messages sent BY loops
@@ -54,6 +54,9 @@ storm_drops() {
   echo $((a+b))
 }
 
+# both loops share the channel the relay runs in (ADR-0068)
+api -X POST "$BASE/api/channels" -H 'Content-Type: application/json' -d '{"name":"fleet"}' >/dev/null
+
 log "creating ping + pong"
 mk_loop ping pong
 mk_loop pong ping
@@ -61,9 +64,9 @@ mk_loop pong ping
 log "waiting for initial tick turns to settle"
 sleep 25
 
-log "kicking off the relay: '@ping 1' via ping's composer, group destination"
-api -X POST "$BASE/api/loops/ping/message" -H 'Content-Type: application/json' \
-  -d '{"author":"tester","text":"@ping 1","destination":"group"}' >/dev/null
+log "kicking off the relay: '@ping 1' posted to the fleet channel"
+api -X POST "$BASE/api/channels/fleet/messages" -H 'Content-Type: application/json' \
+  -d '{"author":"tester","text":"@ping 1"}' >/dev/null
 
 log "watching the relay (storm guard should halt it; max wait 10m)"
 LAST=0; STABLE=0

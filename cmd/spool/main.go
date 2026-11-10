@@ -1099,8 +1099,8 @@ func sweepUsers(ctx context.Context, hubUsers *users.Users, log *slog.Logger) {
 }
 
 // catalogOf resolves who a loop can address, fresh for each prompt build:
-// its conversations and the channels among them, its peers in the fleet
-// channel, its team, the people allowed to talk to the fleet, and its own
+// its conversations and the channels among them, its peers in those
+// channels, its team, the people allowed to talk to the fleet, and its own
 // owner with whether a private chat to them exists yet (#45, #288).
 func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	ctx := context.Background()
@@ -1111,11 +1111,18 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 		self = fresh
 	}
 	loops, loopsErr := db.Loops().List(ctx)
-	// a hub whose channels cannot be read teaches the fleet channel alone,
-	// which is what the row records
-	channels, _ := db.Channels().List(ctx)
-	// and one whose rooms cannot be read teaches its channels as hub-only
-	rooms, _ := db.Rooms().List(ctx, self.ID)
+	// a hub whose channels cannot be read teaches no channel, and one whose
+	// rooms cannot be read teaches its channels as hub-only; either is
+	// logged, since the loop is told it reaches less than it does until
+	// its next prompt build reads them
+	channels, err := db.Channels().List(ctx)
+	if err != nil {
+		slog.Warn("catalog: channels unreadable, teaching none", "loop", self.Name, "err", err)
+	}
+	rooms, err := db.Rooms().List(ctx, self.ID)
+	if err != nil {
+		slog.Warn("catalog: rooms unreadable, teaching channels hub-only", "loop", self.Name, "err", err)
+	}
 	cat := loop.Catalog{Conversations: loop.ConversationsOf(self, channels, loops, rooms), OwnerDMReady: self.OwnerDMReady()}
 	cat.BotUsername, _ = botOf(self)
 	// a team that cannot be read goes unnamed, as its channels still list
@@ -1127,10 +1134,18 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	if loopsErr != nil {
 		return cat
 	}
+	// a loop that shares no channel with this one is reached by none of its
+	// mentions, so naming it would teach a mention that goes nowhere
+	shared := map[string]bool{}
+	for _, channel := range channels {
+		if slices.Contains(channel.LoopIDs, self.ID) {
+			for _, id := range channel.LoopIDs {
+				shared[id] = true
+			}
+		}
+	}
 	for _, loopRecord := range loops {
-		// a loop outside the fleet channel is reached by nobody's mention,
-		// so naming it would teach a mention that goes nowhere
-		if loopRecord.ID != self.ID && loopRecord.Status == store.StatusActive && !loopRecord.OutsideFleetChannel {
+		if loopRecord.ID != self.ID && loopRecord.Status == store.StatusActive && shared[loopRecord.ID] {
 			bot, onSurface := botOf(loopRecord)
 			cat.Peers = append(cat.Peers, loop.Peer{
 				Name: loopRecord.Name, Mission: loopRecord.Mission, BotUsername: bot, Surface: onSurface,

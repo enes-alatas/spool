@@ -3,14 +3,10 @@
 package itest
 
 import (
-	"database/sql"
 	"net/http"
-	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 type teamJSON struct {
@@ -117,83 +113,4 @@ func TestTeamsRoundTrip(t *testing.T) {
 	if len(list) != 1 || list[0].Name != "red" {
 		t.Errorf("teams = %+v, want red alone", list)
 	}
-}
-
-// An upgraded hub keeps the shape it had: the loops in the fleet channel
-// are the team named default, a loop outside it is in no team, and no
-// loop's prompt changes, so its session goes on (ADR-0066).
-func TestTheUpgradeMakesTheFleetChannelTheDefaultTeam(t *testing.T) {
-	t.Parallel()
-	dataDir := t.TempDir()
-	hub := startServer(t, dataDir)
-	ws := workspaceWithScript(t, "!sysprompt\n")
-	hub.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
-	hub.createLoop("briar", nil)
-	hub.createLoop("cedar", map[string]any{"in_fleet_channel": false})
-	at := time.Now().UnixMilli()
-	hub.message("aster", "before")
-	before := waitPrompt(t, hub, "aster", at)
-	hub.stop()
-
-	unmigrateTeams(t, dataDir)
-	hub = startServer(t, dataDir)
-
-	var list []teamJSON
-	hub.mustJSON("GET", "/api/teams", nil, &list)
-	if len(list) != 1 || list[0].Name != "default" || list[0].Description != "" || !reflect.DeepEqual(list[0].Loops, []string{"aster", "briar"}) {
-		t.Fatalf("after the upgrade the teams are %+v, want default holding aster and briar", list)
-	}
-	if team := hub.loop("cedar").Team; team != "" {
-		t.Errorf("cedar, outside the fleet channel, is in team %q after the upgrade", team)
-	}
-	at = time.Now().UnixMilli()
-	hub.message("aster", "after")
-	after := waitPrompt(t, hub, "aster", at)
-	if after.SessionID != before.SessionID || after.ResultText != before.ResultText {
-		t.Errorf("the upgrade changed aster's prompt (session %s -> %s):\nbefore:\n%s\nafter:\n%s",
-			before.SessionID, after.SessionID, before.ResultText, after.ResultText)
-	}
-	// and the team it made is an ordinary one
-	hub.mustJSON("PATCH", "/api/teams/default", map[string]any{"name": "crew"}, nil)
-	if team := hub.loop("aster").Team; team != "crew" {
-		t.Errorf("aster after default's rename reads team %q, want crew", team)
-	}
-}
-
-// unmigrateTeams returns a stopped hub's database to its shape before
-// teams, so the next start runs the shipped migration over its loops.
-func unmigrateTeams(t *testing.T, dataDir string) {
-	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	for _, statement := range append(undo0079,
-		`DROP INDEX loops_team`,
-		`ALTER TABLE loops DROP COLUMN team`,
-		`DROP TABLE teams`,
-		`DELETE FROM schema_migrations WHERE version='0078_teams.sql'`,
-	) {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("%s: %v", statement, err)
-		}
-	}
-}
-
-// undo0079 takes a stopped hub's database back to before team channels; a
-// test unmigrating an earlier migration runs it first, so the next start
-// replays 0079 over the shape that test rebuilt. What came after 0079 goes
-// first.
-var undo0079 = append(slices.Clip(undo0081),
-	`DROP INDEX channels_team`,
-	`ALTER TABLE channels DROP COLUMN team`,
-	`ALTER TABLE teams DROP COLUMN home_channel`,
-	`DELETE FROM schema_migrations WHERE version='0079_team_channels.sql'`,
-)
-
-// undo0081 takes a database back to before a team named its Claude login.
-var undo0081 = []string{
-	`ALTER TABLE teams DROP COLUMN claude_login`,
-	`DELETE FROM schema_migrations WHERE version='0081_team_claude_login.sql'`,
 }

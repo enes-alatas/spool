@@ -20,7 +20,7 @@ func TestSendSurvivesABlip(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7711, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta worth saying twice"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@beta worth saying twice"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	before := tg.sendAttempts()
@@ -48,7 +48,7 @@ func TestSendThatNeverGetsThroughIsRecorded(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7722, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta into the void"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@beta into the void"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	tg.failNextSends(-1) // every send from here on
@@ -90,7 +90,7 @@ func TestALostSendIsToldToItsSenderAtTheNextTurn(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -111,10 +111,10 @@ func TestALostSendIsToldToItsSenderAtTheNextTurn(t *testing.T) {
 		t.Fatalf("the turn the loop received does not open with the news:\n%s", next.ResultText)
 	}
 	for _, want := range []string{
-		"to group, just now:",        // where it was going, in send_message's words, and when
-		"502",                        // and why, as the surface said it
-		"@beta the deploy is wedged", // enough of it to know which message
-		"anything new",               // and the turn's own envelope, after all of it
+		"to channel:fleet, just now:", // where it was going, in send_message's words, and when
+		"502",                         // and why, as the surface said it
+		"@beta the deploy is wedged",  // enough of it to know which message
+		"anything new",                // and the turn's own envelope, after all of it
 	} {
 		if !strings.Contains(next.ResultText, want) {
 			t.Fatalf("the news lacks %q:\n%s", want, next.ResultText)
@@ -142,7 +142,7 @@ func TestALostSendIsToldToItsSenderAtTheNextTurn(t *testing.T) {
 			continue
 		}
 		if !strings.HasPrefix(got.ResultText, "echo: [system note · 1 of your messages never arrived") ||
-			!strings.Contains(got.ResultText, "to group, ") || !strings.Contains(got.ResultText, c.mark) {
+			!strings.Contains(got.ResultText, "to channel:fleet, ") || !strings.Contains(got.ResultText, c.mark) {
 			t.Fatalf("the turn for %q does not open with the reminder marked %q:\n%s", c.say, c.mark, got.ResultText)
 		}
 	}
@@ -162,7 +162,7 @@ func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7744, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta said into a dead line"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta said into a dead line"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -207,7 +207,7 @@ func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta nobody hears this"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@beta nobody hears this"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	if n := srv.loop("alpha").Undelivered; n != 0 {
@@ -244,7 +244,7 @@ func TestALostPartFailsTheWholeMessage(t *testing.T) {
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	long := "@beta the start " + strings.Repeat("filler ", 700) + "the lost tail"
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"`+long+`"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"`+long+`"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	tg.failSendsContaining("the lost tail")
@@ -284,7 +284,7 @@ func TestASendHeldByAStoppedBotIsAFailure(t *testing.T) {
 	tg.failNextSends(-1) // retried with a backoff of seconds: the window
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const text = "@beta held when the bot went"
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": text}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": text}); res.IsError {
 		t.Fatalf("alpha's group send refused: %s", resultText(res))
 	}
 	// alpha's own send, not any: the fleet's link confirmations already

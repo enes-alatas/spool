@@ -19,12 +19,12 @@ func TestTheControlRoomReadsAPollsBallotAndVotes(t *testing.T) {
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	beta := mcpSession(t, srv, hubMCPToken(t, srv, "beta"))
 	const question, quiet = "@beta which pages go stale first?", "@beta and the docs too"
-	res := callSend(t, alpha, map[string]any{"destination": "group", "text": question,
+	res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": question,
 		"poll": map[string]any{"options": []string{"install", "quickstart", "faq"}, "multiple": true}})
 	if res.IsError {
 		t.Fatalf("poll refused: %s", resultText(res))
 	}
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": quiet}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": quiet}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
 	srv.waitForMessage(question)
@@ -43,7 +43,7 @@ func TestTheControlRoomReadsAPollsBallotAndVotes(t *testing.T) {
 		return false
 	})
 
-	if res := callSend(t, beta, map[string]any{"destination": "group", "reply_to": ref, "vote": []int{1, 3}}); res.IsError {
+	if res := callSend(t, beta, map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{1, 3}}); res.IsError {
 		t.Fatalf("beta's vote refused: %s", resultText(res))
 	}
 	betaKey, person := "loop:"+srv.loop("beta").ID, fmt.Sprintf("telegram:%d", operator.ID)
@@ -55,7 +55,7 @@ func TestTheControlRoomReadsAPollsBallotAndVotes(t *testing.T) {
 	eventually(t, "the person's vote retracted", func() bool {
 		return slices.Equal(srv.pollChoices(pollID), []string{betaKey + " [0,2]", person + " []"})
 	})
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "close_poll": ref}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "close_poll": ref}); res.IsError {
 		t.Fatalf("close refused: %s", resultText(res))
 	}
 
@@ -74,7 +74,7 @@ func TestTheControlRoomReadsAPollsBallotAndVotes(t *testing.T) {
 		ClosedAt  int64      `json:"closed_at"`
 		Votes     []voteView `json:"votes"`
 	}
-	for _, path := range []string{"/api/activity?limit=200", "/api/group", "/api/channels/group/messages"} {
+	for _, path := range []string{"/api/activity?limit=200", "/api/channels/fleet/messages"} {
 		var msgs []struct {
 			Text string    `json:"text"`
 			Poll *pollView `json:"poll"`

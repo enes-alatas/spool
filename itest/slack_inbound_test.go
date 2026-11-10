@@ -45,6 +45,9 @@ func startSlackFleetWith(t *testing.T, terraOverrides map[string]any) (*server, 
 	srv.createLoop("milo", slackPair(slackMiloAppToken, slackMiloBotToken))
 	for _, name := range []string{"terra", "milo"} {
 		srv.waitSlackLink(name, func(link slackStatus) bool { return link.Bridge.Connected })
+		if name == "milo" || terraOverrides["fleet"] != false {
+			srv.bindRoom(name, "slack", slackChannel, fleetChannel)
+		}
 	}
 
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
@@ -130,7 +133,7 @@ func TestSlackChannelMessageIngestedOnceAndDeliveredToMentions(t *testing.T) {
 	const text = "@terra @milo status please"
 	srv.waitForMessage(text)
 	for _, name := range []string{"terra", "milo"} {
-		srv.waitInput(name, "message from @u0oper via slack · group", text)
+		srv.waitInput(name, "message from @u0oper via slack · channel:fleet", text)
 	}
 
 	// give a second ingester time to add its own row
@@ -144,11 +147,10 @@ func TestSlackChannelMessageIngestedOnceAndDeliveredToMentions(t *testing.T) {
 		t.Fatalf("stored %s", dump(stored[0]))
 	}
 
-	// The apps heard it in the channel an allowed sender first spoke in,
-	// and are bound there.
+	// The apps heard it in the room the operator bound to the channel.
 	for _, name := range []string{"terra", "milo"} {
-		if status := srv.waitSlackLink(name, func(slackStatus) bool { return true }); status.ChannelID != slackChannel {
-			t.Errorf("%s bound to %q, want %s", name, status.ChannelID, slackChannel)
+		if room, _ := srv.room(name, slackChannel); room.Channel != fleetChannel {
+			t.Errorf("%s's room for %s = %+v, want it bound to %s", name, slackChannel, room, fleetChannel)
 		}
 	}
 }
@@ -179,29 +181,6 @@ func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 		got[0].ConversationLoopID != stored[0].ConversationLoopID {
 		t.Fatalf("a DM from someone other than the owner was stored as %s", dump(got))
 	}
-}
-
-// The link status names the channel a loop's app is bound to, as Slack
-// names it, both when the app binds and when its link comes back up after
-// a restart (#230).
-func TestSlackLinkNamesItsChannel(t *testing.T) {
-	t.Parallel()
-	slack := startFakeSlack(t)
-	slack.addApp(slackBotToken, slackAppToken, terraBot)
-	dataDir := t.TempDir()
-	srv := startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
-	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
-	srv.allowSlackSender(slack, slackAppToken, slackOperator)
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "binding", "1727600000.000002")
-	named := func(link slackStatus) bool {
-		return link.ChannelID == slackChannel && link.ChannelName == strings.ToLower(slackChannel)
-	}
-	srv.waitSlackLink("terra", named)
-
-	srv.stop()
-	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
-	srv.waitSlackLink("terra", named)
 }
 
 // Two people's DMs with a loop's app never share a turn (ADR-0049). Slack

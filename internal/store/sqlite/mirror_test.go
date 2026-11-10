@@ -50,7 +50,7 @@ func TestMirrorFollowsTheResolution(t *testing.T) {
 		// mirrored first, so the test proves a failure sets pending rather
 		// than leaving whatever the row held
 		message := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
-			Text: "lost", Conversation: store.ConversationGroup, Mirror: store.MirrorMirrored})
+			Text: "lost", Conversation: store.ConversationGroup, Channel: "fleet", Mirror: store.MirrorMirrored})
 		if err := db.Messages().SetSendResult(ctx, message.ID, 10, "timeout"); err != nil {
 			t.Fatal(err)
 		}
@@ -73,16 +73,16 @@ func TestFailInterruptedSends(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	inFlight := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
-		Text: "in flight", Conversation: store.ConversationGroup, Mirror: store.MirrorPending})
+		Text: "in flight", Conversation: store.ConversationGroup, Channel: "fleet", Mirror: store.MirrorPending})
 	failed := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
-		Text: "failed", Conversation: store.ConversationGroup, Mirror: store.MirrorPending})
+		Text: "failed", Conversation: store.ConversationGroup, Channel: "fleet", Mirror: store.MirrorPending})
 	if err := db.Messages().SetSendResult(ctx, failed.ID, 5, "earlier"); err != nil {
 		t.Fatal(err)
 	}
 	sent := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
-		Text: "sent", Conversation: store.ConversationGroup, Mirror: store.MirrorMirrored})
+		Text: "sent", Conversation: store.ConversationGroup, Channel: "fleet", Mirror: store.MirrorMirrored})
 	operator := insertMessage(t, db, &store.Message{Origin: store.OriginWeb,
-		Text: "mine", Conversation: store.ConversationGroup})
+		Text: "mine", Conversation: store.ConversationGroup, Channel: "fleet"})
 
 	got, err := db.Messages().FailInterruptedSends(ctx, 100, "the hub stopped with this still unsent")
 	if err != nil {
@@ -138,19 +138,19 @@ func TestMirrorBackfill(t *testing.T) {
 		return message
 	}
 	add(&store.Message{Origin: store.OriginTelegramGroup, Text: "human", TGChatID: -1, TGMessageID: 1,
-		Conversation: store.ConversationGroup}, store.MirrorMirrored)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorMirrored)
 	add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "sent",
-		Conversation: store.ConversationGroup}, store.MirrorMirrored)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorMirrored)
 	add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "dm",
 		Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}, store.MirrorMirrored)
 	unresolved := add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "lost",
-		Conversation: store.ConversationGroup}, store.MirrorPending)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorPending)
 	retried := add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "retried",
-		Conversation: store.ConversationGroup}, store.MirrorMirrored)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorMirrored)
 	dismissed := add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "dismissed",
-		Conversation: store.ConversationGroup}, store.MirrorNotMirrored)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorNotMirrored)
 	viaWeb := add(&store.Message{Origin: store.OriginWeb, Text: "old (via web) post",
-		Conversation: store.ConversationGroup}, store.MirrorMirrored)
+		Conversation: store.ConversationGroup, Channel: "fleet"}, store.MirrorMirrored)
 	add(&store.Message{Origin: store.OriginWeb, Text: "control room",
 		Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"}, store.MirrorNotMirrored)
 	add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "status",

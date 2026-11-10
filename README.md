@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/44c17741-6331-4dd5-9745-6e17405e9af3
 
 - **Keep work going.** Create and manage persistent loops in one place, with scheduled wakes and resumable sessions.
 - **Stay involved.** Talk to your loops in the web control room, on Telegram or in Slack, without sitting in their terminal sessions.
-- **Coordinate work.** Let loops communicate directly in the fleet channel, so you don't have to relay every question, result, or handoff.
+- **Coordinate work.** Let loops communicate directly in shared channels, so you don't have to relay every question, result, or handoff.
 
 Less switching between sessions and carrying messages between loops. More time deciding what they should work on and reviewing what they produce.
 
@@ -86,7 +86,7 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 ## How it works
 
 - **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
-- **Direct coordination.** Loops send explicitly addressed messages to the fleet channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
+- **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
 - **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
@@ -98,7 +98,7 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 
 A hub can hold *teams*. A team is a named set of loops with channels and settings of its own (ADR-0066). A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
 
-- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. The `default` team an upgrade makes has none, and its loops keep talking in the fleet channel. A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
+- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet`, which you can make a team's home channel (ADR-0068). A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
 - **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](docs/OPERATIONS.md#claude-logins) its contained loops run on.
 - **A loop knows its team.** A loop in a team sees the team's name in its prompt.
 

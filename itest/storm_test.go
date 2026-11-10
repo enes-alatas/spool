@@ -25,14 +25,14 @@ func TestStormGuardHaltsALoopRelay(t *testing.T) {
 	operator := user{ID: 9191, First: "Operator", Username: "operator"}
 	// line 1 absorbs each loop's creation tick; line 2 is the relay, and it
 	// repeats for every turn after
-	alpha := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"@beta relay"}`+"\n")
-	beta := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"@alpha relay"}`+"\n")
+	alpha := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"channel:fleet","text":"@beta relay"}`+"\n")
+	beta := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"channel:fleet","text":"@alpha relay"}`+"\n")
 	srv, _ := startTelegramFleet(t, operator,
 		map[string]any{"workspace_path": alpha},
 		map[string]any{"workspace_path": beta})
 
-	srv.mustJSON("POST", "/api/loops/alpha/message",
-		map[string]any{"author": "tester", "text": "start the relay", "destination": "group"}, nil)
+	srv.mustJSON("POST", "/api/channels/fleet/messages",
+		map[string]any{"author": "tester", "text": "@alpha start the relay"}, nil)
 
 	if !srv.hasEvent("alpha", "storm_drop", 60*time.Second) {
 		t.Fatalf("the relay was never halted; alpha sent %d times",

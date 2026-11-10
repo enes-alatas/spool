@@ -215,13 +215,13 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 			left, dismissedByLoop)
 	}
 
-	// The fleet channel shot (#286) draws three things a timeline of plain
+	// The fleet shot (#286) draws three things a timeline of plain
 	// posts would not show: a reply's quote, the operator's own post, and a
 	// human's that came in from a surface. Each needs a row, or the shot
 	// looks the same with it broken.
 	channel, err := db.Messages().ListConversation(ctx, store.ConversationGroup, "", 100)
 	if err != nil {
-		t.Fatalf("fleet channel: %v", err)
+		t.Fatalf("fleet: %v", err)
 	}
 	inChannel := map[int64]bool{}
 	for _, message := range channel {
@@ -234,7 +234,7 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		human = human || message.Origin == store.OriginTelegramGroup
 	}
 	if !reply || !operator || !human {
-		t.Errorf("fleet channel: reply %v, operator post %v, human post %v; want all three, or the channel shot cannot show them",
+		t.Errorf("fleet: reply %v, operator post %v, human post %v; want all three, or the channel shot cannot show them",
 			reply, operator, human)
 	}
 
@@ -250,7 +250,7 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 			want = store.MirrorPending
 		}
 		if message.Mirror != want {
-			t.Errorf("fleet channel message %d (%s, %s): mirror %q, want %q", message.ID, message.Origin, message.Author, message.Mirror, want)
+			t.Errorf("fleet message %d (%s, %s): mirror %q, want %q", message.ID, message.Origin, message.Author, message.Mirror, want)
 		}
 	}
 
@@ -401,7 +401,7 @@ func TestSeedCarriesEveryAttachmentState(t *testing.T) {
 
 // The Channels page draws a card per channel and a chip per loop in it
 // (#484), and the loop page lists the channels a loop is in. A store with
-// only the fleet channel shoots one card that looks the same whether the
+// only fleet shoots one card that looks the same whether the
 // list works or not.
 func TestSeedFillsTheChannelsPage(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
@@ -425,7 +425,7 @@ func TestSeedFillsTheChannelsPage(t *testing.T) {
 	var several, single int
 	inHowMany := map[string]int{}
 	for _, channel := range channelList {
-		if channel.Name == store.FleetChannel {
+		if channel.Name == fixtureFleet {
 			continue
 		}
 		switch len(channel.LoopIDs) {
@@ -487,7 +487,7 @@ func TestSeedFillsTheLoopsRooms(t *testing.T) {
 		switch room.Channel {
 		case "":
 			unbound++
-		case store.FleetChannel:
+		case fixtureFleet:
 			fleet++
 			bound++
 		default:
@@ -497,7 +497,7 @@ func TestSeedFillsTheLoopsRooms(t *testing.T) {
 	for _, check := range []struct {
 		what  string
 		count int
-	}{{"a bound room", bound}, {"an unbound room", unbound}, {"the fleet channel's room", fleet}} {
+	}{{"a bound room", bound}, {"an unbound room", unbound}, {"fleet's room", fleet}} {
 		if check.count == 0 {
 			t.Errorf("gardener has no %s, so no shot can show one", check.what)
 		}
@@ -522,7 +522,7 @@ func TestSeedPutsReactionsOnTheChannel(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	msgs, err := db.Messages().ListChannel(ctx, store.FleetChannel, 100)
+	msgs, err := db.Messages().ListChannel(ctx, fixtureFleet, 100)
 	if err != nil {
 		t.Fatalf("group: %v", err)
 	}
@@ -543,13 +543,13 @@ func TestSeedPutsReactionsOnTheChannel(t *testing.T) {
 		shared = shared || count > 1
 	}
 	if len(reactions) == 0 || !shared {
-		t.Errorf("the fleet channel's reactions are %v, want one emoji from two reactors", reactors)
+		t.Errorf("fleet's reactions are %v, want one emoji from two reactors", reactors)
 	}
 }
 
-// Activity's channel filter has a channel besides the fleet channel to narrow
+// Activity's channel filter has a channel besides fleet to narrow
 // to, and the loop page a channel with no group to bind one to (#549).
-func TestSeedFillsAChannelBesidesTheFleetChannel(t *testing.T) {
+func TestSeedFillsAChannelBesidesFleet(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
@@ -590,7 +590,7 @@ func TestSeedFillsAChannelBesidesTheFleetChannel(t *testing.T) {
 	}
 	var waiting int
 	for _, channel := range channels {
-		if channel.Name != store.FleetChannel && slices.Contains(channel.LoopIDs, gardener.ID) && !carried[channel.Name] {
+		if channel.Name != fixtureFleet && slices.Contains(channel.LoopIDs, gardener.ID) && !carried[channel.Name] {
 			waiting++
 		}
 	}
@@ -599,7 +599,7 @@ func TestSeedFillsAChannelBesidesTheFleetChannel(t *testing.T) {
 	}
 }
 
-// The poll shots have an open poll in the fleet channel and a closed one in
+// The poll shots have an open poll in fleet and a closed one in
 // docs, the closed one with a voter who picked two options (#554).
 func TestSeedPutsAnOpenAndAClosedPoll(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
@@ -618,7 +618,7 @@ func TestSeedPutsAnOpenAndAClosedPoll(t *testing.T) {
 
 	ballots := map[string][]*store.Poll{}
 	votes := map[string][]*store.Vote{}
-	for _, channel := range []string{store.FleetChannel, "docs"} {
+	for _, channel := range []string{fixtureFleet, "docs"} {
 		msgs, err := db.Messages().ListChannel(ctx, channel, 100)
 		if err != nil {
 			t.Fatalf("%s: %v", channel, err)
@@ -638,9 +638,9 @@ func TestSeedPutsAnOpenAndAClosedPoll(t *testing.T) {
 			votes[channel] = append(votes[channel], pollVotes...)
 		}
 	}
-	if open := ballots[store.FleetChannel]; len(open) != 1 || open[0].ClosedAt != 0 || open[0].ClosesAt == 0 ||
-		len(votes[store.FleetChannel]) < 2 {
-		t.Errorf("the fleet channel's polls are %v with %d votes, want one open with a close time and votes", open, len(votes[store.FleetChannel]))
+	if open := ballots[fixtureFleet]; len(open) != 1 || open[0].ClosedAt != 0 || open[0].ClosesAt == 0 ||
+		len(votes[fixtureFleet]) < 2 {
+		t.Errorf("fleet's polls are %v with %d votes, want one open with a close time and votes", open, len(votes[fixtureFleet]))
 	}
 	closed := ballots["docs"]
 	picksTwo := false
@@ -780,7 +780,7 @@ func TestSeedLeavesSamWaitingForYESOnSlack(t *testing.T) {
 	}
 }
 
-// The fleet channel links web addresses (#759). A fixture without them shoots
+// The fleet timeline links web addresses (#759). A fixture without them shoots
 // a channel that looks the same with linking broken, and one without a bare
 // domain cannot show that only http(s) becomes a link.
 func TestSeedPutsAddressesInTheChannel(t *testing.T) {
@@ -800,7 +800,7 @@ func TestSeedPutsAddressesInTheChannel(t *testing.T) {
 
 	channel, err := db.Messages().ListConversation(ctx, store.ConversationGroup, "", 100)
 	if err != nil {
-		t.Fatalf("fleet channel: %v", err)
+		t.Fatalf("fleet: %v", err)
 	}
 	var text strings.Builder
 	for _, message := range channel {
@@ -808,7 +808,7 @@ func TestSeedPutsAddressesInTheChannel(t *testing.T) {
 	}
 	for _, want := range []string{"http://", "https://", "/files).", "install, ", " handbook.example.com,"} {
 		if !strings.Contains(text.String(), want) {
-			t.Errorf("no fleet channel message carries %q, so no shot can show how it is linked", want)
+			t.Errorf("no fleet message carries %q, so no shot can show how it is linked", want)
 		}
 	}
 }

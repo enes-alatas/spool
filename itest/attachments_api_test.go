@@ -114,12 +114,12 @@ func TestAFileInTheFleetChannelReachesTheLoopsItNames(t *testing.T) {
 	notes := []byte("step one\n")
 	kept := s.mustUpload("notes.txt", notes)
 
-	s.mustJSON("POST", "/api/group", map[string]any{"text": "@briar read this", "attachment_id": kept.ID}, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "@briar read this", "attachment_id": kept.ID}, nil)
 	envelope := envelopeWith(t, s, "briar", "read this")
 	if !strings.Contains(envelope, "[file: notes.txt · 9 B · ") {
 		t.Fatalf("briar was not shown the file:\n%s", envelope)
 	}
-	for _, route := range []string{"/api/group", "/api/activity"} {
+	for _, route := range []string{"/api/channels/fleet/messages", "/api/activity"} {
 		var msgs []struct {
 			Text        string           `json:"text"`
 			Attachments []attachmentView `json:"attachments"`
@@ -196,7 +196,7 @@ func TestTheUploadRouteRefusals(t *testing.T) {
 	}
 
 	// raw bytes go nowhere else
-	req, _ := http.NewRequest("POST", s.baseURL+"/api/group", bytes.NewReader([]byte(`{"text":"hi"}`)))
+	req, _ := http.NewRequest("POST", s.baseURL+"/api/channels/fleet/messages", bytes.NewReader([]byte(`{"text":"hi"}`)))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Authorization", "Bearer "+s.operatorToken)
 	resp, err := http.DefaultClient.Do(req)
@@ -254,7 +254,7 @@ func TestAWaitingUploadIsItsUploaders(t *testing.T) {
 	if got := s.activityWith("noah sends mia's file"); len(got) != 0 {
 		t.Errorf("a refused send was stored: %s", dump(got))
 	}
-	resp, body = s.asCookie("POST", "/api/group", noah, map[string]any{"text": "@aster noah again", "attachment_id": kept.ID})
+	resp, body = s.asCookie("POST", "/api/channels/fleet/messages", noah, map[string]any{"text": "@aster noah again", "attachment_id": kept.ID})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("noah's group send of mia's upload = %d %s; want 404", resp.StatusCode, body)
 	}

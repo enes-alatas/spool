@@ -451,8 +451,8 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 		channel = br.roomChannel(ctx, bot, message.Chat)
 	}
 
-	// /spool_status works even with bot privacy mode on, and binds a loop
-	// whose fleet channel has no room yet, as any group message does
+	// /spool_status works even with bot privacy mode on, and records an unknown
+	// group unbound, as any group message does
 	if strings.HasPrefix(text, "/spool_status") {
 		br.replyStatus(ctx, bot, message.Chat.ID)
 		return
@@ -1216,11 +1216,8 @@ func inChat(member ChatMember) bool {
 
 // roomChannel is the channel a group chat carries for this loop's bot, ""
 // for none. A chat the bot has no room for is recorded as one, unbound, for
-// the operator to bind from the loop page (ADR-0038). The one chat
-// bound without asking is the first a loop hears from, or is added to by
-// an allowed person, while its fleet channel has no room, as the fleet
-// channel's group always was: a new fleet still binds by its first
-// message. A later group never moves it.
+// the operator to bind from the loop page (ADR-0038). No chat binds itself,
+// the first a loop hears from included (ADR-0068).
 func (br *Bridge) roomChannel(ctx context.Context, bot *poller, chat Chat) string {
 	now := time.Now().UnixMilli()
 	roomID := strconv.FormatInt(chat.ID, 10)
@@ -1233,39 +1230,10 @@ func (br *Bridge) roomChannel(ctx context.Context, bot *poller, chat Chat) strin
 	if room.Channel != "" {
 		return room.Channel
 	}
-	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
-	if err != nil {
-		br.log.Error("telegram: read loop for room", "loop", bot.name, "err", err)
-		return ""
-	}
-	// a rooms read that fails binds nothing: "no fleet room" read from an
-	// error would move the fleet channel to this chat
-	bound, err := br.store.Rooms().List(ctx, loopRecord.ID)
-	if err != nil {
-		br.log.Error("telegram: read rooms for a first bind", "loop", loopRecord.Name, "err", err)
-		return ""
-	}
-	// a loop the operator took out of the fleet channel has none to bind a
-	// first group to: its group waits unbound, for the loop page (#1424)
-	if store.BoundRoom(bound, store.SurfaceTelegram, store.FleetChannel) == nil && !loopRecord.OutsideFleetChannel {
-		_, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, roomID, store.FleetChannel, now)
-		switch {
-		case err == nil:
-			br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", chat.ID)
-			br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
-				"loop_id": loopRecord.ID, "name": loopRecord.Name, "tg_group_bound": true, "rooms_changed": true,
-			}})
-			return store.FleetChannel
-		case !errors.Is(err, store.ErrRoomInUse):
-			br.log.Error("group bind", "err", err)
-			return ""
-		}
-		// another loop's room for another channel: this one waits unbound
-	}
 	if added {
-		br.log.Info("telegram room recorded unbound", "loop", loopRecord.Name, "chat_id", chat.ID)
-		br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
-			"loop_id": loopRecord.ID, "name": loopRecord.Name, "rooms_changed": true,
+		br.log.Info("telegram room recorded unbound", "loop", bot.name, "chat_id", chat.ID)
+		br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: bot.loopID, Payload: map[string]any{
+			"loop_id": bot.loopID, "name": bot.name, "rooms_changed": true,
 		}})
 	}
 	return ""
@@ -1659,9 +1627,6 @@ func (br *Bridge) chatName(ctx context.Context, bot *poller, chatID int64) strin
 		if room.Surface != store.SurfaceTelegram || room.Channel == "" || room.RoomID != strconv.FormatInt(chatID, 10) {
 			continue
 		}
-		if room.Channel == store.FleetChannel {
-			return "the group"
-		}
 		return "the " + room.Channel + " channel's room"
 	}
 	return "a chat"
@@ -1670,11 +1635,8 @@ func (br *Bridge) chatName(ctx context.Context, bot *poller, chatID int64) strin
 // --- mirroring ---
 
 // roomOf is the Telegram chat a loop's bot carries a channel in, 0 for none,
-// read from its rooms. A message in no channel is the fleet channel's.
+// read from its rooms.
 func (br *Bridge) roomOf(ctx context.Context, loopRecord *store.Loop, channel string) int64 {
-	if channel == "" {
-		channel = store.FleetChannel
-	}
 	rooms, err := br.store.Rooms().List(ctx, loopRecord.ID)
 	if err != nil {
 		br.log.Warn("telegram: read rooms for delivery", "loop", loopRecord.Name, "err", err)

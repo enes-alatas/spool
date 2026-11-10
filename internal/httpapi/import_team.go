@@ -91,8 +91,8 @@ func (server *Server) handleImportTeam(w http.ResponseWriter, r *http.Request) {
 	case len(req.Loops) == 0 || len(req.Loops) > maxTeamLoops:
 		server.jsonErr(w, 400, "a team has 1 to %d loops", maxTeamLoops)
 		return
-	case req.Channel == store.FleetChannel:
-		server.jsonErrCode(w, 400, codeChannelReserved, "%q is the fleet channel, which every hub already has", store.FleetChannel)
+	case req.Channel == store.RetiredChannel:
+		server.jsonErrCode(w, 400, codeChannelReserved, "%q was the fleet channel's name, and no channel takes it again", store.RetiredChannel)
 		return
 	case !store.ValidChannelName(req.Channel):
 		server.jsonErrCode(w, 400, codeChannelNameInvalid, "a channel name is 1 to 32 of a-z, 0-9 and '-', not starting with '-'")
@@ -157,7 +157,7 @@ func (server *Server) namesTaken(ctx context.Context) (loopTaken, channelTaken f
 	if err != nil {
 		return nil, nil, err
 	}
-	channelNames := map[string]bool{store.FleetChannel: true}
+	channelNames := map[string]bool{store.RetiredChannel: true}
 	for _, channel := range channels {
 		channelNames[channel.Name] = true
 	}

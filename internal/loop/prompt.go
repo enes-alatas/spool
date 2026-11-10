@@ -43,7 +43,7 @@ type Peer struct {
 	Name    string
 	Mission string
 	// BotUsername is the peer's bot on its surface, so a loop can recognise
-	// the handle that posts as that peer in the group ("" = no bot), and
+	// the handle that posts as that peer in a channel's room ("" = no bot), and
 	// Surface is where it posts ("telegram", "slack").
 	BotUsername string
 	Surface     string
@@ -106,8 +106,8 @@ type Catalog struct {
 	Owner *Person
 	// OwnerDMReady reports that the private chat with the owner exists, or
 	// can be opened. A Telegram bot cannot open one, so until the owner
-	// writes first an owner_dm send is refused — the loop should ask in the
-	// group instead of retrying. A Slack app opens it itself.
+	// writes first an owner_dm send is refused — the loop should ask in
+	// control_room instead of retrying. A Slack app opens it itself.
 	OwnerDMReady bool
 	// Private are the people other than the owner who have messaged this
 	// loop privately, oldest first: the ones it can write to first on their
@@ -121,18 +121,16 @@ type Catalog struct {
 }
 
 // Conversations are the send destinations a loop actually has (ADR-0032):
-// control_room always, group while it is in the fleet channel, owner_dm
-// while a surface is attached, and channel:<name> for each other channel the
-// operator put it in (ADR-0038). The prompt's addressing block and the send
+// control_room always, owner_dm while a surface is attached, and
+// channel:<name> for each channel the operator put it in (ADR-0038,
+// ADR-0068). The prompt's addressing block and the send
 // tool's refusals both read them, so what a loop is told it has and what the
 // hub lets it use cannot drift apart (#288).
 type Conversations struct {
 	// Surface names the attached surface the way a loop reads it ("" =
 	// none, and so no owner_dm).
 	Surface string
-	// Group reports that the loop is in the fleet channel.
-	Group bool
-	// Channels are the other channels the loop is in, by name.
+	// Channels are the channels the loop is in, by name.
 	Channels []Channel
 }
 
@@ -142,8 +140,7 @@ type Team struct {
 	Description string
 }
 
-// Channel is one channel other than the fleet channel that a loop is in, as
-// its prompt shows it.
+// Channel is one channel a loop is in, as its prompt shows it.
 type Channel struct {
 	Name        string
 	Description string
@@ -153,16 +150,15 @@ type Channel struct {
 	// Team is the team the channel belongs to, "" for a hub channel.
 	Team string
 	// Room reports that the loop's bot sits in a room bound to the
-	// channel, so people read it there and a mention of one reaches them.
+	// channel, so people read it there as well as in the control room.
 	Room bool
 }
 
 // ConversationsOf reads a loop's conversations off its row, the hub's
-// channels and the loop's rooms. channels and loops are the stores' lists; a
-// nil channels lists none beyond the fleet channel, which the row itself
-// records.
+// channels and the loop's rooms. channels and loops are the stores' lists;
+// a nil channels lists none.
 func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []*store.Loop, rooms []*store.Room) Conversations {
-	conversations := Conversations{Group: !loopRecord.OutsideFleetChannel}
+	var conversations Conversations
 	switch loopRecord.Surface() {
 	case store.SurfaceTelegram:
 		conversations.Surface = "Telegram"
@@ -176,7 +172,7 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 		}
 	}
 	for _, channel := range channels {
-		if channel.Name == store.FleetChannel || !slices.Contains(channel.LoopIDs, loopRecord.ID) {
+		if !slices.Contains(channel.LoopIDs, loopRecord.ID) {
 			continue
 		}
 		mine := Channel{Name: channel.Name, Description: channel.Description, Team: channel.Team}
@@ -198,7 +194,7 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 	return conversations
 }
 
-// Channel returns the loop's channel by name, other than the fleet channel.
+// Channel returns the loop's channel by name.
 func (conversations Conversations) Channel(name string) (Channel, bool) {
 	for _, channel := range conversations.Channels {
 		if channel.Name == name {
@@ -208,20 +204,9 @@ func (conversations Conversations) Channel(name string) (Channel, bool) {
 	return Channel{}, false
 }
 
-// roomed reports that a room carries one of the loop's channels, so a
-// person is in it.
-func (conversations Conversations) roomed() bool {
-	for _, channel := range conversations.Channels {
-		if channel.Room {
-			return true
-		}
-	}
-	return false
-}
-
 // shared reports that the loop has a conversation other loops are in.
 func (conversations Conversations) shared() bool {
-	return conversations.Group || len(conversations.Channels) > 0
+	return len(conversations.Channels) > 0
 }
 
 // Destinations lists the loop's destinations in the order the prompt
@@ -230,9 +215,6 @@ func (conversations Conversations) Destinations() []string {
 	var destinations []string
 	if conversations.Surface != "" {
 		destinations = append(destinations, store.ConversationOwnerDM, store.DMDestinationPrefix+"<name>")
-	}
-	if conversations.Group {
-		destinations = append(destinations, store.ConversationGroup)
 	}
 	for _, channel := range conversations.Channels {
 		destinations = append(destinations, store.ChannelDestination(channel.Name))
@@ -331,10 +313,7 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	fmt.Fprintf(&text, "- You are %s.\n", self)
 
 	conv := cat.Conversations
-	askIn := "in the group"
-	if !conv.Group {
-		askIn = "in control_room"
-	}
+	askIn := "in control_room"
 	switch {
 	case conv.Surface == "":
 		if cat.Owner != nil {
@@ -376,18 +355,13 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	}
 
 	switch {
-	case !conv.Group && conv.roomed():
-		text.WriteString("- You are not in the fleet channel: only those in your channels below can\n" +
-			"  reach you, and you can reach only them.\n")
-	case !conv.Group && len(conv.Channels) > 0:
-		text.WriteString("- You are not in the fleet channel: only the loops in your channels below\n" +
-			"  can reach you, and you can reach only them.\n")
-	case !conv.Group:
-		text.WriteString("- You are not in the fleet channel: no other loop can reach you, and\n" +
-			"  you cannot reach them.\n")
+	case !conv.shared():
+		text.WriteString("- You are in no channel: no other loop can reach you, and you cannot\n" +
+			"  reach them.\n")
 	case len(cat.Peers) > 0:
-		text.WriteString("- The other loops in the fleet channel, and what each is for — @mention\n" +
-			"  one in the group to reach it; a name not on this list reaches nobody:\n")
+		text.WriteString("- The other loops in your channels, and what each is for — @mention one\n" +
+			"  in a channel it is in to reach it; a name not on this list reaches\n" +
+			"  nobody:\n")
 		for _, peer := range cat.Peers {
 			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(firstLine(peer.Mission), 120))
 			if peer.BotUsername != "" && peer.Surface != "" {
@@ -395,7 +369,7 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 			}
 		}
 	default:
-		text.WriteString("- No other loops are in the fleet channel right now.\n")
+		text.WriteString("- No other loop is in your channels right now.\n")
 	}
 
 	// A loop in a team is told so above its channels, which list the team's
@@ -424,9 +398,9 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		}
 	}
 	if len(channels) > 0 {
-		text.WriteString(`- Your other channels, each its own conversation: send to one as
-  channel:<name> and @mention the loops in it there. A loop not listed under
-  a channel is not in it, so a mention of it there reaches nobody:
+		text.WriteString(`- Your channels, each its own conversation: send to one as channel:<name>
+  and @mention the loops in it there. A loop not listed under a channel is
+  not in it, so a mention of it there reaches nobody:
 `)
 		for _, channel := range channels {
 			fmt.Fprintf(&text, "    channel:%s", channel.Name)
@@ -434,7 +408,7 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 				fmt.Fprintf(&text, " — %s", channel.Description)
 			}
 			switch {
-			case len(channel.Loops) == 0 && channel.Room:
+			case len(channel.Loops) == 0 && len(cat.People) > 0:
 				text.WriteString("\n      no other loop is in it yet\n")
 			case len(channel.Loops) == 0:
 				text.WriteString("\n      no other loop is in it yet, so nothing said there reaches anyone\n")
@@ -447,34 +421,16 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		}
 	}
 
-	// People are reached by mention in the group and in a channel's room. A
-	// channel no room carries has no person in it.
-	withRoom, withoutRoom := conv.roomed(), false
-	for _, channel := range conv.Channels {
-		withoutRoom = withoutRoom || !channel.Room
-	}
-	if (conv.Group || withRoom) && len(cat.People) > 0 {
+	// A person is in every channel the loop is in: the control room shows
+	// each one, so a mention of a person there counts (ADR-0068). It
+	// addresses the message and sends them nothing privately.
+	if conv.shared() && len(cat.People) > 0 {
 		text.WriteString("- The people who can talk to this fleet:\n")
 		for _, person := range cat.People {
 			fmt.Fprintf(&text, "    %s\n", person.Label())
 		}
-		switch {
-		case !withRoom:
-			text.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
-		case conv.Group:
-			text.WriteString("  @mentioning a person in the group or a channel's room is public: everyone\n  there sees it.\n")
-		default:
-			text.WriteString("  @mentioning a person in a channel's room is public: everyone there sees it.\n")
-		}
-		switch {
-		case !withoutRoom:
-		case !withRoom:
-			text.WriteString("  No person is in your other channels yet: reach people in the group or\n  directly.\n")
-		case conv.Group:
-			text.WriteString("  No person is in a channel without a room yet: reach people in the group,\n  in a room, or directly.\n")
-		default:
-			text.WriteString("  No person is in a channel without a room yet: reach people in a room or\n  directly.\n")
-		}
+		text.WriteString("  @mentioning a person in a channel is public: everyone who reads the\n" +
+			"  channel sees it, and it never reaches them privately.\n")
 		if conv.Surface != "" {
 			text.WriteString("  Only owner_dm and dm:<name> are kept from the hub's members; every user\n  of this hub reads control_room.\n")
 		} else {
@@ -550,18 +506,7 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	}
 
 	text.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
-	switch {
-	case conv.Group && len(conv.Channels) == 0:
-		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
-  of the group: never quote or relay it in a group message unless the
-  person it came from asks you to.
-`, strings.Join(conv.direct(), ", "))
-	case conv.Group:
-		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
-  of the group and your channels: never quote or relay it there unless the
-  person it came from asks you to.
-`, strings.Join(conv.direct(), ", "))
-	case conv.shared():
+	if conv.shared() {
 		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
   of your channels: never quote or relay it there unless the person it
   came from asks you to.
@@ -580,31 +525,26 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what
 `)
-	// A person is reached in public in the group, or else in a channel's
-	// room; a channel no room carries has no person in it.
-	switch {
-	case conv.Group:
-		fmt.Fprintf(&text, "  you need: %s, or @mention them in\n  the group when others should see it.", conv.askDirectly())
-	case conv.roomed():
-		fmt.Fprintf(&text, "  you need: %s, or @mention them in\n  a channel's room when others should see it.", conv.askDirectly())
-	default:
+	// a person is reached in public in any of the loop's channels
+	if conv.shared() {
+		fmt.Fprintf(&text, "  you need: %s, or @mention them in\n  a channel when others should see it.", conv.askDirectly())
+	} else {
 		fmt.Fprintf(&text, "  you need: %s.", conv.askDirectly())
 	}
 	return text.String()
 }
 
 // howThisWorks renders HOW THIS WORKS for the conversations the loop has:
-// the header examples, the destinations and the group's rules name only
+// the header examples, the destinations and the channels' rules name only
 // those, since a destination a loop is taught and does not have is one it
-// will try and be refused (ADR-0032).
+// will try and be refused (ADR-0032). A channel's example is the loop's
+// own first channel, so it names nothing the loop doesn't have.
 func howThisWorks(conv Conversations) string {
 	var examples []string
 	via := strings.ToLower(conv.Surface)
 	switch {
-	case conv.Group && conv.Surface != "":
-		examples = append(examples, `"[message from @enes via `+via+` · group · ref:42 · ...]"`)
-	case conv.Group:
-		examples = append(examples, `"[message from enes via web · group · ref:42 · ...]"`)
+	case conv.shared():
+		examples = append(examples, `"[message from enes via web · channel:`+conv.Channels[0].Name+` · ref:42 · ...]"`)
 	case conv.Surface != "":
 		examples = append(examples, `"[message from @enes via `+via+` dm · owner_dm · ref:42 · ...]"`)
 	}
@@ -631,76 +571,23 @@ func howThisWorks(conv Conversations) string {
                   has messaged you privately
 `, conv.Surface, conv.Surface)
 	}
-	if conv.Group {
-		text.WriteString(`    group         the fleet channel, shared by this fleet and visible to
-                  your owner; only the loops and people you @mention in the
-                  text receive it
-`)
-	}
-	switch {
-	case conv.roomed():
+	if conv.shared() {
 		text.WriteString(`    channel:<name>
                   one of your channels, listed under WHO YOU CAN ADDRESS;
                   a message said in one is headed "· channel:<name> ·", and
-                  only those you @mention in it receive it; a person is in
-                  a channel only where its room is listed
-`)
-	case len(conv.Channels) > 0:
-		text.WriteString(`    channel:<name>
-                  one of your channels, listed under WHO YOU CAN ADDRESS;
-                  a message said in one is headed "· channel:<name> ·", and
-                  only the loops you @mention in it receive it; no person
-                  is in a channel yet
+                  only the loops and people you @mention in it receive it
 `)
 	}
 	text.WriteString("    control_room  your thread in the Spool web UI, which every user of\n                  this hub reads\n")
 
-	if conv.Group {
-		text.WriteString(`- A new group message must @mention at least one known loop or person. Do
-  not @mention yourself. Direct text never fans out: names mentioned in
-  it receive nothing, @all included.
-- @all in a group message reaches every other loop in the fleet channel at
-  once. It is for something the whole fleet must act on — a rule change, an
-  outage — not for news. Naming the two loops that need something is the
-  better message; @all wakes everyone for a full turn.
-- Every header carries that message's reference ("ref:42"). Pass it as
-  reply_to to answer that exact message: in the group it reaches the
-  author with no @mention needed, and mentions add recipients on top. Only
-  a reference you were actually shown works, and only in the conversation
-  it came from — never invent one, and never reply to "the last message"
-  when you mean a specific one. Your own sends report their reference too.
-- A send_message error names what to fix (e.g. no_recipients); correct the
-  call and retry. Never work around an error by switching destination.
-`)
-		switch {
-		case conv.roomed():
-			text.WriteString(`- Each of your channels keeps those rules on its own: a new message in one
-  must @mention a loop in it (or a person, where its room is listed), @all
-  there reaches every other loop in that channel and no one else, and
-  reply_to takes only a reference said in that channel.
-`)
-		case len(conv.Channels) > 0:
-			text.WriteString(`- Each of your channels keeps those rules on its own, with loops alone: a
-  new message in one must @mention a loop in it, @all there reaches every
-  other loop in that channel and no one else, and reply_to takes only a
-  reference said in that channel.
-`)
-		}
-	} else if len(conv.Channels) > 0 {
-		if conv.roomed() {
-			text.WriteString(`- A new message in a channel must @mention at least one loop in it, or a
-  person where its room is listed. Do not @mention yourself. Direct text
-  never fans out: names mentioned in it receive nothing, @all included.
-`)
-		} else {
-			text.WriteString(`- A new message in a channel must @mention at least one loop in it; no
-  person is in a channel yet. Do not @mention yourself. Direct text never
-  fans out: names mentioned in it receive nothing, @all included.
-`)
-		}
-		text.WriteString(`- @all in a channel reaches every other loop in that channel at once. It is
+	if conv.shared() {
+		text.WriteString(`- A new message in a channel must @mention at least one loop or person in
+  it. Do not @mention yourself. Direct text never fans out: names mentioned
+  in it receive nothing, @all included.
+- @all in a channel reaches every other loop in that channel at once. It is
   for something they all must act on, not for news: it wakes each of them
-  for a full turn.
+  for a full turn. Naming the two loops that need something is the better
+  message.
 - Every header carries that message's reference ("ref:42"). Pass it as
   reply_to to answer that exact message: in a channel it reaches the
   author with no @mention needed, and mentions add recipients on top. Only
@@ -711,7 +598,7 @@ func howThisWorks(conv Conversations) string {
   call and retry. Never work around an error by switching destination.
 `)
 	} else {
-		text.WriteString(`- You have no group, so nothing you send fans out: names you @mention
+		text.WriteString(`- You are in no channel, so nothing you send fans out: names you @mention
   receive nothing, @all included.
 - Every header carries that message's reference ("ref:42"). Pass it as
   reply_to to answer that exact message. Only a reference you were
@@ -835,8 +722,7 @@ type Envelope struct {
 	// The actor batches one turn per conversation from it (ADR-0026).
 	Conversation string `json:"conversation,omitempty"`
 	// Channel names the channel a group message was said in ("" for the
-	// fleet channel and the per-loop kinds), so two channels never share a
-	// turn.
+	// per-loop kinds), so two channels never share a turn.
 	Channel  string `json:"channel,omitempty"`
 	TGChatID int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
 	// Files are the attachments the text names by a workstation path that
@@ -914,8 +800,7 @@ type Inbound struct {
 	Author       string // display name, no @
 	Text         string
 	Conversation string // store.Conversation* kind
-	// Channel names the channel a group message was said in; "" or
-	// store.FleetChannel is the fleet channel.
+	// Channel names the channel a group message was said in.
 	Channel  string
 	FromLoop bool
 	TGChatID int64  // source DM chat (0 = none)
@@ -1003,17 +888,13 @@ func byteSize(size int64) string {
 // MessageEnvelope formats an inbound chat message for injection.
 // The header always names the conversation, so the loop can answer through
 // the matching send destination — two web messages must not look alike when
-// one is private and one is in the group (ADR-0026) — and carries the
+// one is private and one is in a channel (ADR-0026) — and carries the
 // message's own reference, which is what a later reply_to must name. A
 // reference is never guessed from ordering (ADR-0025): if the loop did not
 // read it in a header, it cannot reply to it.
 func MessageEnvelope(now time.Time, in Inbound) Envelope {
-	// The fleet channel keeps its plain name in a header, as in a send;
-	// another channel is named as a send names it (ADR-0038).
-	channel := store.ConversationGroup
-	if in.Channel != "" {
-		channel = store.ChannelDestination(in.Channel)
-	}
+	// a channel is named as a send names it (ADR-0038, ADR-0068)
+	channel := store.ChannelDestination(in.Channel)
 	// A private message is the owner's owner_dm unless it came from anyone
 	// else, whose conversation is their own dm:<name> (ADR-0049).
 	private := store.ConversationOwnerDM
@@ -1062,7 +943,7 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 		Trigger:      store.TriggerMessage,
 		Text:         text,
 		Conversation: in.Conversation,
-		Channel:      envelopeChannel(in.Channel),
+		Channel:      in.Channel,
 		TGChatID:     in.TGChatID,
 		Ref:          in.Ref,
 	}
@@ -1091,15 +972,6 @@ func pollBallot(poll *store.Poll) string {
 		lines = append(lines, fmt.Sprintf("%d. %s", i+1, option))
 	}
 	return strings.Join(lines, "\n")
-}
-
-// envelopeChannel is the channel an envelope batches by: none for the fleet
-// channel, so an envelope queued before channels keys as it always did.
-func envelopeChannel(channel string) string {
-	if channel == store.FleetChannel {
-		return ""
-	}
-	return channel
 }
 
 // TickEnvelope formats a scheduler tick.

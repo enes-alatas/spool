@@ -49,11 +49,11 @@ func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
-	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	srv.waitRoom("terra", slackChannel)
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 	const question = "@milo ship on friday?"
 
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": question,
+	if res := callSend(t, terra, map[string]any{"destination": "channel:fleet", "text": question,
 		"poll": map[string]any{"options": []string{"yes", "no"}}}); res.IsError {
 		t.Fatalf("poll refused: %s", resultText(res))
 	}

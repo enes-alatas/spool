@@ -258,8 +258,6 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/messages/{id}/dismiss", server.handleDismissSend)
 	mux.HandleFunc("GET /api/loops/{name}/conversation", server.handleLoopConversation)
 	mux.HandleFunc("GET /api/loops/{name}/conversations", server.handleLoopConversations)
-	mux.HandleFunc("GET /api/group", server.handleGroupTimeline)
-	mux.HandleFunc("POST /api/group", server.handleGroupPost)
 	mux.HandleFunc("GET /api/connections", server.handleListConnections)
 	mux.HandleFunc("POST /api/connections", server.handleCreateConnection)
 	mux.HandleFunc("GET /api/connections/{name}", server.handleGetConnection)
@@ -566,12 +564,6 @@ type loopView struct {
 	// OwnerUser is the name of the user linked as the owner, and "" when
 	// the owner is a sender no user is linked as: not linked (#731).
 	OwnerUser string `json:"owner_user"`
-	// InFleetChannel reports that the loop has a group: it receives what
-	// addresses it there and may post to it (ADR-0032).
-	InFleetChannel bool `json:"in_fleet_channel"`
-	// TGGroupChatID is the Telegram group the fleet channel's room is, read
-	// from the loop's rooms (0 = none bound).
-	TGGroupChatID int64 `json:"tg_group_chat_id"`
 	// Connections are the connections attached to the loop, name-sorted,
 	// by name and kind only: never a value (ADR-0043).
 	Connections []loopConnectionView `json:"connections"`
@@ -637,9 +629,8 @@ func localDayStart(now time.Time) (int64, string) {
 func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopView {
 	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "",
 		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
-		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel,
-		Connections: []loopConnectionView{}, Problems: []store.Problem{}, Health: loop.HealthOK}
-	out.TGGroupChatID, _ = strconv.ParseInt(server.fleetRoom(ctx, loopRecord, store.SurfaceTelegram), 10, 64)
+		OwnerDMReady: loopRecord.OwnerDMReady(),
+		Connections:  []loopConnectionView{}, Problems: []store.Problem{}, Health: loop.HealthOK}
 	login, from := loopRecord.Login()
 	out.ClaudeLoginFrom = from
 	if from != store.LoginFromHost {
@@ -813,9 +804,6 @@ type createLoopReq struct {
 	// of a Telegram bot; both or neither.
 	SlackAppToken string `json:"slack_app_token"`
 	SlackBotToken string `json:"slack_bot_token"`
-	// InFleetChannel places the new loop in the fleet channel or outside
-	// it; absent, the server decides (defaultInFleetChannel).
-	InFleetChannel *bool `json:"in_fleet_channel"`
 	// Team puts the new loop in a team; absent or "", it is in none
 	// (ADR-0066).
 	Team string `json:"team"`
@@ -1075,19 +1063,6 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 	// reassignable per loop (#73, ADR-0051).
 	loopRecord.OwnerTGUserID = server.defaultOwnerID(ctx)
 
-	// Membership is settled before the loop exists, never patched in after:
-	// a loop created in the channel and then taken out would be reachable
-	// by an @all in between.
-	inFleet := req.InFleetChannel
-	if inFleet == nil {
-		in, err := server.defaultInFleetChannel(ctx)
-		if err != nil {
-			return nil, refusalf(500, "", "%v", err)
-		}
-		inFleet = &in
-	}
-	loopRecord.OutsideFleetChannel = !*inFleet
-
 	if refusal := server.loopTeamRefusal(ctx, req.Team); refusal != nil {
 		return nil, refusal
 	}
@@ -1223,9 +1198,8 @@ type patchLoopReq struct {
 	TGBotToken      *string  `json:"tg_bot_token"`
 	// SlackAppToken and SlackBotToken attach, rotate or (both "") detach the
 	// loop's Slack app. Both or neither.
-	SlackAppToken  *string `json:"slack_app_token"`
-	SlackBotToken  *string `json:"slack_bot_token"`
-	InFleetChannel *bool   `json:"in_fleet_channel"`
+	SlackAppToken *string `json:"slack_app_token"`
+	SlackBotToken *string `json:"slack_bot_token"`
 	// Team moves the loop into a team, or out of every team with "".
 	Team *string `json:"team"`
 	// cloud only, while the loop is paused (ADR-0061)
@@ -1319,10 +1293,6 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		edit.ClaudeLogin = &putOn
-	}
-	if req.InFleetChannel != nil {
-		outside := !*req.InFleetChannel
-		edit.OutsideFleetChannel = &outside
 	}
 	if req.Team != nil {
 		if refusal := server.loopTeamRefusal(r.Context(), *req.Team); refusal != nil {
@@ -1744,8 +1714,9 @@ type postMessageReq struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
 	// Destination is the composer's declared destination (ADR-0026):
-	// control_room (the default) keeps the message in the loop's web
-	// thread; group posts it to the shared group conversation.
+	// control_room, the default and the only one, keeps the message in the
+	// loop's web thread. A channel is posted to at its own route, since
+	// the fleet channel retired (ADR-0068).
 	Destination string `json:"destination"`
 	// AttachmentID is a file uploaded to POST /api/attachments to send
 	// with the message (#460), 0 for none.
@@ -1763,14 +1734,8 @@ func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	dest := defaultStr(req.Destination, store.ConversationControlRoom)
-	if dest != store.ConversationControlRoom && dest != store.ConversationGroup {
-		server.jsonErr(w, 400, "destination must be %s or %s", store.ConversationControlRoom, store.ConversationGroup)
-		return
-	}
-	if dest == store.ConversationGroup && loopRecord.OutsideFleetChannel {
-		// Refused rather than stored: the post would land in the group and
-		// reach nobody, since the loop it was written to has no group.
-		server.jsonErr(w, 409, "%s is not in the fleet channel", loopRecord.Name)
+	if dest != store.ConversationControlRoom {
+		server.jsonErr(w, 400, "destination must be %s; post to a channel at /api/channels/{name}/messages", store.ConversationControlRoom)
 		return
 	}
 	err := server.Router.Ingest(r.Context(), route.InboundMessage{
@@ -1846,7 +1811,6 @@ func (server *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Reques
 	status := map[string]any{
 		"configured":   loopRecord.TGBotToken != "",
 		"bot_username": loopRecord.TGBotUsername,
-		"group_bound":  server.fleetRoom(r.Context(), loopRecord, store.SurfaceTelegram) != "",
 	}
 	if telegram := server.Surfaces[store.SurfaceTelegram]; telegram != nil {
 		status["bridge"] = telegram.Status(loopRecord.ID)
@@ -2179,63 +2143,15 @@ func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Requ
 	server.writeMessages(w, r, msgs)
 }
 
-// handleGroupTimeline is the fleet channel's own timeline, newest first like
-// a loop's conversation. The channel is the hub's rather than any loop's
-// (ADR-0032), so it is not reached through one, and it holds no message said
-// in another channel (ADR-0038).
-func (server *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
-	msgs, err := server.Store.Messages().ListChannel(r.Context(), store.FleetChannel, queryInt(r, "limit", 100))
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	if msgs == nil {
-		msgs = []*store.Message{}
-	}
-	server.writeMessages(w, r, msgs)
-}
-
-type postGroupReq struct {
+// postChannelReq is the operator's post to a channel from the control room.
+type postChannelReq struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
-	// ReplyToID is the fleet-channel message this post answers, or 0 for
+	// ReplyToID is the channel's message this post answers, or 0 for
 	// a plain post.
 	ReplyToID int64 `json:"reply_to_id"`
 	// AttachmentID is as on a loop's composer (postMessageReq).
 	AttachmentID int64 `json:"attachment_id"`
-}
-
-// handleGroupPost is the operator posting to the fleet channel. Unlike a
-// group post from a loop's composer, it names no loop implicitly: it wakes
-// the loops its text addresses and no others, and a post that addresses
-// nobody is kept and wakes nobody — as a human's post in a mirrored room
-// is. It never leaves the hub (ADR-0032).
-//
-// A reply addresses the author of what it answers, as a native reply does
-// (ADR-0025), so a loop can be answered without a mention.
-func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
-	var req postGroupReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
-		server.jsonErr(w, 400, "non-empty text required")
-		return
-	}
-	if req.ReplyToID != 0 && !server.channelReplyTarget(r.Context(), w, req.ReplyToID, store.FleetChannel) {
-		return
-	}
-	err := server.Router.Ingest(r.Context(), route.InboundMessage{
-		Origin:       store.OriginWeb,
-		Author:       authorOf(r, req.Author),
-		Text:         req.Text,
-		Conversation: store.ConversationGroup,
-		ReplyToID:    req.ReplyToID,
-		UploadID:     req.AttachmentID,
-		UploadSender: uploadSenderOf(callerOf(r)),
-	})
-	if err != nil {
-		server.ingestErr(w, err)
-		return
-	}
-	writeJSON(w, 202, map[string]bool{"queued": true})
 }
 
 // channelReplyTarget checks that id names a message of the channel,
@@ -2580,20 +2496,6 @@ func (server *Server) linkedToNonOwners(ctx context.Context) (map[string]bool, e
 		}
 	}
 	return persons, nil
-}
-
-// defaultInFleetChannel is where a new loop starts when its creator did not
-// say: outside the fleet channel when no other loop exists, in it
-// otherwise. A fleet of one has no one to talk to in the channel (ADR-0032),
-// and the second loop is what makes a fleet — the operator's rule
-// on #287. Any loop counts, archived included, as the New loop form counts
-// them: an archived loop is still the fleet's, and could be restored.
-func (server *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
-	loops, err := server.Store.Loops().List(ctx)
-	if err != nil {
-		return false, fmt.Errorf("list loops: %w", err)
-	}
-	return len(loops) > 0, nil
 }
 
 // adoptDefaultOwner gives every ownerless loop this sender as its owner.

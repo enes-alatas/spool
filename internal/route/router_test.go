@@ -40,7 +40,7 @@ func TestConversationFor(t *testing.T) {
 		{"loop reply", InboundMessage{Origin: store.OriginLoop, FromLoopID: "l1"}, store.ConversationGroup, ""},
 		{"per-loop web composer", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2"}, store.ConversationControlRoom, "l2"},
 		{"composer group destination", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2",
-			Conversation: store.ConversationGroup}, store.ConversationGroup, ""},
+			Conversation: store.ConversationGroup, Channel: "fleet"}, store.ConversationGroup, ""},
 		{"composer explicit control_room", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2",
 			Conversation: store.ConversationControlRoom}, store.ConversationControlRoom, "l2"},
 		{"unaddressed web message", InboundMessage{Origin: store.OriginWeb}, store.ConversationGroup, ""},
@@ -83,8 +83,8 @@ func TestSameConversation(t *testing.T) {
 		destination string
 		want        bool
 	}{
-		{"group message answered in the group",
-			store.Message{Conversation: store.ConversationGroup}, store.ConversationGroup, true},
+		{"channel message answered in its channel",
+			store.Message{Conversation: store.ConversationGroup, Channel: "fleet"}, "channel:fleet", true},
 		{"own owner_dm message",
 			store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}, store.ConversationOwnerDM, true},
 		{"another loop's owner_dm message",
@@ -93,8 +93,8 @@ func TestSameConversation(t *testing.T) {
 			store.Message{Conversation: store.ConversationOwnerDM}, store.ConversationOwnerDM, false},
 		{"control_room message keyed to no loop",
 			store.Message{Conversation: store.ConversationControlRoom}, store.ConversationControlRoom, false},
-		{"group message answered in a DM",
-			store.Message{Conversation: store.ConversationGroup}, store.ConversationOwnerDM, false},
+		{"channel message answered in a DM",
+			store.Message{Conversation: store.ConversationGroup, Channel: "fleet"}, store.ConversationOwnerDM, false},
 	}
 	for _, testCase := range cases {
 		if got := sameConversation(&testCase.target, testCase.destination, "l1", ""); got != testCase.want {

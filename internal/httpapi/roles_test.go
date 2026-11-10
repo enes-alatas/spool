@@ -158,7 +158,7 @@ func TestAPrivateConversationIsReadByItsPerson(t *testing.T) {
 		msg  store.Message
 		want bool
 	}{
-		{"the group", store.Message{Conversation: store.ConversationGroup}, true},
+		{"the group", store.Message{Conversation: store.ConversationGroup, Channel: "fleet"}, true},
 		{"control_room", store.Message{Conversation: store.ConversationControlRoom, ConversationLoopID: "l2"}, true},
 		{"their dm with a loop", store.Message{Conversation: "dm:alice", ConversationLoopID: "l2", DMPerson: alice}, true},
 		{"their dm under another name", store.Message{Conversation: "dm:alicia", ConversationLoopID: "l1", DMPerson: alice}, true},

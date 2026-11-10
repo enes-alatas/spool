@@ -105,7 +105,7 @@ func TestAFileSentToTheGroupReachesTheLoopsItNames(t *testing.T) {
 	s.createLoop("briar", nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
-	res := callSend(t, sess, map[string]any{"destination": "group", "text": "@briar the crash", "attach": "crash.log"})
+	res := callSend(t, sess, map[string]any{"destination": "channel:fleet", "text": "@briar the crash", "attach": "crash.log"})
 	if res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}

@@ -584,7 +584,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.FleetChannel, now+2); err != nil {
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.RetiredChannel, now+2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -595,7 +595,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if got.OwnerTGUserID != 5454 {
 		t.Errorf("owner = %d, want it to survive the group bind", got.OwnerTGUserID)
 	}
-	if group := fleetRoom(t, db, "l1", store.SurfaceTelegram); group.id != "-100123" {
+	if group := boundRoom(t, db, "l1", store.SurfaceTelegram, store.RetiredChannel); group.id != "-100123" {
 		t.Errorf("group chat = %q, want it to survive the owner write", group.id)
 	}
 
@@ -609,7 +609,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if survived.OwnerTGUserID != 5454 || fleetRoom(t, db, "l1", store.SurfaceTelegram).id != "-100123" {
+	if survived.OwnerTGUserID != 5454 || boundRoom(t, db, "l1", store.SurfaceTelegram, store.RetiredChannel).id != "-100123" {
 		t.Fatalf("an edit that named only the mission reverted a concurrent write: %+v", survived)
 	}
 	if survived.Mission != mission {
@@ -620,7 +620,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+4); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.FleetChannel, now+4); err != nil {
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.RetiredChannel, now+4); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Loops().SetOwnerDMChat(ctx, "l1", 777, now+5); err != nil {
@@ -639,61 +639,11 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if final.OwnerDMChatID != 777 || final.OwnerTGUserID != 5454 || fleetRoom(t, db, "l1", store.SurfaceTelegram).id != "-100123" {
+	if final.OwnerDMChatID != 777 || final.OwnerTGUserID != 5454 || boundRoom(t, db, "l1", store.SurfaceTelegram, store.RetiredChannel).id != "-100123" {
 		t.Fatalf("a later single-field write disturbed its neighbours: %+v", final)
 	}
 	if final.Status != store.StatusPaused || !final.WorkstationOff {
 		t.Fatalf("status/power did not land: %+v", final)
-	}
-}
-
-// TestLoopFleetChannelMembership pins that a loop starts in the fleet channel
-// and that leaving it is the operator's edit alone: an edit that does not
-// name it leaves the loop where it was, whichever side that is (ADR-0032).
-func TestLoopFleetChannelMembership(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	ctx := context.Background()
-
-	now := time.Now().UnixMilli()
-	if err := db.Loops().Create(ctx, &store.Loop{
-		ID: "l1", Name: "private", Mission: "m", Status: store.StatusActive,
-		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
-		Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	got, err := db.Loops().Get(ctx, "l1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.OutsideFleetChannel {
-		t.Fatal("a new loop starts outside the fleet channel; it should start in it")
-	}
-
-	outside, mission := true, "m2"
-	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{OutsideFleetChannel: &outside, UpdatedAt: now + 1}); err != nil {
-		t.Fatal(err)
-	}
-	if !got.OutsideFleetChannel {
-		t.Fatal("the edit taking the loop out of the fleet channel did not land")
-	}
-	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 2}); err != nil {
-		t.Fatal(err)
-	}
-	if !got.OutsideFleetChannel {
-		t.Fatal("an edit that did not name the fleet channel put the loop back in it")
-	}
-
-	inside := false
-	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{OutsideFleetChannel: &inside, UpdatedAt: now + 3}); err != nil {
-		t.Fatal(err)
-	}
-	if got.OutsideFleetChannel {
-		t.Fatal("the edit putting the loop back in the fleet channel did not land")
 	}
 }
 

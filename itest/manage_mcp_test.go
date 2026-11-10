@@ -104,8 +104,8 @@ func changesBy(srv *server, loopName string) []string {
 func TestAnAgentListsPausesAndResumesLoops(t *testing.T) {
 	t.Parallel()
 	hub := startServer(t, t.TempDir())
-	hub.createLoop("alpha", map[string]any{"mission": "the alpha mission, never listed"})
-	hub.createLoop("beta", nil)
+	hub.createLoop("alpha", map[string]any{"mission": "the alpha mission, never listed", "fleet": false})
+	hub.createLoop("beta", map[string]any{"fleet": false})
 	token, id := hub.mintManagementToken("", map[string]any{"name": "watcher"})
 	actor := "manage:watcher#" + id
 	agent := manageSession(t, hub.baseURL, token)

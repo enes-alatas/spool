@@ -183,7 +183,7 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 	pacing, effort, subagents, daily_cap_usd, claude_login, cloud_repo, cloud_branch, cloud_repos,
 	cloud_environment_id, tg_bot_token, tg_bot_username,
 	owner_tg_user_id, owner_dm_chat_id,
-	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
+	workstation_off, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
 	slack_app_token, slack_bot_token, slack_bot_user_id, slack_bot_name, slack_team_id, slack_team_name,
 	owner_slack_user_id, owner_slack_dm_channel`
@@ -202,7 +202,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.DailyCapUSD, &loopRecord.ClaudeLogin,
 		&loopRecord.CloudRepo, &loopRecord.CloudBranch, &cloudRepos, &loopRecord.CloudEnvironmentID, &loopRecord.TGBotToken,
 		&loopRecord.TGBotUsername,
-		&loopRecord.OwnerTGUserID, &loopRecord.OwnerDMChatID, &loopRecord.WorkstationOff, &loopRecord.OutsideFleetChannel,
+		&loopRecord.OwnerTGUserID, &loopRecord.OwnerDMChatID, &loopRecord.WorkstationOff,
 		&loopRecord.Status, &loopRecord.CurrentSessionID, &loopRecord.CurrentPID,
 		&loopRecord.CreatedAt, &loopRecord.UpdatedAt, &loopRecord.Runtime, &loopRecord.Image, &loopRecord.MemMB, &loopRecord.CPUs, &loopRecord.HubMCPToken,
 		&loopRecord.RotatePending, &loopRecord.RotateReason, &loopRecord.HandoffNote, &loopRecord.PromptHash, &loopRecord.ModelRefusal,
@@ -255,13 +255,13 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	}
 	sealer := table.sealer
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash, team) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
 		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, loopRecord.DailyCapUSD, loopRecord.ClaudeLogin,
 		loopRecord.CloudRepo, loopRecord.CloudBranch, encodeCloudRepos(loopRecord.CloudRepos), loopRecord.CloudEnvironmentID, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
 		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
-		loopRecord.WorkstationOff, loopRecord.OutsideFleetChannel, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
+		loopRecord.WorkstationOff, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
 		loopRecord.CreatedAt, loopRecord.UpdatedAt,
 		loopRecord.Runtime, loopRecord.Image, loopRecord.MemMB, loopRecord.CPUs, sealer.seal(loopRecord.HubMCPToken), loopRecord.RotatePending, loopRecord.RotateReason,
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
@@ -344,9 +344,6 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	}
 	if edit.TGBotUsername != nil {
 		set("tg_bot_username", *edit.TGBotUsername)
-	}
-	if edit.OutsideFleetChannel != nil {
-		set("outside_fleet_channel", *edit.OutsideFleetChannel)
 	}
 	if edit.Team != nil {
 		set("team", sql.NullString{String: *edit.Team, Valid: *edit.Team != ""})
@@ -722,9 +719,9 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 		message.Mirror = store.MirrorNotMirrored
 	}
 	if message.Conversation == store.ConversationGroup && message.Channel == "" {
-		// Every group message is in a channel; until a writer names
-		// another, it is the fleet channel's (ADR-0038).
-		message.Channel = store.FleetChannel
+		// every group message is said in a channel, and since the fleet
+		// channel retired there is no default one (ADR-0068)
+		return errors.New("a group message names the channel it is said in")
 	}
 	var tgChat, tgMsg any
 	if message.TGChatID != 0 || message.TGMessageID != 0 {

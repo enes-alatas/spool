@@ -11,7 +11,6 @@ import (
 )
 
 // rooms is every loop's view of the surface chats its bot is in (ADR-0038).
-// The fleet channel's room is a row like any other, bound to group.
 type rooms struct{ db *sql.DB }
 
 const roomCols = `loop_id, surface, room_id, title, channel, first_seen_at, bound_at`

@@ -19,8 +19,8 @@ func TestAnUndeliveredSendIsToldToTheOwnerAndWakesTheLoopOnce(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7878, First: "Operator", Username: "operator"}
 	workspace := workspaceWithScript(t, "ok\nok\n"+
-		`!send {"destination":"group","text":"@operator the deploy is wedged"}`+"\n"+
-		`!send {"destination":"group","text":"@operator repeating what failed","resends":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@operator the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@operator repeating what failed","resends":"$ref"}`+"\n"+
 		"!echo\n")
 	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
 	hub.waitCompleted("alpha", 1)
@@ -78,11 +78,12 @@ func TestASurfaceOutageHoldsTheWakesUntilASendGetsThrough(t *testing.T) {
 			first = "ok\nok\n" // and its owner's first DM
 		}
 		workspace := workspaceWithScript(t, first+
-			`!send {"destination":"group","text":"@operator lost in the outage, from `+name+`"}`+"\n!echo\n")
+			`!send {"destination":"channel:fleet","text":"@operator lost in the outage, from `+name+`"}`+"\n!echo\n")
 		hub.createLoop(name, map[string]any{"tg_bot_token": name, "workspace_path": workspace})
 	}
 	hub.allowOwner(tg, "alpha", operator)
 	tg.post(groupChatID, "supergroup", "binding", operator)
+	hub.bindGroup(names...)
 	settleBindings()
 	for _, name := range names {
 		hub.waitCompleted(name, 1)

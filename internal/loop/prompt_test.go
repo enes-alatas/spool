@@ -158,11 +158,11 @@ func TestSystemPromptTeamRules(t *testing.T) {
 // forbids the trailer a normal reply may end with.
 // TestSystemPromptPrivacyRule pins the behavioral half of ADR-0026's
 // privacy decision: the prompt must carry the rule against quoting direct
-// conversation content into the group, since sessions are shared and only
+// conversation content into a channel, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {
-	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{Conversations: Conversations{Group: true}}, nil, testVersion)
-	if !strings.Contains(prompt, "never quote or relay it in a group message") {
+	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{Conversations: Conversations{Channels: []Channel{fleetChannel}}}, nil, testVersion)
+	if !strings.Contains(prompt, "of your channels: never quote or relay it there") {
 		t.Fatalf("prompt missing the private-content rule:\n%s", prompt)
 	}
 }
@@ -181,17 +181,14 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 			Conversation: store.ConversationControlRoom}),
 			"message from enes via web · control_room"},
 		{"web group", MessageEnvelope(now, Inbound{Origin: store.OriginWeb, Author: "enes", Text: "x",
-			Conversation: store.ConversationGroup}),
-			"message from enes via web · group"},
+			Conversation: store.ConversationGroup, Channel: "fleet"}),
+			"message from enes via web · channel:fleet"},
 		{"telegram dm", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramDM, Author: "enes", Text: "x",
 			Conversation: store.ConversationOwnerDM, TGChatID: 42}),
 			"message from @enes via telegram dm · owner_dm"},
 		{"telegram group", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
-			Conversation: store.ConversationGroup}),
-			"message from @enes via telegram · group"},
-		{"telegram group in the fleet channel by name", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
-			Conversation: store.ConversationGroup, Channel: store.FleetChannel}),
-			"message from @enes via telegram · group"},
+			Conversation: store.ConversationGroup, Channel: "fleet"}),
+			"message from @enes via telegram · channel:fleet"},
 		{"telegram room of a channel", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
 			Conversation: store.ConversationGroup, Channel: "backend"}),
 			"message from @enes via telegram · channel:backend"},
@@ -205,29 +202,26 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 			Conversation: "dm:alice"}),
 			"message from @alice via slack dm · dm:alice"},
 		{"slack channel", MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes", Text: "x",
-			Conversation: store.ConversationGroup}),
-			"message from @enes via slack · group"},
+			Conversation: store.ConversationGroup, Channel: "fleet"}),
+			"message from @enes via slack · channel:fleet"},
 		{"loop group send", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
-			Conversation: store.ConversationGroup, FromLoop: true}),
-			"message from @terra (loop) · group"},
-		{"loop send to the fleet channel by name", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
-			Conversation: store.ConversationGroup, Channel: store.FleetChannel, FromLoop: true}),
-			"message from @terra (loop) · group"},
+			Conversation: store.ConversationGroup, Channel: "fleet", FromLoop: true}),
+			"message from @terra (loop) · channel:fleet"},
 		{"loop channel send", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
 			Conversation: store.ConversationGroup, Channel: "backend", FromLoop: true}),
 			"message from @terra (loop) · channel:backend"},
 		{"reference", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
-			Conversation: store.ConversationGroup, Ref: MessageRef(42)}),
-			"· group · ref:42 ·"},
+			Conversation: store.ConversationGroup, Channel: "fleet", Ref: MessageRef(42)}),
+			"· channel:fleet · ref:42 ·"},
 		{"reply", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "milo", Text: "x",
-			Conversation: store.ConversationGroup, FromLoop: true, Ref: MessageRef(43), ReplyTo: MessageRef(42)}),
+			Conversation: store.ConversationGroup, Channel: "fleet", FromLoop: true, Ref: MessageRef(43), ReplyTo: MessageRef(42)}),
 			"· ref:43 · in reply to ref:42 ·"},
 		{"edit", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "ship monday",
-			Conversation: store.ConversationGroup, Ref: MessageRef(44), EditOf: MessageRef(42), EditKind: store.EditEdited}),
-			"· group · ref:44 · edited ref:42 ·"},
+			Conversation: store.ConversationGroup, Channel: "fleet", Ref: MessageRef(44), EditOf: MessageRef(42), EditKind: store.EditEdited}),
+			"· channel:fleet · ref:44 · edited ref:42 ·"},
 		{"deletion", MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes",
-			Conversation: store.ConversationGroup, Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted}),
-			"· group · ref:45 · deleted ref:42 ·"},
+			Conversation: store.ConversationGroup, Channel: "fleet", Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted}),
+			"· channel:fleet · ref:45 · deleted ref:42 ·"},
 	}
 	for _, testCase := range cases {
 		if !strings.Contains(testCase.env.Text, testCase.want) {
@@ -235,15 +229,13 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		}
 	}
 	deletion := MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes",
-		Conversation: store.ConversationGroup, Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted})
+		Conversation: store.ConversationGroup, Channel: "fleet", Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted})
 	if !strings.HasSuffix(deletion.Text, "]") || strings.Contains(deletion.Text, "\n") {
 		t.Errorf("a deletion's envelope = %q, want its header alone", deletion.Text)
 	}
 }
 
-// Two channels never share a turn, and the fleet channel named outright
-// batches with an envelope that names none, as one queued before channels
-// did.
+// Two channels never share a turn.
 func TestEnvelopesBatchPerChannel(t *testing.T) {
 	now := time.Now()
 	envelope := func(channel string) Envelope {
@@ -252,12 +244,6 @@ func TestEnvelopesBatchPerChannel(t *testing.T) {
 	}
 	if envelope("backend").conversationKey() == envelope("release").conversationKey() {
 		t.Error("two channels share a turn")
-	}
-	if envelope("backend").conversationKey() == envelope("").conversationKey() {
-		t.Error("a channel shares a turn with the fleet channel")
-	}
-	if envelope(store.FleetChannel).conversationKey() != envelope("").conversationKey() {
-		t.Error("the fleet channel named outright keys apart from the fleet channel")
 	}
 }
 
@@ -392,7 +378,7 @@ func TestTruncateRespectsRuneBoundaries(t *testing.T) {
 // part it cannot work out for itself — what is missing when it cannot reach
 // someone (#45).
 func TestCatalogSection(t *testing.T) {
-	telegramInGroup := Conversations{Surface: "Telegram", Group: true}
+	telegramInFleet := Conversations{Surface: "Telegram", Channels: []Channel{fleetChannel}}
 	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	enes := Person{Username: "enesalatas", Display: "Enes"}
 	cases := []struct {
@@ -407,7 +393,7 @@ func TestCatalogSection(t *testing.T) {
 				Peers: []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo_spool_bot", Surface: "telegram"},
 					{Name: "quinn", Mission: "Quality Reviewer"}},
 				People: []Person{enes}, Owner: &enes, OwnerDMReady: true,
-				Conversations: telegramInGroup,
+				Conversations: telegramInFleet,
 			},
 			want: []string{
 				"You are @terra, posting in telegram as @terra_spool_bot",
@@ -415,7 +401,7 @@ func TestCatalogSection(t *testing.T) {
 				"@milo — Product Owner",
 				"(posts as @milo_spool_bot in telegram)",
 				"@quinn — Quality Reviewer",
-				"@mentioning a person in the group is public",
+				"@mentioning a person in a channel is public",
 			},
 		},
 		{
@@ -424,14 +410,14 @@ func TestCatalogSection(t *testing.T) {
 				BotUsername: "terra",
 				Peers:       []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo", Surface: "slack"}},
 				People:      []Person{enes}, Owner: &enes, OwnerDMReady: true,
-				Conversations: Conversations{Surface: "Slack", Group: true},
+				Conversations: Conversations{Surface: "Slack", Channels: []Channel{fleetChannel}},
 			},
 			want: []string{
 				"You are @terra, posting in slack as @terra",
 				"(posts as @milo in slack)",
 				"Your owner is @enesalatas (Enes); owner_dm reaches them privately",
 				"owner_dm      your owner's private Slack chat",
-				`"[message from @enes via slack · group · ref:42 · ...]"`,
+				`"[message from enes via web · channel:fleet · ref:42 · ...]"`,
 			},
 			notWant: []string{"telegram"},
 		},
@@ -440,7 +426,7 @@ func TestCatalogSection(t *testing.T) {
 			cat: Catalog{
 				People: []Person{enes, {Username: "Alice", TGUserID: 2}, {Display: "Bob", TGUserID: 3}}, Owner: &enes, OwnerDMReady: true,
 				Private:       []Person{{Username: "Alice", TGUserID: 2}, {Display: "Bob", TGUserID: 3}},
-				Conversations: telegramInGroup,
+				Conversations: telegramInFleet,
 			},
 			want: []string{
 				"Each person is a\n  conversation of their own, dm:<name> as its header names it",
@@ -451,35 +437,35 @@ func TestCatalogSection(t *testing.T) {
 		},
 		{
 			name:    "nobody has messaged the loop privately",
-			cat:     Catalog{People: []Person{enes}, Owner: &enes, OwnerDMReady: true, Conversations: telegramInGroup},
+			cat:     Catalog{People: []Person{enes}, Owner: &enes, OwnerDMReady: true, Conversations: telegramInFleet},
 			want:    []string{"messaged you\n  privately: nobody yet."},
 			notWant: []string{"dm:enesalatas"},
 		},
 		{
 			name: "an owner who has never written",
-			cat:  Catalog{People: []Person{enes}, Owner: &enes, Conversations: telegramInGroup},
+			cat:  Catalog{People: []Person{enes}, Owner: &enes, Conversations: telegramInFleet},
 			want: []string{
 				"there is no private chat with",
-				"until they\n  message your bot once. Ask in the group rather than retrying",
+				"until they\n  message your bot once. Ask in control_room rather than retrying",
 			},
 			notWant: []string{"owner_dm reaches them privately"},
 		},
 		{
 			name:    "no owner at all",
-			cat:     Catalog{Conversations: telegramInGroup},
-			want:    []string{"no owner configured, so owner_dm has nobody to reach.\n  Ask in the group"},
+			cat:     Catalog{Conversations: telegramInFleet},
+			want:    []string{"no owner configured, so owner_dm has nobody to reach.\n  Ask in control_room"},
 			notWant: []string{"Your owner is"},
 		},
 		{
 			name:    "a lone loop",
-			cat:     Catalog{Owner: &enes, OwnerDMReady: true, Conversations: telegramInGroup},
-			want:    []string{"No other loops are in the fleet channel right now"},
+			cat:     Catalog{Owner: &enes, OwnerDMReady: true, Conversations: telegramInFleet},
+			want:    []string{"No other loop is in your channels right now"},
 			notWant: []string{"The people who can talk to this fleet"},
 		},
 		{
 			name: "no surface: no owner_dm, and control_room is every user's line",
 			cat: Catalog{People: []Person{enes}, Owner: &enes, Peers: []Peer{{Name: "milo", Mission: "PO"}},
-				Conversations: Conversations{Group: true}},
+				Conversations: Conversations{Channels: []Channel{fleetChannel}}},
 			want: []string{
 				"Your owner is @enesalatas (Enes).\n",
 				"You have no surface attached, so there is no owner_dm",
@@ -490,11 +476,11 @@ func TestCatalogSection(t *testing.T) {
 				"owner_dm is private to your owner", "dm:<name>"},
 		},
 		{
-			name: "outside the fleet channel: no peers, no people, ask in control_room",
+			name: "in no channel: no peers, no people, ask in control_room",
 			cat: Catalog{BotUsername: "terra_spool_bot", People: []Person{enes}, Owner: &enes,
 				Peers: []Peer{{Name: "milo", Mission: "PO"}}, Conversations: Conversations{Surface: "Telegram"}},
 			want: []string{
-				"You are not in the fleet channel: no other loop can reach you",
+				"You are in no channel: no other loop can reach you",
 				"Ask in control_room rather than retrying",
 			},
 			notWant: []string{"@milo", "The people who can talk to this fleet", "Ask in the group"},
@@ -668,7 +654,7 @@ func TestSendFailureEnvelopeCapsTheList(t *testing.T) {
 	var lost []*store.Message
 	for i := 1; i <= maxSendFailuresTold+3; i++ {
 		lost = append(lost, &store.Message{
-			ID: int64(i), Conversation: store.ConversationGroup,
+			ID: int64(i), Conversation: store.ConversationGroup, Channel: "fleet",
 			Text: "x", SendFailedAt: 1, SendError: "timeout",
 		})
 	}
@@ -688,7 +674,7 @@ func TestSendFailureEnvelopeCapsTheList(t *testing.T) {
 // not explain still reaches the loop.
 func TestSendFailureEnvelopeWithoutAReason(t *testing.T) {
 	text := SendFailureEnvelope(time.Now(), []*store.Message{
-		{ID: 3, Conversation: store.ConversationGroup, Text: "x", SendFailedAt: 1},
+		{ID: 3, Conversation: store.ConversationGroup, Channel: "fleet", Text: "x", SendFailedAt: 1},
 	}).Text
 	if !strings.Contains(text, "no reason recorded") {
 		t.Errorf("envelope missing the unexplained-failure wording:\n%s", text)
@@ -757,82 +743,64 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 		want, notWant []string
 	}{
 		{
-			name: "no surface, outside the fleet channel",
+			name: "no surface, in no channel",
 			conv: Conversations{},
 			want: []string{
 				"e.g.\n  \"[message from enes via web · control_room · ref:43 · ...]\". Answer",
 				"    control_room  your thread in the Spool web UI, which every user of",
-				"You have no group, so nothing you send fans out",
+				"You are in no channel, so nothing you send fans out",
+				"You are in no channel: no other loop can reach you",
 				"you need: in control_room.",
 			},
-			notWant: []string{"owner_dm ", "    group ", "Telegram", "telegram", "@all in a group message",
-				"never quote or relay it in a group message"},
+			notWant: []string{"owner_dm ", "    group ", "Telegram", "telegram", "channel:<name>", "fleet channel",
+				"never quote or relay it there"},
 		},
 		{
-			name: "no surface, in the fleet channel",
-			conv: Conversations{Group: true},
+			name: "no surface, in a channel",
+			conv: Conversations{Channels: []Channel{fleetChannel}},
 			want: []string{
-				"\"[message from enes via web · group · ref:42 · ...]\" or",
-				"    group         the fleet channel",
-				"@all in a group message reaches every other loop in the fleet channel",
-				"direct conversation (control_room) stays out\n  of the group",
-				"you need: in control_room, or @mention them",
+				"\"[message from enes via web · channel:fleet · ref:42 · ...]\" or",
+				"    channel:<name>\n                  one of your channels",
+				"only the loops and people you @mention in it receive it",
+				"@all in a channel reaches every other loop in that channel",
+				"direct conversation (control_room) stays out\n  of your channels",
+				"you need: in control_room, or @mention them in\n  a channel when others should see it.",
 			},
-			notWant: []string{"    owner_dm ", "Telegram", "telegram"},
+			notWant: []string{"    owner_dm ", "Telegram", "telegram", "    group ", "fleet channel", "the group"},
 		},
 		{
-			name: "Telegram, outside the fleet channel",
+			name: "Telegram, in no channel",
 			conv: Conversations{Surface: "Telegram"},
 			want: []string{
 				"\"[message from @enes via telegram dm · owner_dm · ref:42 · ...]\" or",
 				"    owner_dm      your owner's private Telegram chat",
 				"you need: privately via owner_dm, or in control_room.",
 			},
-			notWant: []string{"    group ", "@all in a group message", "via telegram · group"},
+			notWant: []string{"    group ", "channel:<name>", "@all in a channel"},
 		},
 		{
-			name: "in the fleet channel and another",
-			conv: Conversations{Group: true, Channels: []Channel{{Name: "backend", Description: "Go core", Loops: []string{"milo", "quinn"}}}},
+			name: "in two channels",
+			conv: Conversations{Channels: []Channel{fleetChannel, {Name: "backend", Description: "Go core", Loops: []string{"milo", "quinn"}}}},
 			want: []string{
-				"    group         the fleet channel",
 				"    channel:<name>\n                  one of your channels",
-				"@all in a group message reaches every other loop in the fleet channel",
-				"- Each of your channels keeps those rules on its own",
-				"    channel:backend — Go core\n      loops: @milo, @quinn\n",
-				"stays out\n  of the group and your channels",
-				"@mention them in\n  the group when others should see it.",
-				"only the loops you @mention in it receive it; no person\n                  is in a channel yet",
-				"must @mention a loop in it",
-			},
-			notWant: []string{"loops and people you @mention in it", "@mention them in\n  the group or a channel"},
-		},
-		{
-			name: "outside the fleet channel, in another",
-			conv: Conversations{Channels: []Channel{{Name: "backend"}}},
-			want: []string{
-				"    channel:<name>\n",
-				"- A new message in a channel must @mention",
-				"@all in a channel reaches every other loop in that channel",
+				"- A new message in a channel must @mention at least one loop or person in\n  it.",
 				"in a channel it reaches the\n  author",
-				"only the loops in your channels below\n  can reach you",
-				"    channel:backend\n      no other loop is in it yet, so nothing said there reaches anyone\n",
+				"    channel:backend — Go core\n      loops: @milo, @quinn\n",
+				"    channel:fleet\n      no other loop is in it yet, so nothing said there reaches anyone\n",
 				"stays out\n  of your channels",
-				"- A new message in a channel must @mention at least one loop in it; no\n  person is in a channel yet.",
-				"you need: in control_room.",
 			},
-			notWant: []string{"    group ", "You have no group", "@all in a group message", "no other loop can reach you",
-				"The people who can talk to this fleet", "@mention them in"},
+			notWant: []string{"    group ", "You are in no channel", "fleet channel", "the group"},
 		},
 		{
-			name: "Telegram, in the fleet channel",
-			conv: Conversations{Surface: "Telegram", Group: true},
+			name: "Telegram, in a channel",
+			conv: Conversations{Surface: "Telegram", Channels: []Channel{fleetChannel}},
 			want: []string{
-				"\"[message from @enes via telegram · group · ref:42 · ...]\" or",
+				"\"[message from enes via web · channel:fleet · ref:42 · ...]\" or",
 				"    owner_dm      your owner's private Telegram chat",
-				"    group         the fleet channel",
 				"direct conversation (owner_dm, dm:<name>, control_room)",
 				"- Keep what your owner tells you in owner_dm, and what anyone tells you in",
 			},
+			notWant: []string{"    group ", "fleet channel"},
 		},
 	}
 	for _, testCase := range cases {
@@ -852,10 +820,10 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 	}
 }
 
-// A channel a room carries has people in it, and the prompt says so where
-// it lists the channel, in the people block and in the channel rules; a
-// channel no room carries still has none (ADR-0038).
-func TestPromptTeachesPeopleWhereRoomsAre(t *testing.T) {
+// A person is in every channel the loop is in, room or not, and the prompt
+// lists the people once; a room is named where it carries a channel
+// (ADR-0068).
+func TestPromptTeachesPeopleInEveryChannel(t *testing.T) {
 	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	people := []Person{{Username: "enesalatas"}}
 	backend := Channel{Name: "backend", Loops: []string{"milo"}, Room: true}
@@ -866,36 +834,31 @@ func TestPromptTeachesPeopleWhereRoomsAre(t *testing.T) {
 		want, notWant []string
 	}{
 		{
-			name: "in the fleet channel, one channel with a room and one without",
-			conv: Conversations{Surface: "Telegram", Group: true, Channels: []Channel{backend, release}},
+			name: "one channel with a room and one without",
+			conv: Conversations{Surface: "Telegram", Channels: []Channel{backend, release}},
 			want: []string{
 				"    channel:backend\n      loops: @milo\n      its Telegram room carries it, so the people there read it\n",
 				"    channel:release\n      loops: @quinn\n- The people",
-				"@mentioning a person in the group or a channel's room is public: everyone\n  there sees it.",
-				"No person is in a channel without a room yet: reach people in the group,\n  in a room, or directly.",
-				"only those you @mention in it receive it; a person is in\n                  a channel only where its room is listed",
-				"must @mention a loop in it (or a person, where its room is listed), @all",
-				"@mention them in\n  the group when others should see it.",
-			},
-			notWant: []string{"No person is in your other channels yet", "with loops alone", "no person\n                  is in a channel yet"},
-		},
-		{
-			name:    "every channel with a room",
-			conv:    Conversations{Surface: "Telegram", Group: true, Channels: []Channel{backend}},
-			notWant: []string{"No person is in"},
-		},
-		{
-			name: "outside the fleet channel, in a channel with a room",
-			conv: Conversations{Surface: "Telegram", Channels: []Channel{{Name: "backend", Room: true}}},
-			want: []string{
-				"    channel:backend\n      no other loop is in it yet\n      its Telegram room carries it",
 				"- The people who can talk to this fleet:\n    @enesalatas\n",
-				"@mentioning a person in a channel's room is public: everyone there sees it.",
-				"- A new message in a channel must @mention at least one loop in it, or a\n  person where its room is listed.",
-				"or @mention them in\n  a channel's room when others should see it.",
-				"only those in your channels below can\n  reach you",
+				"@mentioning a person in a channel is public: everyone who reads the\n  channel sees it, and it never reaches them privately.",
+				"only the loops and people you @mention in it receive it",
+				"@mention them in\n  a channel when others should see it.",
 			},
-			notWant: []string{"nothing said there reaches anyone", "No person is in", "no\n  person is in a channel yet"},
+			notWant: []string{"No person is in", "where its room is listed", "no person\n                  is in a channel yet"},
+		},
+		{
+			name: "a channel with no room and no other loop",
+			conv: Conversations{Channels: []Channel{{Name: "backend"}}},
+			want: []string{
+				"    channel:backend\n      no other loop is in it yet\n- The people",
+				"- The people who can talk to this fleet:\n    @enesalatas\n",
+			},
+			notWant: []string{"nothing said there reaches anyone", "No person is in"},
+		},
+		{
+			name:    "in no channel",
+			conv:    Conversations{Surface: "Telegram"},
+			notWant: []string{"The people who can talk to this fleet", "@mentioning a person"},
 		},
 	}
 	for _, testCase := range cases {
@@ -943,10 +906,8 @@ func TestConversationsOf(t *testing.T) {
 		loop store.Loop
 		want string
 	}{
-		{store.Loop{OutsideFleetChannel: true}, "control_room"},
-		{store.Loop{}, "group control_room"},
-		{store.Loop{TGBotToken: "synthetic", OutsideFleetChannel: true}, "owner_dm dm:<name> control_room"},
-		{store.Loop{TGBotToken: "synthetic"}, "owner_dm dm:<name> group control_room"},
+		{store.Loop{}, "control_room"},
+		{store.Loop{TGBotToken: "synthetic"}, "owner_dm dm:<name> control_room"},
 	}
 	for _, testCase := range cases {
 		if got := strings.Join(ConversationsOf(&testCase.loop, nil, nil, nil).Destinations(), " "); got != testCase.want {
@@ -955,8 +916,8 @@ func TestConversationsOf(t *testing.T) {
 	}
 }
 
-// A loop's channels are the ones it is a member of, the fleet channel aside
-// since its row says that, and each lists the other active loops in it.
+// A loop's channels are the ones it is a member of, and each lists the
+// other active loops in it.
 func TestConversationsOfChannels(t *testing.T) {
 	self := &store.Loop{ID: "l1", Name: "terra", Status: store.StatusActive}
 	loops := []*store.Loop{
@@ -966,13 +927,12 @@ func TestConversationsOfChannels(t *testing.T) {
 		{ID: "l4", Name: "iris", Status: store.StatusPaused},
 	}
 	channels := []*store.Channel{
-		{Name: store.FleetChannel, LoopIDs: []string{"l1", "l2", "l3", "l4"}},
 		{Name: "backend", Description: "Go core", LoopIDs: []string{"l2", "l1", "l3", "l4"}},
 		{Name: "design", LoopIDs: []string{"l4"}},
 		{Name: "release", LoopIDs: []string{"l1"}, Team: "red"},
 	}
 	conv := ConversationsOf(self, channels, loops, nil)
-	if got := strings.Join(conv.Destinations(), " "); got != "group channel:backend channel:release control_room" {
+	if got := strings.Join(conv.Destinations(), " "); got != "channel:backend channel:release control_room" {
 		t.Errorf("destinations = %q", got)
 	}
 	backend, ok := conv.Channel("backend")
@@ -985,9 +945,6 @@ func TestConversationsOfChannels(t *testing.T) {
 	if _, ok := conv.Channel("design"); ok {
 		t.Error("a channel the loop is not in is one of its conversations")
 	}
-	if _, ok := conv.Channel(store.FleetChannel); ok {
-		t.Error("the fleet channel is listed as another channel")
-	}
 }
 
 // A loop is told each voter's choice by option number and text, a vote
@@ -995,7 +952,7 @@ func TestConversationsOfChannels(t *testing.T) {
 // and a closed poll's whole tally.
 func TestPollsEnvelope(t *testing.T) {
 	poll := &store.Poll{MessageID: 42, Options: []string{"yes", "no", "later"}, Multiple: true}
-	message := &store.Message{ID: 42, Conversation: store.ConversationGroup, Text: "ship friday?"}
+	message := &store.Message{ID: 42, Conversation: store.ConversationGroup, Channel: "fleet", Text: "ship friday?"}
 	votes := []ToldVote{
 		{Voter: "milo", Choice: []int{0, 2}, Poll: poll, Message: message},
 		{Voter: "quinn", Choice: []int{}, Poll: poll, Message: message},
@@ -1008,10 +965,10 @@ func TestPollsEnvelope(t *testing.T) {
 	}}}
 	text := PollsEnvelope(time.Now(), votes, closes).Text
 	for _, want := range []string{
-		`- milo chose 1. yes, 3. later in your poll ref:42 in group, "ship friday?"`,
+		`- milo chose 1. yes, 3. later in your poll ref:42 in channel:fleet, "ship friday?"`,
 		`- quinn took back their vote in your poll ref:42`,
 		"- and 2 more",
-		`- your poll ref:42 in group, "ship friday?" has closed. The result:` +
+		`- your poll ref:42 in channel:fleet, "ship friday?" has closed. The result:` +
 			"\n  1. yes: 2 (milo, iris)\n  2. no: 0\n  3. later: 1 (milo)",
 	} {
 		if !strings.Contains(text, want) {
@@ -1042,16 +999,16 @@ func TestSendFailureEnvelopeMarksReminders(t *testing.T) {
 	now := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
 	failed := now.Add(-3 * time.Hour).UnixMilli()
 	text := SendFailureEnvelope(now, []*store.Message{
-		{ID: 1, Conversation: store.ConversationGroup, Text: "new", SendFailedAt: failed, SendError: "timeout"},
-		{ID: 2, Conversation: store.ConversationGroup, Text: "once", SendFailedAt: failed, SendError: "timeout",
+		{ID: 1, Conversation: store.ConversationGroup, Channel: "fleet", Text: "new", SendFailedAt: failed, SendError: "timeout"},
+		{ID: 2, Conversation: store.ConversationGroup, Channel: "fleet", Text: "once", SendFailedAt: failed, SendError: "timeout",
 			SendFailureTellings: 1},
-		{ID: 3, Conversation: store.ConversationGroup, Text: "twice", SendFailedAt: failed, SendError: "timeout",
+		{ID: 3, Conversation: store.ConversationGroup, Channel: "fleet", Text: "twice", SendFailedAt: failed, SendError: "timeout",
 			SendFailureTellings: 2},
 	}).Text
 	for _, want := range []string{
-		"- ref:1 to group, 3h ago: timeout",
-		"- ref:2 to group, 3h ago, reminder 1 of 2: timeout",
-		"- ref:3 to group, 3h ago, last reminder: timeout",
+		"- ref:1 to channel:fleet, 3h ago: timeout",
+		"- ref:2 to channel:fleet, 3h ago, reminder 1 of 2: timeout",
+		"- ref:3 to channel:fleet, 3h ago, last reminder: timeout",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("envelope missing %q:\n%s", want, text)
@@ -1080,7 +1037,7 @@ func TestFailedAgo(t *testing.T) {
 func TestSendFailureEnvelopeQuotesShort(t *testing.T) {
 	long := strings.Repeat("a", 59) + "bcdef"
 	text := SendFailureEnvelope(time.Now(), []*store.Message{
-		{ID: 1, Conversation: store.ConversationGroup, Text: long, SendFailedAt: 1},
+		{ID: 1, Conversation: store.ConversationGroup, Channel: "fleet", Text: long, SendFailedAt: 1},
 	}).Text
 	if !strings.Contains(text, strings.Repeat("a", 59)) || strings.Contains(text, "bcdef") {
 		t.Errorf("the excerpt is not the first %d characters:\n%s", maxLostExcerpt, text)
@@ -1090,10 +1047,10 @@ func TestSendFailureEnvelopeQuotesShort(t *testing.T) {
 // The system prompt says what a correction's header means, whatever
 // conversations the loop has (ADR-0055).
 func TestTheSystemPromptExplainsACorrection(t *testing.T) {
-	for _, conversations := range []Conversations{{Group: true}, {}} {
+	for _, conversations := range []Conversations{{Channels: []Channel{fleetChannel}}, {}} {
 		prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{Conversations: conversations}, nil, testVersion)
 		if !strings.Contains(prompt, `carries their new words for ref:N`) || !strings.Contains(prompt, `"deleted ref:N" means they took ref:N back`) {
-			t.Errorf("group=%v: the prompt does not explain a correction", conversations.Group)
+			t.Errorf("in %d channels: the prompt does not explain a correction", len(conversations.Channels))
 		}
 	}
 }
@@ -1104,7 +1061,7 @@ func TestTheSystemPromptExplainsACorrection(t *testing.T) {
 // (ADR-0066).
 func TestTheCatalogNamesTheLoopsTeam(t *testing.T) {
 	loopRecord := &store.Loop{Name: "terra"}
-	conv := Conversations{Group: true, Channels: []Channel{
+	conv := Conversations{Channels: []Channel{
 		{Name: "ops", Loops: []string{"milo"}},
 		{Name: "red", Team: "red", Loops: []string{"quinn"}},
 	}}
@@ -1112,7 +1069,7 @@ func TestTheCatalogNamesTheLoopsTeam(t *testing.T) {
 	got := inRed.section(loopRecord)
 	want := "- You are in the team red — Builds the hub.\n" +
 		"  Its channels come first below, and only its loops can be in them.\n" +
-		"- Your other channels, each its own conversation:"
+		"- Your channels, each its own conversation:"
 	if !strings.Contains(got, want) {
 		t.Errorf("the section lacks %q:\n%s", want, got)
 	}
@@ -1123,14 +1080,18 @@ func TestTheCatalogNamesTheLoopsTeam(t *testing.T) {
 		t.Errorf("the team's description shows more than its first line:\n%s", got)
 	}
 
-	hubOnly := Catalog{Conversations: Conversations{Group: true, Channels: conv.Channels[:1]}, Team: &Team{Name: "default"}}
+	hubOnly := Catalog{Conversations: Conversations{Channels: conv.Channels[:1]}, Team: &Team{Name: "default"}}
 	got = hubOnly.section(loopRecord)
-	if !strings.Contains(got, "- You are in the team default.\n- Your other channels") || strings.Contains(got, "Its channels come first") {
+	if !strings.Contains(got, "- You are in the team default.\n- Your channels") || strings.Contains(got, "Its channels come first") {
 		t.Errorf("a team the loop holds no channel of is not one line:\n%s", got)
 	}
 
-	inNone := Catalog{Conversations: Conversations{Group: true, Channels: conv.Channels[:1]}}
+	inNone := Catalog{Conversations: Conversations{Channels: conv.Channels[:1]}}
 	if got := inNone.section(loopRecord); strings.Contains(got, "team") {
 		t.Errorf("a loop in no team is told of one:\n%s", got)
 	}
 }
+
+// fleetChannel is a channel every loop of a test hub is in, as an upgraded
+// hub's fleet channel became (ADR-0068).
+var fleetChannel = Channel{Name: "fleet"}

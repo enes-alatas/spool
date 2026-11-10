@@ -189,9 +189,6 @@ func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 		reactions: make(chan *route.ReactionPayload, reactions), pollEdits: make(chan struct{}, 1)}
 	adapter.links[loopRecord.ID] = started
 	adapter.running.Go(func() { adapter.run(ctx, started) })
-	adapter.running.Go(func() {
-		adapter.nameChannel(ctx, started, loopRecord, adapter.roomOf(ctx, loopRecord, store.FleetChannel))
-	})
 }
 
 // stopLink closes a loop's connection, and waits for it to close: a link

@@ -33,7 +33,7 @@ func TestMessageConversationRoundTrip(t *testing.T) {
 	group := &store.Message{
 		TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
 		Text: "@milo done", Mentions: []string{"milo"}, DeliveredTo: []string{"l2"},
-		Conversation: store.ConversationGroup,
+		Conversation: store.ConversationGroup, Channel: "fleet",
 	}
 	for _, message := range []*store.Message{dm, group} {
 		if err := db.Messages().Insert(ctx, message); err != nil {
@@ -79,7 +79,7 @@ func TestListConversation(t *testing.T) {
 		{TS: now + 2, Origin: store.OriginWeb, Author: "operator", Text: "other loop's thread",
 			Conversation: store.ConversationControlRoom, ConversationLoopID: "l2"},
 		{TS: now + 3, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo group",
-			Conversation: store.ConversationGroup},
+			Conversation: store.ConversationGroup, Channel: "fleet"},
 	} {
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatalf("insert %d: %v", i, err)
@@ -96,8 +96,7 @@ func TestListConversation(t *testing.T) {
 }
 
 // TestListChannel pins a channel's timeline: its own messages newest first,
-// with no bleed from another channel or from a private thread (ADR-0038). A
-// group message written with no channel is the fleet channel's.
+// with no bleed from another channel or from a private thread (ADR-0038).
 func TestListChannel(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -109,7 +108,7 @@ func TestListChannel(t *testing.T) {
 
 	for i, message := range []*store.Message{
 		{TS: now, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo fleet",
-			Conversation: store.ConversationGroup},
+			Conversation: store.ConversationGroup, Channel: "fleet"},
 		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo backend",
 			Conversation: store.ConversationGroup, Channel: "backend"},
 		{TS: now + 2, Origin: store.OriginLoop, Author: "milo", FromLoopID: "l2", Text: "@terra backend again",
@@ -129,12 +128,12 @@ func TestListChannel(t *testing.T) {
 	if len(backend) != 2 || backend[0].Text != "@terra backend again" || backend[1].Text != "@milo backend" {
 		t.Fatalf("ListChannel(backend) = %+v, want its 2 newest-first", backend)
 	}
-	fleet, err := db.Messages().ListChannel(ctx, store.FleetChannel, 10)
+	fleet, err := db.Messages().ListChannel(ctx, "fleet", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(fleet) != 1 || fleet[0].Text != "@milo fleet" {
-		t.Fatalf("ListChannel(group) = %+v, want the fleet channel's one", fleet)
+		t.Fatalf("ListChannel(fleet) = %+v, want its one", fleet)
 	}
 }
 
@@ -153,11 +152,11 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 	human := &store.Message{
 		TS: now, Origin: store.OriginTelegramGroup, Author: "enes", Text: "ship it",
 		TGChatID: -100, TGMessageID: 11, TGBotLoopID: "l1", TGKey: "k1",
-		Conversation: store.ConversationGroup,
+		Conversation: store.ConversationGroup, Channel: "fleet",
 	}
 	reply := &store.Message{
 		TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
-		Text: "on it", Conversation: store.ConversationGroup,
+		Text: "on it", Conversation: store.ConversationGroup, Channel: "fleet",
 	}
 	for _, message := range []*store.Message{human, reply} {
 		if err := db.Messages().Insert(ctx, message); err != nil {
@@ -239,7 +238,7 @@ func TestTextTargetIsScopedToItsAuthor(t *testing.T) {
 	insert := func(loopID, author, text string, ts int64) int64 {
 		t.Helper()
 		message := &store.Message{TS: ts, Origin: store.OriginLoop, Author: author,
-			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
+			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup, Channel: "fleet"}
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
@@ -319,16 +318,16 @@ func TestSendFailuresToTell(t *testing.T) {
 
 	mine := []*store.Message{
 		{TS: now, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
-			Text: "first", Conversation: store.ConversationGroup},
+			Text: "first", Conversation: store.ConversationGroup, Channel: "fleet"},
 		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
 			Text: "second", Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"},
 	}
 	theirs := &store.Message{TS: now + 2, Origin: store.OriginLoop, Author: "iris",
-		FromLoopID: "l2", Text: "theirs", Conversation: store.ConversationGroup}
+		FromLoopID: "l2", Text: "theirs", Conversation: store.ConversationGroup, Channel: "fleet"}
 	inbound := &store.Message{TS: now + 3, Origin: store.OriginTelegramDM, Author: "enes",
 		Text: "inbound", Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}
 	delivered := &store.Message{TS: now + 4, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "got there", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "got there", Conversation: store.ConversationGroup, Channel: "fleet"}
 	for _, message := range append(mine, theirs, inbound, delivered) {
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
@@ -408,9 +407,9 @@ func TestSendFailuresToTell(t *testing.T) {
 	// owed it. The loop's own dismissal is the sender deciding, so there is
 	// nothing to tell it.
 	stale := &store.Message{TS: now + 5, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "retried", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "retried", Conversation: store.ConversationGroup, Channel: "fleet"}
 	setAside := &store.Message{TS: now + 6, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "dismissed", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "dismissed", Conversation: store.ConversationGroup, Channel: "fleet"}
 	for _, message := range []*store.Message{stale, setAside} {
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
@@ -428,7 +427,7 @@ func TestSendFailuresToTell(t *testing.T) {
 	// A resend is the loop dealing with its own failure (#270), so it leaves
 	// the list for the same reason a landed retry does: those words arrived.
 	saidAgain := &store.Message{TS: now + 7, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "said again", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "said again", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, saidAgain); err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +447,7 @@ func TestSendFailuresToTell(t *testing.T) {
 	}
 
 	byLoop := &store.Message{TS: now + 8, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "dismissed by the loop", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "dismissed by the loop", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, byLoop); err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +485,7 @@ func TestSendFailuresToTell(t *testing.T) {
 	// hears of that send instead, so it resends the newest link of the
 	// chain and the whole chain resolves when it lands.
 	resentLost := &store.Message{TS: now + 9, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "lost, then resent", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "lost, then resent", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, resentLost); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +501,7 @@ func TestSendFailuresToTell(t *testing.T) {
 		t.Fatalf("an unclaimed failure told once is not reminded of: %d rows", len(reminded))
 	}
 	resend := &store.Message{TS: now + 10, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
-		Text: "lost, then resent (again)", Conversation: store.ConversationGroup, ResendsID: resentLost.ID}
+		Text: "lost, then resent (again)", Conversation: store.ConversationGroup, Channel: "fleet", ResendsID: resentLost.ID}
 	if err := db.Messages().Insert(ctx, resend); err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +534,7 @@ func TestSendSuccessUnmarksItsFailure(t *testing.T) {
 	now := time.Now().UnixMilli()
 
 	message := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "eventually", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "eventually", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, message); err != nil {
 		t.Fatal(err)
 	}
@@ -575,13 +574,13 @@ func TestUnresolvedSendFailures(t *testing.T) {
 	dayAgo := now - int64(24*time.Hour/time.Millisecond)
 
 	recent := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "recent", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "recent", Conversation: store.ConversationGroup, Channel: "fleet"}
 	old := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "old", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "old", Conversation: store.ConversationGroup, Channel: "fleet"}
 	sibling := &store.Message{TS: now, Origin: store.OriginLoop, Author: "iris",
-		FromLoopID: "l2", Text: "sibling", Conversation: store.ConversationGroup}
+		FromLoopID: "l2", Text: "sibling", Conversation: store.ConversationGroup, Channel: "fleet"}
 	delivered := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
-		FromLoopID: "l1", Text: "arrived", Conversation: store.ConversationGroup}
+		FromLoopID: "l1", Text: "arrived", Conversation: store.ConversationGroup, Channel: "fleet"}
 	for _, message := range []*store.Message{recent, old, sibling, delivered} {
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
@@ -672,7 +671,7 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	// them since #269: the old failure below is as undelivered as the new.
 	mk := func(loopID, text string) *store.Message {
 		message := &store.Message{TS: now, Origin: store.OriginLoop, Author: loopID,
-			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
+			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup, Channel: "fleet"}
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
@@ -683,7 +682,7 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	dealtWith := mk("l1", "dealt with")
 	mk("l1", "arrived")
 	inbound := &store.Message{TS: now, Origin: store.OriginWeb, Author: "operator",
-		Text: "inbound", Conversation: store.ConversationGroup}
+		Text: "inbound", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, inbound); err != nil {
 		t.Fatal(err)
 	}
@@ -797,7 +796,7 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 
 	say := func(text string, resends int64) *store.Message {
 		message := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
-			FromLoopID: "l1", Text: text, Conversation: store.ConversationGroup,
+			FromLoopID: "l1", Text: text, Conversation: store.ConversationGroup, Channel: "fleet",
 			ResendsID: resends}
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
@@ -876,7 +875,7 @@ func TestAdoptReplyTargetOnce(t *testing.T) {
 
 	row := &store.Message{TS: 1002, Origin: store.OriginTelegramGroup, Author: "operator",
 		Text: "it seems out of date", TGChatID: -100, TGMessageID: 11, TGBotLoopID: "l1", TGKey: "k1",
-		Conversation: store.ConversationGroup}
+		Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, row); err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +900,7 @@ func TestSlackMessageIsKeyedByChannelAndTS(t *testing.T) {
 	ctx := context.Background()
 	heard := func(channel, ts string) *store.Message {
 		return &store.Message{TS: 1, Origin: store.OriginSlackChannel, Author: "alice", Text: "hi",
-			Conversation: store.ConversationGroup, SlackChannelID: channel, SlackTS: ts}
+			Conversation: store.ConversationGroup, Channel: "fleet", SlackChannelID: channel, SlackTS: ts}
 	}
 	first := heard("C0FLEET", "1727600000.000100")
 	if err := db.Messages().Insert(ctx, first); err != nil {
@@ -915,7 +914,7 @@ func TestSlackMessageIsKeyedByChannelAndTS(t *testing.T) {
 	}
 	for range 2 {
 		if err := db.Messages().Insert(ctx, &store.Message{TS: 2, Origin: store.OriginWeb, Author: "enes",
-			Text: "hi", Conversation: store.ConversationGroup}); err != nil {
+			Text: "hi", Conversation: store.ConversationGroup, Channel: "fleet"}); err != nil {
 			t.Fatalf("a message with no Slack identity was caught by its key: %v", err)
 		}
 	}
@@ -942,13 +941,13 @@ func TestACorrectionIsKeyedByItsEdit(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	original := &store.Message{TS: 1, Origin: store.OriginSlackChannel, Author: "alice", Text: "ship friday",
-		Conversation: store.ConversationGroup}
+		Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, original); err != nil {
 		t.Fatal(err)
 	}
 	correction := func(key string) *store.Message {
 		return &store.Message{TS: 2, Origin: store.OriginSlackChannel, Author: "alice", Text: "ship monday",
-			Conversation: store.ConversationGroup, EditOf: original.ID, EditKind: store.EditEdited, EditKey: key}
+			Conversation: store.ConversationGroup, Channel: "fleet", EditOf: original.ID, EditKind: store.EditEdited, EditKey: key}
 	}
 	first := correction("slack:1:1727600000.000200")
 	if err := db.Messages().Insert(ctx, first); err != nil {
@@ -1061,7 +1060,7 @@ func TestAMessageIsDroppedPerLoopOnce(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	message := &store.Message{TS: 1, Origin: store.OriginTelegramGroup, Author: "alice", Text: "crash me",
-		Conversation: store.ConversationGroup}
+		Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := db.Messages().Insert(ctx, message); err != nil {
 		t.Fatal(err)
 	}

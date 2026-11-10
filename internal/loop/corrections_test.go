@@ -49,12 +49,12 @@ func TestACorrectionOfAWaitingMessageIsAppliedInPlace(t *testing.T) {
 // what it corrects, which is how the actor matches the two.
 func TestAnEnvelopeCarriesItsRefAndWhatItCorrects(t *testing.T) {
 	plain := MessageEnvelope(time.Now(), Inbound{Origin: store.OriginSlackChannel, Author: "enes", Text: "ship friday",
-		Conversation: store.ConversationGroup, Ref: "ref:1"})
+		Conversation: store.ConversationGroup, Channel: "fleet", Ref: "ref:1"})
 	if plain.Ref != "ref:1" || plain.Corrects != nil {
 		t.Fatalf("a message's envelope: %+v", plain)
 	}
 	edit := MessageEnvelope(time.Now(), Inbound{Origin: store.OriginSlackChannel, Author: "enes", Text: "ship monday",
-		Conversation: store.ConversationGroup, Ref: "ref:9", EditOf: "ref:1", EditKind: store.EditEdited})
+		Conversation: store.ConversationGroup, Channel: "fleet", Ref: "ref:9", EditOf: "ref:1", EditKind: store.EditEdited})
 	if edit.Ref != "ref:9" || edit.Corrects == nil || *edit.Corrects != (Correction{Ref: "ref:1", Kind: store.EditEdited}) {
 		t.Fatalf("a correction's envelope: %+v", edit)
 	}

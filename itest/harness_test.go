@@ -407,8 +407,6 @@ type loopView struct {
 	OwnerUser          string  `json:"owner_user"`
 	Mission            string  `json:"mission"`
 	TGBotUsername      string  `json:"tg_bot_username"`
-	TGGroupChatID      int64   `json:"tg_group_chat_id"`
-	InFleetChannel     bool    `json:"in_fleet_channel"`
 	Team               string  `json:"team"`
 	Model              string  `json:"model"`
 	ModelRefusal       string  `json:"model_refusal"`
@@ -441,11 +439,14 @@ type turn struct {
 	ContextTokens  int     `json:"context_tokens"`
 }
 
+// fleetChannel is the channel every test loop is put in, as an upgraded
+// hub's loops are in the fleet channel it became (ADR-0068): a test fleet
+// is built to talk. A test that wants a loop in no channel overrides
+// "fleet" with false; the key is the harness's own and never reaches the
+// server.
+const fleetChannel = "fleet"
+
 // createLoop makes a loop with fast-test defaults; overrides merge on top.
-// Every loop starts in the fleet channel, the first one included: a test
-// fleet is built to talk, and the server would leave a fleet's first loop
-// outside it. A test of that default overrides in_fleet_channel with nil,
-// which sends null, which the server reads as absent.
 func (s *server) createLoop(name string, overrides map[string]any) {
 	s.t.Helper()
 	req := map[string]any{
@@ -454,12 +455,26 @@ func (s *server) createLoop(name string, overrides map[string]any) {
 		"tick_interval_sec": 3600,
 		"min_wake_sec":      60,
 		"idle_timeout_sec":  2,
-		"in_fleet_channel":  true,
 	}
 	for k, v := range overrides {
 		req[k] = v
 	}
+	inFleet := req["fleet"] != false
+	delete(req, "fleet")
 	s.mustJSON("POST", "/api/loops", req, nil)
+	if inFleet {
+		s.joinChannel(fleetChannel, name)
+	}
+}
+
+// joinChannel puts a loop in a hub channel, making the channel first if
+// the hub has none of that name.
+func (srv *server) joinChannel(channel, loop string) {
+	srv.t.Helper()
+	if resp, _ := srv.do("GET", "/api/channels/"+channel, nil); resp.StatusCode == 404 {
+		srv.mustJSON("POST", "/api/channels", map[string]any{"name": channel}, nil)
+	}
+	srv.mustJSON("PUT", "/api/channels/"+channel+"/loops/"+loop, nil, nil)
 }
 
 func (s *server) message(loop, text string) {
@@ -728,4 +743,12 @@ func running(pid int) bool {
 	}
 	_, state, _ := strings.Cut(string(stat), ") ")
 	return !strings.HasPrefix(state, "Z")
+}
+
+// bindRoom binds a loop's room on a surface to one of its channels, as the
+// operator does from the loop page: no room binds itself (ADR-0068).
+func (srv *server) bindRoom(loop, surface, roomID, channel string) {
+	srv.t.Helper()
+	srv.mustJSON("PUT", "/api/loops/"+loop+"/rooms",
+		map[string]any{"surface": surface, "room_id": roomID, "channel": channel}, nil)
 }

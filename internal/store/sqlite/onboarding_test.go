@@ -42,7 +42,7 @@ func TestTraffic(t *testing.T) {
 	}
 	insert := func(message *store.Message) {
 		t.Helper()
-		message.Conversation = store.ConversationGroup
+		message.Conversation, message.Channel = store.ConversationGroup, "fleet"
 		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}

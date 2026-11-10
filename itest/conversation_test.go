@@ -17,7 +17,7 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 	// afterwards it echoes (a bare !ctx keeps the echo reply), so each
 	// turn's reply names its own inputs.
 	wsAlpha := workspaceWithScript(t, "!hang 4\n!ctx 0\n")
-	wsBeta := workspaceWithScript(t, `!send {"destination":"group","text":"@alpha group ping"}`+"\n")
+	wsBeta := workspaceWithScript(t, `!send {"destination":"channel:fleet","text":"@alpha group ping"}`+"\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("alpha", map[string]any{"workspace_path": wsAlpha})
 	s.createLoop("beta", map[string]any{"workspace_path": wsBeta})
@@ -45,7 +45,7 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 	if !strings.Contains(webTurn.ResultText, "· control_room") {
 		t.Fatalf("control_room input not labeled for the model: %s", webTurn.ResultText)
 	}
-	if !strings.Contains(groupTurn.ResultText, "· group") {
+	if !strings.Contains(groupTurn.ResultText, "· channel:fleet") {
 		t.Fatalf("group input not labeled for the model: %s", groupTurn.ResultText)
 	}
 }

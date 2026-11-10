@@ -23,9 +23,8 @@ func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
 	operator := user{ID: 6464, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
-	bound := srv.loop("alpha")
-	if bound.TGGroupChatID != groupChatID {
-		t.Fatalf("the loop was expected to be bound to the group first, got %d", bound.TGGroupChatID)
+	if got := srv.groupChannel("alpha"); got != fleetChannel {
+		t.Fatalf("the loop was expected to be bound to the group first, got %q", got)
 	}
 
 	// The operator opens the settings form, then presses save. The save is
@@ -62,8 +61,8 @@ func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
 	if !after.OwnerDMReady {
 		t.Fatal("the save reverted the owner's DM chat, captured while it was in flight")
 	}
-	if after.TGGroupChatID != groupChatID {
-		t.Fatalf("group binding = %d, want the save to have left it at %d", after.TGGroupChatID, groupChatID)
+	if got := srv.groupChannel("alpha"); got != fleetChannel {
+		t.Fatalf("the group carries %q after the save, want it left at %s", got, fleetChannel)
 	}
 	if after.TGBotUsername != botUsername("rotated") {
 		t.Fatalf("bot username = %q, want the replaced token's own", after.TGBotUsername)
@@ -79,6 +78,7 @@ func TestSavingOneFieldTouchesNoOther(t *testing.T) {
 	srv, _ := startTelegramFleet(t, operator)
 
 	before := srv.loop("alpha")
+	groupBefore := srv.groupChannel("alpha")
 	var out map[string]any
 	srv.mustJSON("PATCH", "/api/loops/alpha", map[string]any{"mission": "hold the line"}, &out)
 
@@ -86,9 +86,8 @@ func TestSavingOneFieldTouchesNoOther(t *testing.T) {
 	if after.Mission != "hold the line" {
 		t.Fatalf("mission = %q, want the edit to have landed", after.Mission)
 	}
-	if after.TGGroupChatID != before.TGGroupChatID {
-		t.Fatalf("group binding changed on a mission edit: %d -> %d",
-			before.TGGroupChatID, after.TGGroupChatID)
+	if got := srv.groupChannel("alpha"); got != groupBefore {
+		t.Fatalf("group binding changed on a mission edit: %q -> %q", groupBefore, got)
 	}
 	if after.OwnerTGUserID != before.OwnerTGUserID {
 		t.Fatalf("owner changed on a mission edit: %d -> %d",

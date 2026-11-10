@@ -110,7 +110,7 @@ the notes must keep naming what they named. The steps, in order:
    then names the last good release.
 3. **The loop that owns the cause** fixes it on `main` through a normal PR.
    Elliot (DevSecOps) opens the issue from the red run, and reports it on
-   the ci-health issue and in the fleet channel.
+   the ci-health issue and in channel `fleet`.
 4. **The operator** tags the next release through the gate above. It
    follows the patch rule in CONVENTIONS.md ("Releases"):
    vX.Y.(Z+1) when `main` holds only fixes since vX.Y.Z, and otherwise the

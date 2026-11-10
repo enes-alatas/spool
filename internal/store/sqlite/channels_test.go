@@ -29,47 +29,6 @@ func members(t *testing.T, db *DB, name string) []string {
 	return channel.LoopIDs
 }
 
-// The fleet channel exists on a fresh hub and holds every loop but the ones
-// taken out of it, through the column a loop edit writes, whichever way the
-// loop was moved.
-func TestFleetChannelMembershipIsTheLoopsOwn(t *testing.T) {
-	db := openTestDB(t)
-	ctx := context.Background()
-	createLoops(t, db, "l1", "l2")
-	if got := members(t, db, store.FleetChannel); !reflect.DeepEqual(got, []string{"l1", "l2"}) {
-		t.Fatalf("fleet channel = %v, want every loop", got)
-	}
-
-	if err := db.Channels().RemoveLoop(ctx, store.FleetChannel, "l2", 50); err != nil {
-		t.Fatal(err)
-	}
-	moved, err := db.Loops().Get(ctx, "l2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !moved.OutsideFleetChannel || moved.UpdatedAt != 50 {
-		t.Errorf("taken out through the channel, the loop reads outside=%v updated=%d", moved.OutsideFleetChannel, moved.UpdatedAt)
-	}
-	outside := true
-	if _, err := db.Loops().Edit(ctx, "l1", store.LoopEdit{OutsideFleetChannel: &outside, UpdatedAt: 60}); err != nil {
-		t.Fatal(err)
-	}
-	if got := members(t, db, store.FleetChannel); len(got) != 0 {
-		t.Errorf("fleet channel = %v after both loops left it", got)
-	}
-	if err := db.Channels().AddLoop(ctx, store.FleetChannel, "l1", 70); err != nil {
-		t.Fatal(err)
-	}
-	if got := members(t, db, store.FleetChannel); !reflect.DeepEqual(got, []string{"l1"}) {
-		t.Errorf("fleet channel = %v, want l1 back", got)
-	}
-	if err := db.Channels().AddLoop(ctx, store.FleetChannel, "nope", 80); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("an unknown loop into the fleet channel = %v, want ErrNotFound", err)
-	}
-}
-
-// Any other channel is opt-in: created empty, filled by hand, idempotent
-// both ways, and emptied by deleting it or the loop.
 func TestChannelIsOptIn(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -82,9 +41,6 @@ func TestChannelIsOptIn(t *testing.T) {
 	}
 	if err := channels.Create(ctx, &store.Channel{Name: "backend", CreatedAt: 11}); !errors.Is(err, store.ErrDuplicate) {
 		t.Errorf("a second backend = %v, want ErrDuplicate", err)
-	}
-	if err := channels.Create(ctx, &store.Channel{Name: store.FleetChannel, CreatedAt: 11}); !errors.Is(err, store.ErrDuplicate) {
-		t.Errorf("creating the fleet channel = %v, want ErrDuplicate", err)
 	}
 	if got := members(t, db, "backend"); len(got) != 0 {
 		t.Fatalf("a new channel holds %v, want nobody", got)
@@ -106,9 +62,6 @@ func TestChannelIsOptIn(t *testing.T) {
 	}
 	if err := channels.AddLoop(ctx, "nope", "l1", 22); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("an unknown channel = %v, want ErrNotFound", err)
-	}
-	if got := members(t, db, store.FleetChannel); len(got) != 3 {
-		t.Errorf("joining backend moved loops in the fleet channel: %v", got)
 	}
 
 	described, err := channels.SetDescription(ctx, "backend", "the Go core")
@@ -137,8 +90,8 @@ func TestChannelIsOptIn(t *testing.T) {
 	for _, channel := range list {
 		names = append(names, channel.Name)
 	}
-	if !reflect.DeepEqual(names, []string{store.FleetChannel, "alpha", "backend"}) {
-		t.Errorf("list order = %v, want the fleet channel first, then by name", names)
+	if !reflect.DeepEqual(names, []string{"alpha", "backend"}) {
+		t.Errorf("list order = %v, want by name", names)
 	}
 
 	if err := channels.Delete(ctx, "backend"); err != nil {
@@ -156,75 +109,104 @@ func TestChannelIsOptIn(t *testing.T) {
 	}
 }
 
-// A group message is the fleet channel's unless it names another; a
-// private one is in no channel.
+// A group message names the channel it is said in, since there is no
+// fleet channel to default to (ADR-0068); a private one is in none.
 func TestMessageChannel(t *testing.T) {
 	db := openTestDB(t)
-	group := insertMessage(t, db, &store.Message{Origin: store.OriginWeb, Text: "hi", Conversation: store.ConversationGroup})
+	if err := db.Messages().Insert(context.Background(), &store.Message{Origin: store.OriginWeb, Text: "hi",
+		Conversation: store.ConversationGroup}); err == nil {
+		t.Error("a group message naming no channel was stored")
+	}
 	private := insertMessage(t, db, &store.Message{Origin: store.OriginWeb, Text: "psst",
 		Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"})
-	for message, want := range map[*store.Message]string{group: store.FleetChannel, private: ""} {
-		got, err := db.Messages().Get(context.Background(), message.ID)
-		if err != nil {
+	got, err := db.Messages().Get(context.Background(), private.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Channel != "" {
+		t.Errorf("a private message is in channel %q, want none", got.Channel)
+	}
+}
+
+// undo0082 takes a database back to before the fleet channel became an
+// ordinary channel: group is a channel again, membership of it is the
+// loops' exception column, and nothing is in it until a test says so.
+func undo0082(t *testing.T, db *DB) {
+	t.Helper()
+	for _, statement := range []string{
+		`ALTER TABLE loops ADD COLUMN outside_fleet_channel INTEGER NOT NULL DEFAULT 0`,
+		`INSERT INTO channels (name, description, created_at) VALUES ('group', 'everyone', 7)`,
+		`DELETE FROM schema_migrations WHERE version='0082_fleet_channel_ordinary.sql'`,
+	} {
+		if _, err := db.db.Exec(statement); err != nil {
 			t.Fatal(err)
-		}
-		if got.Channel != want {
-			t.Errorf("%q is in channel %q, want %q", got.Text, got.Channel, want)
 		}
 	}
 }
 
-// unmigrate0033 returns the database to its shape before channels, so the
-// shipped migration can be replayed over an existing fleet.
-func unmigrate0033(db *DB) error {
-	for _, stmt := range append(undo0079,
-		`DROP TABLE channel_loops`,
-		`DROP TABLE channels`,
-		`ALTER TABLE messages DROP COLUMN channel`,
-		`DELETE FROM schema_migrations WHERE version='0033_channels.sql'`,
-	) {
-		if _, err := db.db.Exec(stmt); err != nil {
-			return err
+// An upgraded hub keeps its fleet channel as an ordinary channel: the same
+// members, history and bound rooms under fleet, or the first free fleet-N,
+// in no team (ADR-0068). A hub with nothing in group gets no such channel.
+func TestFleetChannelBecomesOrdinary(t *testing.T) {
+	t.Run("a hub with a fleet", func(t *testing.T) {
+		db := openTestDB(t)
+		ctx := context.Background()
+		createLoops(t, db, "l1", "l2", "l3")
+		if err := db.Channels().Create(ctx, &store.Channel{Name: "fleet", CreatedAt: 1}); err != nil {
+			t.Fatal(err)
 		}
-	}
-	return nil
-}
-
-// An existing fleet upgrades with every group message in the fleet channel,
-// every private one in none, and the fleet channel's membership as it was:
-// nobody's fleet goes quiet on upgrade.
-func TestChannelsMigrationKeepsTheFleet(t *testing.T) {
-	db := openTestDB(t)
-	ctx := context.Background()
-	createLoops(t, db, "l1", "l2")
-	outside := true
-	if _, err := db.Loops().Edit(ctx, "l2", store.LoopEdit{OutsideFleetChannel: &outside, UpdatedAt: 5}); err != nil {
-		t.Fatal(err)
-	}
-	group := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "to all",
-		Conversation: store.ConversationGroup})
-	private := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "to owner",
-		Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"})
-
-	if err := unmigrate0033(db); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.migrate(); err != nil {
-		t.Fatal(err)
-	}
-	for message, want := range map[*store.Message]string{group: store.FleetChannel, private: ""} {
-		got, err := db.Messages().Get(ctx, message.ID)
+		private := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "to owner",
+			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"})
+		undo0082(t, db)
+		said := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "to all",
+			Conversation: store.ConversationGroup, Channel: "group"})
+		for _, statement := range []string{
+			`UPDATE loops SET outside_fleet_channel=1 WHERE id='l2'`,
+			`INSERT INTO rooms (loop_id, surface, room_id, title, channel, first_seen_at, bound_at)
+				VALUES ('l1', 'telegram', '-100', 'Crew', 'group', 3, 4)`,
+		} {
+			if _, err := db.db.Exec(statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := db.migrate(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Channels().Get(ctx, store.RetiredChannel); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("group survived the upgrade: %v", err)
+		}
+		fleet, err := db.Channels().Get(ctx, "fleet-2")
+		if err != nil {
+			t.Fatalf("the fleet channel isn't fleet-2, next to the fleet the hub had: %v", err)
+		}
+		if fleet.Description != "everyone" || fleet.CreatedAt != 7 || fleet.Team != "" ||
+			!reflect.DeepEqual(fleet.LoopIDs, []string{"l1", "l3"}) {
+			t.Errorf("fleet-2 = %+v, want group's description, time and members, in no team", fleet)
+		}
+		for message, want := range map[*store.Message]string{said: "fleet-2", private: ""} {
+			got, err := db.Messages().Get(ctx, message.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Channel != want {
+				t.Errorf("%q is in channel %q after the upgrade, want %q", got.Text, got.Channel, want)
+			}
+		}
+		if got := boundRoom(t, db, "l1", store.SurfaceTelegram, "fleet-2"); got != (room{"-100", 4}) {
+			t.Errorf("l1's group = %+v after the upgrade, want -100 bound at 4", got)
+		}
+		if teams, err := db.Teams().List(ctx); err != nil || len(teams) != 0 {
+			t.Errorf("the upgrade made teams %v (%v), want none", teams, err)
+		}
+	})
+	t.Run("a fresh hub", func(t *testing.T) {
+		db := openTestDB(t)
+		channels, err := db.Channels().List(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.Channel != want {
-			t.Errorf("%q migrated into channel %q, want %q", got.Text, got.Channel, want)
+		if len(channels) != 0 {
+			t.Errorf("a fresh hub has channels %v, want none", channels)
 		}
-	}
-	if got := members(t, db, store.FleetChannel); !reflect.DeepEqual(got, []string{"l1"}) {
-		t.Errorf("fleet channel after migration = %v, want l1 alone, as before", got)
-	}
-	if _, err := db.db.Exec(`INSERT INTO channel_loops (channel, loop_id, added_at) VALUES ('group', 'l2', 1)`); err == nil {
-		t.Error("a membership row for the fleet channel was accepted beside the loops' own column")
-	}
+	})
 }

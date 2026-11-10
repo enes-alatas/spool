@@ -80,7 +80,7 @@ func sendWatchActor(t *testing.T) (*Actor, store.Store, *store.Message, <-chan b
 	}
 	failedAt := now() - 2*time.Minute.Milliseconds()
 	lost := &store.Message{TS: failedAt, Origin: store.OriginLoop, Author: "gardener", FromLoopID: "l1",
-		Text: "the roses are in", Conversation: store.ConversationGroup}
+		Text: "the roses are in", Conversation: store.ConversationGroup, Channel: "fleet"}
 	if err := st.Messages().Insert(ctx, lost); err != nil {
 		t.Fatal(err)
 	}

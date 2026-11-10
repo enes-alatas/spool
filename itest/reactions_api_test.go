@@ -17,7 +17,7 @@ func TestTheControlRoomReadsAMessagesReactions(t *testing.T) {
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const post, quiet = "@beta the build is green", "@beta and the docs too"
 	for _, text := range []string{post, quiet} {
-		if res := callSend(t, alpha, map[string]any{"destination": "group", "text": text}); res.IsError {
+		if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": text}); res.IsError {
 			t.Fatalf("send refused: %s", resultText(res))
 		}
 	}
@@ -35,7 +35,7 @@ func TestTheControlRoomReadsAMessagesReactions(t *testing.T) {
 		Emoji      string `json:"emoji"`
 		TS         int64  `json:"ts"`
 	}
-	for _, path := range []string{"/api/activity?limit=200", "/api/group", "/api/channels/group/messages"} {
+	for _, path := range []string{"/api/activity?limit=200", "/api/channels/fleet/messages"} {
 		var msgs []struct {
 			ID        int64           `json:"id"`
 			Text      string          `json:"text"`

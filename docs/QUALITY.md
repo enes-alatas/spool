@@ -39,7 +39,7 @@ counts the subprocesses it has reaped, and leaves out the claude processes
 still running, which are the loops' cost.
 Idle CPU and RSS are sampled once the fleet has settled. Wake overhead is
 sampled over three bursts of 15 asleep loops messaged at once, as a message
-to every loop in the fleet channel wakes them. Boot recovery is measured after
+to every loop in a channel wakes them. Boot recovery is measured after
 a `kill -9` with every awake loop mid-turn and every tick overdue. It runs in
 about 10s, so it is an ordinary tier-2 test that runs on every `itest` run,
 not a separate step anyone has to remember. Its budgets are the table's
@@ -214,7 +214,7 @@ window regardless of loop count (ADR-0018).
 - **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
-  walks it: login, Fleet, the fleet channel's chat, a loop page with no "Loading…"
+  walks it: login, Fleet, a channel's chat, a loop page with no "Loading…"
   left, Rules, Settings, the old Access address landing on Settings → Users
   and access, the Activity route, and the global stream's
   connection. Each check is a text or role query, never pixels. A failure keeps

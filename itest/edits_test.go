@@ -72,7 +72,7 @@ func TestATelegramEditReachesItsLoopsAsACorrection(t *testing.T) {
 		corrections[0].Conversation != "group" || len(corrections[0].DeliveredTo) != 2 {
 		t.Fatalf("the corrections stored: %s; want one, of %d, to both loops", dump(corrections), original.ID)
 	}
-	header := fmt.Sprintf("message from @operator via telegram · group · ref:%d · edited ref:%d", corrections[0].ID, original.ID)
+	header := fmt.Sprintf("message from @operator via telegram · channel:fleet · ref:%d · edited ref:%d", corrections[0].ID, original.ID)
 	srv.waitInput("alpha", header, edited)
 	srv.waitInput("beta", header, edited)
 	if got := srv.activityByID(original.ID); got.Text != said || got.EditedAt == 0 {
@@ -116,7 +116,7 @@ func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
 		ID          int64            `json:"id"`
 		Attachments []attachmentView `json:"attachments"`
 	}
-	srv.mustJSON("GET", "/api/group", nil, &group)
+	srv.mustJSON("GET", "/api/channels/fleet/messages", nil, &group)
 	var sharedFile int64
 	for _, message := range group {
 		if message.ID == original.ID && len(message.Attachments) == 1 {
@@ -150,7 +150,7 @@ func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
 		len(corrections[0].DeliveredTo) != 2 {
 		t.Fatalf("the corrections stored: %s; want one, of %d, to both loops", dump(corrections), original.ID)
 	}
-	header := fmt.Sprintf("message from @u0oper via slack · group · ref:%d · edited ref:%d", corrections[0].ID, original.ID)
+	header := fmt.Sprintf("message from @u0oper via slack · channel:fleet · ref:%d · edited ref:%d", corrections[0].ID, original.ID)
 	srv.waitInput("terra", header, readable)
 	srv.waitInput("milo", header, readable)
 	for _, message := range srv.activity() {

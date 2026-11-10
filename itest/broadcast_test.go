@@ -8,16 +8,16 @@ import (
 	"time"
 )
 
-// @all is deliberate group delivery to the eligible loops of the fleet
-// channel (#74, ADR-0025, ADR-0032): the sender never wakes itself, overlap
+// @all is deliberate group delivery to the eligible loops of a channel
+// (#74, ADR-0025, ADR-0032): the sender never wakes itself, overlap
 // with mentions and reply addressing costs one delivery, paused loops and
-// loops outside the fleet channel stay out, and private text containing @all
+// loops outside the channel stay out, and private text containing @all
 // is still private text.
 
 // A human's @all in the group reaches every eligible loop once — including
-// one with no surface, since the fleet channel is the hub's and not
-// Telegram's — and skips the loop the operator paused and the one taken out
-// of the fleet channel.
+// one with no surface, since a channel is the hub's and not Telegram's —
+// and skips the loop the operator paused and the one taken out of the
+// channel.
 func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8181, First: "Operator", Username: "operator"}
@@ -25,7 +25,7 @@ func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 	srv.createLoop("gamma", nil)
 	srv.createLoop("delta", nil)
 	srv.mustJSON("POST", "/api/loops/beta/pause", nil, nil)
-	srv.mustJSON("PATCH", "/api/loops/delta", map[string]any{"in_fleet_channel": false}, nil)
+	srv.mustJSON("DELETE", "/api/channels/fleet/loops/delta", nil, nil)
 
 	const text = "@all standup in five"
 	tg.post(groupChatID, "supergroup", text, operator)
@@ -44,7 +44,7 @@ func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 		delivered[id] = true
 	}
 	if got := len(delivered); got != 2 || !delivered[srv.loop("alpha").ID] || !delivered[srv.loop("gamma").ID] {
-		t.Fatalf("delivered_to = %v, want alpha and gamma: beta is paused and delta is outside the fleet channel",
+		t.Fatalf("delivered_to = %v, want alpha and gamma: beta is paused and delta is outside the channel",
 			stored[0].DeliveredTo)
 	}
 	for _, name := range []string{"beta", "delta"} {
@@ -62,7 +62,7 @@ func TestLoopBroadcastExcludesItselfAndDeduplicates(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8282, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@all @beta the deploy is frozen"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@all @beta the deploy is frozen"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
 	srv.message("alpha", "announce it")
@@ -149,7 +149,7 @@ func TestBroadcastDoesNotBypassTheStormGuard(t *testing.T) {
 			})
 		}
 		res := callSend(t, sess, map[string]any{
-			"destination": "group", "text": "@briar filling the quota",
+			"destination": "channel:fleet", "text": "@briar filling the quota",
 		})
 		if res.IsError {
 			t.Fatalf("send %d refused: %s", i+1, resultText(res))
@@ -157,7 +157,7 @@ func TestBroadcastDoesNotBypassTheStormGuard(t *testing.T) {
 	}
 
 	res := callSend(t, sess, map[string]any{
-		"destination": "group", "text": "@all one past the limit",
+		"destination": "channel:fleet", "text": "@all one past the limit",
 	})
 	if res.IsError {
 		t.Fatalf("broadcast refused: %s", resultText(res))

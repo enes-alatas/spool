@@ -81,11 +81,11 @@ func TestRotatingAConnectionEndsItsSessions(t *testing.T) {
 		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": retired,
 	}, nil)
 	s.mustJSON("PUT", "/api/connections/github/secret", map[string]any{"value": "ghp_fixtureCURRENTvalue0000"}, nil)
-	s.mustJSON("POST", "/api/channels/group/messages", map[string]any{"text": "the old key is " + retired}, nil)
+	s.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "the old key is " + retired}, nil)
 	var said []struct {
 		Text string `json:"text"`
 	}
-	s.mustJSON("GET", "/api/channels/group/messages", nil, &said)
+	s.mustJSON("GET", "/api/channels/fleet/messages", nil, &said)
 	if len(said) != 1 || said[0].Text != "the old key is <redacted:GH_TOKEN>" {
 		t.Errorf("a retired value was not redacted from a message: %+v", said)
 	}

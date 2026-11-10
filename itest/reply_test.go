@@ -51,7 +51,7 @@ func TestNativeReplyToLoopReachesThatLoopOnly(t *testing.T) {
 	operator := user{ID: 5151, First: "Operator", Username: "operator"}
 	// alpha answers the creation tick, then posts to the group
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@operator deploy is green"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@operator deploy is green"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
 
 	srv.message("alpha", "report")
@@ -83,10 +83,10 @@ func TestLoopReplyToPeerAddressesItAndQuotes(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta who owns the migration?"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@beta who owns the migration?"}`+"\n")
 	// beta answers its own creation tick, then replies to alpha's question
 	wsBeta := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"I do","reply_to":"$ref"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"I do","reply_to":"$ref"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator,
 		map[string]any{"workspace_path": wsAlpha}, map[string]any{"workspace_path": wsBeta})
 
@@ -125,9 +125,9 @@ func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
 	// for every later turn, and two loops that keep addressing each other
 	// would answer forever, drowning the one wake this test is counting.
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta who owns the migration?"}`+"\n!echo\n")
+		`!send {"destination":"channel:fleet","text":"@beta who owns the migration?"}`+"\n!echo\n")
 	wsBeta := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"I do","reply_to":"$ref"}`+"\n!echo\n")
+		`!send {"destination":"channel:fleet","text":"I do","reply_to":"$ref"}`+"\n!echo\n")
 	srv, tg := startTelegramFleet(t, operator,
 		map[string]any{"workspace_path": wsAlpha}, map[string]any{"workspace_path": wsBeta})
 
@@ -183,9 +183,9 @@ func TestNativeReplyInABasicGroupWakesTheAuthorItAnswers(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5757, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta PR is ready for review"}`+"\n!echo\n")
+		`!send {"destination":"channel:fleet","text":"@beta PR is ready for review"}`+"\n!echo\n")
 	wsBeta := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@operator approved, please merge","reply_to":"$ref"}`+"\n!echo\n")
+		`!send {"destination":"channel:fleet","text":"@operator approved, please merge","reply_to":"$ref"}`+"\n!echo\n")
 	srv, tg := startTelegramFleet(t, operator,
 		map[string]any{"workspace_path": wsAlpha}, map[string]any{"workspace_path": wsBeta})
 
@@ -240,7 +240,7 @@ func TestLoopReplyToHumanThreadsNatively(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5353, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@operator on it","reply_to":"$ref"}`+"\n")
+		`!send {"destination":"channel:fleet","text":"@operator on it","reply_to":"$ref"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
 
 	const asks = "@alpha can you take the migration?"
@@ -270,6 +270,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 	}
 	srv.allowOwner(tg, "alpha", operator)
 	tg.post(groupChatID, "supergroup", "binding", operator)
+	srv.bindGroup("alpha", "beta")
 	settleBindings()
 
 	const asks = "@alpha status of the index?"
@@ -291,7 +292,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 	}
 	sess := mcpSession(t, srv2, hubMCPToken(t, srv2, "alpha"))
 	res := callSend(t, sess, map[string]any{
-		"destination": "group", "text": "@operator rebuilt overnight", "reply_to": ref})
+		"destination": "channel:fleet", "text": "@operator rebuilt overnight", "reply_to": ref})
 	if res.IsError {
 		t.Fatalf("a reference minted before the restart was refused: %s", resultText(res))
 	}
@@ -312,7 +313,7 @@ func TestNativeReplyToIdenticalWordsWakesTheOneRepliedTo(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5555, First: "Operator", Username: "operator"}
 	const ack = "@operator on it"
-	ws := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"`+ack+`"}`+"\n")
+	ws := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"channel:fleet","text":"`+ack+`"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator,
 		map[string]any{"workspace_path": ws}, map[string]any{"workspace_path": ws})
 
@@ -358,7 +359,7 @@ func TestReplyPlusMentionDeliversOnceToEach(t *testing.T) {
 	}
 	briar := mcpSession(t, s, hubMCPToken(t, s, "briar"))
 	res := callSend(t, briar, map[string]any{
-		"destination": "group", "text": "@aster @dahlia planning tomorrow"})
+		"destination": "channel:fleet", "text": "@aster @dahlia planning tomorrow"})
 	if res.IsError {
 		t.Fatalf("group send refused: %s", resultText(res))
 	}
@@ -366,7 +367,7 @@ func TestReplyPlusMentionDeliversOnceToEach(t *testing.T) {
 
 	aster := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 	res = callSend(t, aster, map[string]any{
-		"destination": "group", "text": "works for me, @cedar can you join?", "reply_to": ref})
+		"destination": "channel:fleet", "text": "works for me, @cedar can you join?", "reply_to": ref})
 	if res.IsError {
 		t.Fatalf("reply refused: %s", resultText(res))
 	}
@@ -418,11 +419,11 @@ func TestReplyToUnusableReferenceIsRefused(t *testing.T) {
 		code string
 	}{
 		{"not a reference", map[string]any{
-			"destination": "group", "text": "@briar hi", "reply_to": "the last one"}, "unknown_reply_to"},
+			"destination": "channel:fleet", "text": "@briar hi", "reply_to": "the last one"}, "unknown_reply_to"},
 		{"a reference to nothing", map[string]any{
-			"destination": "group", "text": "@briar hi", "reply_to": "ref:999999"}, "unknown_reply_to"},
+			"destination": "channel:fleet", "text": "@briar hi", "reply_to": "ref:999999"}, "unknown_reply_to"},
 		{"a reference from another conversation", map[string]any{
-			"destination": "group", "text": "@briar hi", "reply_to": private}, "cross_conversation_reply_to"},
+			"destination": "channel:fleet", "text": "@briar hi", "reply_to": private}, "cross_conversation_reply_to"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			res := callSend(t, aster, c.args)
@@ -451,7 +452,7 @@ func TestReplyTargetsTheNamedMessageNotTheLatest(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		if res := callSend(t, briar, map[string]any{
-			"destination": "group", "text": "@aster ping"}); res.IsError {
+			"destination": "channel:fleet", "text": "@aster ping"}); res.IsError {
 			t.Fatalf("send %d refused: %s", i, resultText(res))
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -469,7 +470,7 @@ func TestReplyTargetsTheNamedMessageNotTheLatest(t *testing.T) {
 
 	aster := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 	if res := callSend(t, aster, map[string]any{
-		"destination": "group", "text": "pong", "reply_to": messageRef(older)}); res.IsError {
+		"destination": "channel:fleet", "text": "pong", "reply_to": messageRef(older)}); res.IsError {
 		t.Fatalf("reply to the older message refused: %s", resultText(res))
 	}
 	for _, m := range s.activity() {

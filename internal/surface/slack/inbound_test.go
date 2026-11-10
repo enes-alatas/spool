@@ -68,6 +68,18 @@ func inboundFixtureLogging(t *testing.T, out io.Writer) (*Adapter, store.Store, 
 			t.Fatal(err)
 		}
 	}
+	// both apps carry the channel fleet in C0FLEET, as an operator bound it
+	if err := db.Channels().Create(ctx, &store.Channel{Name: "fleet", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"loop_terra", "loop_milo"} {
+		if err := db.Channels().AddLoop(ctx, "fleet", id, 1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Rooms().Bind(ctx, id, store.SurfaceSlack, "C0FLEET", "fleet", 1); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := db.SlackSenders().Create(ctx, &store.SlackSender{SlackUserID: "U0ALICE", TeamID: "T0ACME",
 		Username: "alice", Display: "Alice", Status: store.SenderAllowed, CreatedAt: 1, UpdatedAt: 1}); err != nil {
 		t.Fatal(err)
@@ -168,21 +180,35 @@ func TestIngestDropsWhatNoHumanSaid(t *testing.T) {
 	}
 }
 
-// A loop's app hears one channel: the first an allowed sender speaks in
-// binds it, and a message from any other is counted rather than ingested.
-func TestAppHearsTheChannelItBound(t *testing.T) {
+// A loop's app binds no channel by itself (ADR-0068): a Slack channel it
+// first hears an allowed sender in is recorded unbound and nothing is
+// ingested, while the channel the operator bound carries its hub channel.
+func TestAppHearsOnlyTheChannelsBound(t *testing.T) {
 	adapter, db, _ := inboundFixture(t)
 	ctx := context.Background()
 	heard := &link{loopID: "loop_terra"}
-	adapter.ingest(ctx, heard, channelEvent("U0ALICE", "first", "1.1"))
-	if bound := fleetRoomID(t, db, "loop_terra"); bound != "C0FLEET" {
-		t.Fatalf("bound to %q, want C0FLEET", bound)
+	unbound, _ := json.Marshal(map[string]any{"team_id": "T0ACME", "event": map[string]any{
+		"type": "message", "channel_type": "channel", "channel": "C0NEW", "user": "U0ALICE", "text": "first", "ts": "1.1"}})
+	adapter.ingest(ctx, heard, unbound)
+	rooms, err := db.Rooms().List(ctx, "loop_terra")
+	if err != nil {
+		t.Fatal(err)
 	}
-	elsewhere, _ := json.Marshal(map[string]any{"team_id": "T0ACME", "event": map[string]any{
-		"type": "message", "channel_type": "channel", "channel": "C0RANDOM", "user": "U0ALICE", "text": "second", "ts": "1.2"}})
-	adapter.ingest(ctx, heard, elsewhere)
-	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 1 || msgs[0].Text != "first" {
-		t.Fatalf("stored %+v, want the bound channel's message only", msgs)
+	var recorded bool
+	for _, room := range rooms {
+		if room.RoomID == "C0NEW" {
+			recorded = true
+			if room.Channel != "" {
+				t.Errorf("the first channel heard bound itself to %q", room.Channel)
+			}
+		}
+	}
+	if !recorded {
+		t.Error("the new channel was not recorded for the operator to bind")
+	}
+	adapter.ingest(ctx, heard, channelEvent("U0ALICE", "second", "1.2"))
+	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 1 || msgs[0].Text != "second" || msgs[0].Channel != "fleet" {
+		t.Fatalf("stored %+v, want the bound channel's message only, in fleet", msgs)
 	}
 	if status := heard.status(); status["ignored_events"] != 1 {
 		t.Errorf("ignored_events = %v, want 1", status["ignored_events"])
@@ -208,9 +234,6 @@ func TestAStrangerIsRegisteredOnlyByALink(t *testing.T) {
 	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 0 || got.count("loop_terra") != 0 {
 		t.Errorf("a stranger's message was stored or delivered")
 	}
-	if bound := fleetRoomID(t, db, "loop_terra"); bound != "" {
-		t.Errorf("a stranger bound the app to %q", bound)
-	}
 
 	if err := db.Users().Create(ctx, &store.User{ID: "u-bea", Name: "bea", Role: store.RoleMember,
 		PasswordHash: "x", CreatedAt: 1}); err != nil {
@@ -230,18 +253,4 @@ func TestAStrangerIsRegisteredOnlyByALink(t *testing.T) {
 	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 0 {
 		t.Errorf("the code or the YES was stored as a message: %d", len(msgs))
 	}
-}
-
-// fleetRoomID is the Slack channel the loop's app carries the fleet
-// channel in, "" for none.
-func fleetRoomID(t *testing.T, db store.Store, loopID string) string {
-	t.Helper()
-	rooms, err := db.Rooms().List(context.Background(), loopID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if room := store.BoundRoom(rooms, store.SurfaceSlack, store.FleetChannel); room != nil {
-		return room.RoomID
-	}
-	return ""
 }

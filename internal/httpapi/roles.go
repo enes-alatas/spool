@@ -39,7 +39,7 @@ var memberRoutes = []string{
 	"GET /api/loops/{name}/conversation", "GET /api/loops/{name}/conversations",
 	"GET /api/loops/{name}/connection-events",
 	"GET /api/loops/{name}/stream", "GET /api/stream", "GET /api/activity", "GET /api/changes",
-	"GET /api/attachments/{id}", "GET /api/undelivered", "GET /api/group",
+	"GET /api/attachments/{id}", "GET /api/undelivered",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",
 	"GET /api/channels", "GET /api/channels/{name}", "GET /api/channels/{name}/messages",
 	"GET /api/teams", "GET /api/teams/{name}",
@@ -47,7 +47,7 @@ var memberRoutes = []string{
 	"GET /api/rules", "GET /api/models", "GET /api/telegram/senders", "GET /api/slack/senders",
 
 	"POST /api/loops/{name}/message", "POST /api/loops/{name}/wake",
-	"POST /api/group", "POST /api/channels/{name}/messages", "POST " + uploadPath,
+	"POST /api/channels/{name}/messages", "POST " + uploadPath,
 
 	// Any user may add a Claude login of their own (ADR-0060); a handler that
 	// changes one asks whether the caller is its owner or an admin.

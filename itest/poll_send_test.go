@@ -65,10 +65,10 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 		{ballot, "@beta " + strings.Repeat("q", 300), "invalid_poll"},
 		{ballot, "", "empty_text"},
 	} {
-		wantSendError(t, callSend(t, alpha, map[string]any{"destination": "group", "text": refused.text, "poll": refused.poll}), refused.code)
+		wantSendError(t, callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": refused.text, "poll": refused.poll}), refused.code)
 	}
 
-	res := callSend(t, alpha, map[string]any{"destination": "group", "text": question, "poll": ballot})
+	res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": question, "poll": ballot})
 	if res.IsError {
 		t.Fatalf("poll refused: %s", resultText(res))
 	}
@@ -98,16 +98,16 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 		args map[string]any
 		code string
 	}{
-		{map[string]any{"destination": "group", "reply_to": ref, "vote": []int{3}}, "invalid_vote"},
-		{map[string]any{"destination": "group", "reply_to": ref, "vote": []int{1, 2}}, "invalid_vote"},
-		{map[string]any{"destination": "group", "reply_to": ref, "vote": []int{1}, "text": "yes!"}, "poll_send_carries_nothing_else"},
-		{map[string]any{"destination": "group", "vote": []int{1}}, "unknown_reply_to"},
-		{map[string]any{"destination": "group", "reply_to": ref, "vote": []int{1}, "react": "👍"}, "one_kind_of_send"},
-		{map[string]any{"destination": "group", "close_poll": ref}, "not_poll_author"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{3}}, "invalid_vote"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{1, 2}}, "invalid_vote"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{1}, "text": "yes!"}, "poll_send_carries_nothing_else"},
+		{map[string]any{"destination": "channel:fleet", "vote": []int{1}}, "unknown_reply_to"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{1}, "react": "👍"}, "one_kind_of_send"},
+		{map[string]any{"destination": "channel:fleet", "close_poll": ref}, "not_poll_author"},
 	} {
 		wantSendError(t, callSend(t, beta, refused.args), refused.code)
 	}
-	res = callSend(t, beta, map[string]any{"destination": "group", "reply_to": ref, "vote": []int{2}})
+	res = callSend(t, beta, map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{2}})
 	if res.IsError || !strings.Contains(resultText(res), `"voted_in":"`+ref+`"`) {
 		t.Fatalf("beta's vote refused or unreported: %s", resultText(res))
 	}
@@ -128,8 +128,8 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 		t.Fatalf("the votes do not lead the turn's envelopes:\n%s", told.ResultText)
 	}
 	for _, want := range []string{
-		fmt.Sprintf("beta chose 2. no in your poll %s in group", ref),
-		fmt.Sprintf("chose 1. yes in your poll %s in group", ref),
+		fmt.Sprintf("beta chose 2. no in your poll %s in channel:fleet", ref),
+		fmt.Sprintf("chose 1. yes in your poll %s in channel:fleet", ref),
 		"ship on friday?",
 	} {
 		if !strings.Contains(told.ResultText, want) {
@@ -138,7 +138,7 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 	}
 
 	srv.waitState("alpha", "asleep", 60*time.Second)
-	res = callSend(t, alpha, map[string]any{"destination": "group", "close_poll": ref})
+	res = callSend(t, alpha, map[string]any{"destination": "channel:fleet", "close_poll": ref})
 	if res.IsError || !strings.Contains(resultText(res), `"closed":"`+ref+`"`) {
 		t.Fatalf("close refused or unreported: %s", resultText(res))
 	}
@@ -146,8 +146,8 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 		_, stopped := tg.polls()
 		return slices.Contains(stopped, setReaction{Token: "alpha", ChatID: groupChatID, MessageID: sent.MessageID})
 	})
-	wantSendError(t, callSend(t, beta, map[string]any{"destination": "group", "reply_to": ref, "vote": []int{1}}), "poll_closed")
-	wantSendError(t, callSend(t, alpha, map[string]any{"destination": "group", "close_poll": ref}), "poll_closed")
+	wantSendError(t, callSend(t, beta, map[string]any{"destination": "channel:fleet", "reply_to": ref, "vote": []int{1}}), "poll_closed")
+	wantSendError(t, callSend(t, alpha, map[string]any{"destination": "channel:fleet", "close_poll": ref}), "poll_closed")
 
 	again := time.Now().UnixMilli()
 	srv.message("alpha", "and now")
@@ -155,7 +155,7 @@ func TestALoopPollsVotesAndCloses(t *testing.T) {
 		return tn.EndedAt >= again && strings.Contains(tn.ResultText, "and now")
 	})
 	for _, want := range []string{
-		fmt.Sprintf("your poll %s in group, %q has closed. The result:", ref, question),
+		fmt.Sprintf("your poll %s in channel:fleet, %q has closed. The result:", ref, question),
 		"\n  1. yes: 1 (operator)",
 		"\n  2. no: 1 (beta)",
 	} {

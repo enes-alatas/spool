@@ -12,7 +12,7 @@ import (
 // The operator posts into a channel from the control room (#549), which is
 // in every channel. The post wakes the loops its text addresses among the
 // channel's own, stays in that channel's timeline, and never reaches the
-// fleet channel's. A reply must answer a message of the same channel, and a
+// timeline of fleet. A reply must answer a message of the same channel, and a
 // channel that does not exist is refused, as a send to it is.
 func TestOperatorPostsIntoAChannel(t *testing.T) {
 	t.Parallel()
@@ -47,10 +47,10 @@ func TestOperatorPostsIntoAChannel(t *testing.T) {
 		t.Fatalf("the post = %s, want the operator's web post in backend, delivered to aster alone", dump(m))
 	}
 	var group []activityMessage
-	s.mustJSON("GET", "/api/group", nil, &group)
+	s.mustJSON("GET", "/api/channels/fleet/messages", nil, &group)
 	for _, m := range group {
 		if m.Text == post {
-			t.Fatalf("a post into backend is in the fleet channel's timeline: %s", dump(m))
+			t.Fatalf("a post into backend is in fleet's timeline: %s", dump(m))
 		}
 	}
 	for _, tn := range s.completed("cedar") {
@@ -60,17 +60,17 @@ func TestOperatorPostsIntoAChannel(t *testing.T) {
 	}
 
 	// A reply addresses its target's author, which has to be a message of
-	// this channel: one from the fleet channel is refused.
-	if resp, body := s.do("POST", "/api/group", map[string]any{"text": "a fleet-wide note"}); resp.StatusCode != 202 {
-		t.Fatalf("posting to the fleet channel = %d %s", resp.StatusCode, body)
+	// this channel: one from fleet is refused.
+	if resp, body := s.do("POST", "/api/channels/fleet/messages", map[string]any{"text": "a fleet-wide note"}); resp.StatusCode != 202 {
+		t.Fatalf("posting to fleet = %d %s", resp.StatusCode, body)
 	}
 	fleet := s.activityWith("a fleet-wide note")
 	if len(fleet) != 1 {
-		t.Fatalf("the fleet channel post stored %d times, want 1", len(fleet))
+		t.Fatalf("the fleet post stored %d times, want 1", len(fleet))
 	}
 	resp, body := s.do("POST", "/api/channels/backend/messages", map[string]any{"text": "crossing over", "reply_to_id": fleet[0].ID})
 	if resp.StatusCode != 400 || errorCode(body) != "cross_conversation_reply_to" {
-		t.Fatalf("replying in backend to a fleet channel post = %d %s, want 400 cross_conversation_reply_to", resp.StatusCode, body)
+		t.Fatalf("replying in backend to a fleet post = %d %s, want 400 cross_conversation_reply_to", resp.StatusCode, body)
 	}
 	const reply = "and the migration with it"
 	if resp, body := s.do("POST", "/api/channels/backend/messages", map[string]any{"text": reply, "reply_to_id": timeline[0].ID}); resp.StatusCode != 202 {
@@ -85,12 +85,6 @@ func TestOperatorPostsIntoAChannel(t *testing.T) {
 		}
 	}
 
-	// The fleet channel answers the same route, as it does the others.
-	if resp, body := s.do("POST", "/api/channels/group/messages", map[string]any{"text": "the same post, by name"}); resp.StatusCode != 202 {
-		t.Fatalf("posting into group by name = %d %s, want 202", resp.StatusCode, body)
-	}
-	s.mustJSON("GET", "/api/group", nil, &group)
-	if !slices.ContainsFunc(group, func(m activityMessage) bool { return m.Text == "the same post, by name" }) {
-		t.Fatalf("a post into group by name is missing from the fleet channel's timeline: %s", dump(group))
-	}
+	// group is no channel any more (ADR-0068): a post to it has no one to hear it.
+	s.wantRefusal("POST", "/api/channels/group/messages", map[string]any{"text": "into the old fleet channel"}, 404, "channel_not_found")
 }

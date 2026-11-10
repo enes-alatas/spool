@@ -104,10 +104,6 @@ type link struct {
 	// to the app, "" once it hands one over, kept or not (#480).
 	lastFileError string
 	ignored       int // messages from channels it has no bound room in
-	// channelName is the bound channel's name, asked of Slack when the
-	// link starts and when the app binds, so a rename shows after the
-	// next reconnect. "" until Slack has answered.
-	channelName string
 }
 
 // status is the link as the control room renders it (#230).
@@ -120,7 +116,6 @@ func (link *link) status() map[string]any {
 		"last_error":      link.lastError,
 		"last_file_error": link.lastFileError,
 		"ignored_events":  link.ignored,
-		"channel_name":    link.channelName,
 	}
 }
 
@@ -145,13 +140,6 @@ func (link *link) received() {
 	link.mu.Lock()
 	defer link.mu.Unlock()
 	link.lastEventAt = time.Now().UnixMilli()
-}
-
-// named records the bound channel's name.
-func (link *link) named(name string) {
-	link.mu.Lock()
-	defer link.mu.Unlock()
-	link.channelName = name
 }
 
 // ignore counts a message from a channel the loop's app does not hear.

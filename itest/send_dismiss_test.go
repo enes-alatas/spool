@@ -20,8 +20,8 @@ func TestALoopDismissesItsOwnLostSend(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7784, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
-		`!send {"destination":"control_room","dismiss":"$ref"} !send {"destination":"group","dismiss":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"control_room","dismiss":"$ref"} !send {"destination":"channel:fleet","dismiss":"$ref"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 

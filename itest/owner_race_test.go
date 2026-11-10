@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -10,11 +11,11 @@ import (
 type ownedLoop struct {
 	Name        string `json:"name"`
 	OwnerTGUser int64  `json:"owner_tg_user_id"`
-	TGGroupChat int64  `json:"tg_group_chat_id"`
 }
 
 // Allowing the operator adopts every ownerless loop, and it happens while
-// the bots are handling the same group message that binds them. A link
+// the bots are handling the same group message that records the group
+// for them (ADR-0068). A link
 // allows them now (ADR-0051), so the allow is their YES. Both wrote the
 // whole loops row, so whichever landed second put the other's column back —
 // and a loop whose owner went to 0 refuses the operator's DMs from then on,
@@ -45,7 +46,7 @@ func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
 	tg.waitSent(t, operator.ID, "Reply YES")
 
 	// The two writers, together: the YES adopts every ownerless loop while
-	// the bots bind themselves to the group. The link is answered once
+	// the bots record the group. The link is answered once
 	// adoption has run, so anything that reverts an owner after this point
 	// is the poller's write landing second.
 	go tg.post(groupChatID, "supergroup", "binding", operator)
@@ -53,10 +54,8 @@ func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
 	tg.waitSent(t, operator.ID, "now linked to oper")
 
 	// One more message, now certainly from an allowed sender, so every bot
-	// binds whether or not the racing one arrived before the allowlist
-	// committed. A bind reads the row it is about to write, so if an earlier
-	// one already reverted the owner this writes the 0 back rather than
-	// repairing it — waiting for the binding is safe, and it is what tells us
+	// records the group whether or not the racing one arrived before the allowlist
+	// committed. Waiting for the record is safe, and it is what tells us
 	// both writers have finished rather than guessing with a sleep.
 	tg.post(groupChatID, "supergroup", "settle", operator)
 
@@ -67,21 +66,21 @@ func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
 			var l ownedLoop
 			srv.mustJSON("GET", "/api/loops/"+name, nil, &l)
 			owners[name] = l.OwnerTGUser
-			if l.TGGroupChat == groupChatID {
+			if _, ok := srv.room(name, strconv.FormatInt(groupChatID, 10)); ok {
 				bound++
 			}
 		}
 		if bound == len(names) {
 			for _, name := range names {
 				if owners[name] != operator.ID {
-					t.Errorf("%s owner = %d, want %d — the group bind reverted it",
+					t.Errorf("%s owner = %d, want %d — the group's record reverted it",
 						name, owners[name], operator.ID)
 				}
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("only %d of %d loops bound to the group; the race never ran", bound, len(names))
+			t.Fatalf("only %d of %d loops recorded the group; the race never ran", bound, len(names))
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

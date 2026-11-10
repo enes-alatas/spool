@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -251,18 +250,4 @@ func (server *Server) roomsChanged(r *http.Request, loopID string) {
 	server.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopID, Payload: map[string]any{
 		"loop_id": loopID, "name": updated.Name, "rooms_changed": true,
 	}})
-}
-
-// fleetRoom is the id of the room the loop's identity on surface carries
-// the fleet channel in, "" when none is bound or its rooms can't be read.
-func (server *Server) fleetRoom(ctx context.Context, loopRecord *store.Loop, surface string) string {
-	rooms, err := server.Store.Rooms().List(ctx, loopRecord.ID)
-	if err != nil {
-		server.Log.Warn("read rooms for the fleet channel's room", "loop", loopRecord.Name, "err", err)
-		return ""
-	}
-	if room := store.BoundRoom(rooms, surface, store.FleetChannel); room != nil {
-		return room.RoomID
-	}
-	return ""
 }

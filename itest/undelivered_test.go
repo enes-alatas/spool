@@ -30,7 +30,7 @@ func TestUndeliveredListsWhatTheBadgeCounts(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7755, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -108,7 +108,7 @@ func TestUndeliveredScopesToOneLoop(t *testing.T) {
 	// loop and a group message has to name someone other than its sender.
 	say := func(to string) map[string]any {
 		return map[string]any{"workspace_path": workspaceWithScript(t, "!ctx 0\n"+
-			`!send {"destination":"group","text":"@`+to+` this will not arrive"}`+"\n"+
+			`!send {"destination":"channel:fleet","text":"@`+to+` this will not arrive"}`+"\n"+
 			"!echo\n")}
 	}
 	srv, tg := startTelegramFleet(t, operator, say("beta"), say("alpha"))

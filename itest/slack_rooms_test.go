@@ -10,7 +10,7 @@ import (
 )
 
 // A second Slack channel the apps hear from is recorded unbound, under the
-// name Slack gives it, and ingests nothing, the fleet channel's room
+// name Slack gives it, and ingests nothing, fleet's room
 // staying where it was. Once the operator binds it to a channel, the
 // channel's posts go there and not to the fleet room, a person's message
 // there arrives as the channel's, stored once, and a reply by ref threads
@@ -23,7 +23,7 @@ func TestASlackRoomCarriesItsChannel(t *testing.T) {
 		slack.pushMessage(t, app, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
 	}
 	for _, name := range []string{"terra", "milo"} {
-		srv.waitSlackLink(name, func(link slackStatus) bool { return link.ChannelID == slackChannel })
+		srv.waitRoom(name, slackChannel)
 	}
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "backend"}, nil)
 	for _, name := range []string{"terra", "milo"} {
@@ -48,7 +48,7 @@ func TestASlackRoomCarriesItsChannel(t *testing.T) {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
-		if fleet, ok := srv.room(name, slackChannel); !ok || fleet.Channel != "group" {
+		if fleet, ok := srv.room(name, slackChannel); !ok || fleet.Channel != fleetChannel {
 			t.Fatalf("a second channel moved %s's fleet room: %+v", name, srv.rooms(name))
 		}
 	}
@@ -64,7 +64,7 @@ func TestASlackRoomCarriesItsChannel(t *testing.T) {
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 	for _, send := range []map[string]any{
 		{"destination": "channel:backend", "text": "@milo backend words"},
-		{"destination": "group", "text": "@milo fleet words"},
+		{"destination": "channel:fleet", "text": "@milo fleet words"},
 	} {
 		if res := callSend(t, terra, send); res.IsError {
 			t.Fatalf("send %v refused: %s", send, resultText(res))
@@ -74,7 +74,7 @@ func TestASlackRoomCarriesItsChannel(t *testing.T) {
 		t.Fatalf("the channel's post = %+v, want terra's app in %s", post, backendRoom)
 	}
 	if post := slack.waitPost(t, "fleet words"); post.Channel != slackChannel {
-		t.Fatalf("the fleet channel's post = %+v, want it in %s", post, slackChannel)
+		t.Fatalf("fleet's post = %+v, want it in %s", post, slackChannel)
 	}
 	for _, taken := range slack.postsTaken() {
 		if strings.Contains(taken.Text, "backend words") && taken.Channel != backendRoom {

@@ -479,14 +479,12 @@ const (
 var terraBot = slackBot{UserID: "U0TERRA", Name: "terra", TeamID: "T0ACME", TeamName: "Acme"}
 
 type slackStatus struct {
-	Configured  bool   `json:"configured"`
-	BotUserID   string `json:"bot_user_id"`
-	BotName     string `json:"bot_name"`
-	TeamID      string `json:"team_id"`
-	TeamName    string `json:"team_name"`
-	ChannelID   string `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-	Bridge      struct {
+	Configured bool   `json:"configured"`
+	BotUserID  string `json:"bot_user_id"`
+	BotName    string `json:"bot_name"`
+	TeamID     string `json:"team_id"`
+	TeamName   string `json:"team_name"`
+	Bridge     struct {
 		Connected     bool   `json:"connected"`
 		LastEventAt   int64  `json:"last_event_at"`
 		LastError     string `json:"last_error"`
@@ -534,7 +532,7 @@ func TestSlackAppAttachesAndDetaches(t *testing.T) {
 	var status slackStatus
 	srv.mustJSON("GET", "/api/loops/terra/slack/status", nil, &status)
 	if !status.Configured || status.BotUserID != "U0TERRA" || status.BotName != "terra" ||
-		status.TeamID != "T0ACME" || status.TeamName != "Acme" || status.ChannelID != "" {
+		status.TeamID != "T0ACME" || status.TeamName != "Acme" {
 		t.Errorf("status = %+v", status)
 	}
 	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })

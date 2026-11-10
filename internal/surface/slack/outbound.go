@@ -17,8 +17,8 @@ import (
 	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
-// Outbound: a loop's words reach Slack as its own app's posts, in its
-// channel for the fleet channel and in its owner's DM for owner_dm. Only a
+// Outbound: a loop's words reach Slack as its own app's posts, in the
+// Slack channel a bound room carries and in its owner's DM for owner_dm. Only a
 // loop's words: nothing the operator writes leaves the hub (ADR-0032).
 
 const (
@@ -197,12 +197,8 @@ func (adapter *Adapter) setReaction(ctx context.Context, loopID string, reaction
 }
 
 // roomOf is the Slack channel a loop's app carries a hub channel in, ""
-// for none, read from its rooms. A message in no channel is the fleet
-// channel's.
+// for none, read from its rooms.
 func (adapter *Adapter) roomOf(ctx context.Context, loopRecord *store.Loop, channel string) string {
-	if channel == "" {
-		channel = store.FleetChannel
-	}
 	rooms, err := adapter.store.Rooms().List(ctx, loopRecord.ID)
 	if err != nil {
 		adapter.log.Warn("slack: read rooms for delivery", "loop", loopRecord.Name, "err", err)

@@ -91,13 +91,15 @@ Slack connects out over Socket Mode, so no port is opened for either
   of 50 wrong codes an hour. Allowed and linked people are unaffected, the
   other surface still links, the hub logs the pause, and an admin reads it
   in `GET /api/strangers` and can lift it (ADR-0051, #789).
-- **The first group in which a loop's bot hears an allowed sender becomes
-  its fleet channel** while it has none, for a loop in the fleet channel; a
-  loop the operator took out records it unbound, to bind from its page
-  (ADR-0038, #1424). A stranger cannot bind one.
+- **No room binds itself.** The first message from a group or Slack channel
+  a loop has no room for records the room unbound, with its title, for the
+  operator to bind to one of the loop's channels from its page (ADR-0068).
+  A bound room mirrors its channel to everyone in that chat, so only the
+  operator chooses who reads a channel. A stranger's message records
+  nothing.
 - **An allowed person adding a loop's bot to a Telegram group makes the
-  group known to the loop,** as their first message there would: it binds
-  as above, or is recorded unbound for the loop page (#1320). Telegram
+  group known to the loop,** as their first message there would: it is
+  recorded unbound for the loop page (#1320, ADR-0068). Telegram
   names who added the bot, not who made the group or who is in it, so the
   check is on the adder. An allowed person can therefore bring a loop
   into a group full of strangers, as their message there always could.

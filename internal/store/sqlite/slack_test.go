@@ -50,7 +50,7 @@ func TestLoopSlackIdentity(t *testing.T) {
 		t.Fatalf("identity did not round-trip: %+v", attached)
 	}
 
-	if _, err := database.Rooms().Bind(ctx, "l1", store.SurfaceSlack, "C0FLEET", store.FleetChannel, 3); err != nil {
+	if _, err := database.Rooms().Bind(ctx, "l1", store.SurfaceSlack, "C0FLEET", store.RetiredChannel, 3); err != nil {
 		t.Fatal(err)
 	}
 	if err := loops.SetSlackOwner(ctx, "l1", "U0OWNER", "", 4); err != nil {
@@ -66,7 +66,7 @@ func TestLoopSlackIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if edited.SlackBotToken == "" || fleetRoom(t, database, "l1", store.SurfaceSlack) != (room{"C0FLEET", 3}) ||
+	if edited.SlackBotToken == "" || boundRoom(t, database, "l1", store.SurfaceSlack, store.RetiredChannel) != (room{"C0FLEET", 3}) ||
 		edited.OwnerSlackUserID != "U0OWNER" || edited.OwnerSlackDMChannel != "D0OWNER" {
 		t.Fatalf("an unrelated edit touched the Slack columns: %+v", edited)
 	}
@@ -76,7 +76,7 @@ func TestLoopSlackIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if detached.SlackAppToken != "" || detached.SlackBotToken != "" || detached.SlackBotUserID != "" ||
-		detached.SlackTeamID != "" || fleetRoom(t, database, "l1", store.SurfaceSlack) != (room{}) {
+		detached.SlackTeamID != "" || boundRoom(t, database, "l1", store.SurfaceSlack, store.RetiredChannel) != (room{}) {
 		t.Fatalf("detach left part of the app behind: %+v", detached)
 	}
 	if detached.OwnerSlackUserID != "U0OWNER" {

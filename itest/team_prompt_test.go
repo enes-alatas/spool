@@ -15,8 +15,8 @@ import (
 func TestThePromptNamesTheLoopsTeam(t *testing.T) {
 	t.Parallel()
 	hub := startServer(t, t.TempDir())
-	hub.createLoop("aster", map[string]any{"workspace_path": workspaceWithScript(t, "!echo\n"), "workspace_mode": "dir"})
-	hub.createLoop("briar", map[string]any{"workspace_path": workspaceWithScript(t, "!sysprompt\n"), "workspace_mode": "dir"})
+	hub.createLoop("aster", map[string]any{"workspace_path": workspaceWithScript(t, "!echo\n"), "workspace_mode": "dir", "fleet": false})
+	hub.createLoop("briar", map[string]any{"workspace_path": workspaceWithScript(t, "!sysprompt\n"), "workspace_mode": "dir", "fleet": false})
 
 	at := time.Now().UnixMilli()
 	hub.message("briar", "who is there")
@@ -39,7 +39,7 @@ func TestThePromptNamesTheLoopsTeam(t *testing.T) {
 	}).ResultText
 	want := "- You are in the team red — Builds the hub.\n" +
 		"  Its channels come first below, and only its loops can be in them.\n" +
-		"- Your other channels, each its own conversation:"
+		"- Your channels, each its own conversation:"
 	if !strings.Contains(note, want) {
 		t.Fatalf("aster's wake lacks %q:\n%s", want, note)
 	}

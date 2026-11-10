@@ -49,7 +49,7 @@
 2 itest/broadcast_test.go
 4 itest/catalog_test.go
 1 itest/channel_mirror_test.go
-4 itest/channel_post_test.go
+3 itest/channel_post_test.go
 7 itest/channel_send_test.go
 4 itest/channels_test.go
 5 itest/claude_proxy_test.go
@@ -72,7 +72,6 @@
 1 itest/edits_test.go
 2 itest/egress_settings_test.go
 30 itest/engine_test.go
-12 itest/fleet_channel_test.go
 39 itest/harness_test.go
 8 itest/health_test.go
 4 itest/hook_test.go

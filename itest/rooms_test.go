@@ -55,8 +55,8 @@ func TestRoomsRoundTrip(t *testing.T) {
 	}
 
 	fleet, ok := srv.room("alpha", strconv.FormatInt(groupChatID, 10))
-	if !ok || fleet.Channel != "group" || fleet.Surface != "telegram" || fleet.BoundAt == 0 {
-		t.Fatalf("alpha's rooms = %+v, want the fleet channel's group bound", srv.rooms("alpha"))
+	if !ok || fleet.Channel != fleetChannel || fleet.Surface != "telegram" || fleet.BoundAt == 0 {
+		t.Fatalf("alpha's rooms = %+v, want fleet's group bound", srv.rooms("alpha"))
 	}
 
 	const backendRoom int64 = -1009000000001
@@ -65,7 +65,7 @@ func TestRoomsRoundTrip(t *testing.T) {
 	if bound.Channel != "backend" || bound.Title != "" || bound.BoundAt == 0 {
 		t.Fatalf("bound by id = %+v, want an untitled room bound to backend", bound)
 	}
-	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, "group"), 409, "room_in_use")
+	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, fleetChannel), 409, "room_in_use")
 	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, "backend"), 200, "")
 	srv.wantRefusal("PUT", "/api/loops/alpha/rooms", roomBody(-1009000000002, "release"), 400, "channel_not_found")
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "release"}, nil)
@@ -116,7 +116,7 @@ func (tg *fakeTelegram) nameChat(chatID int64, title string) {
 }
 
 // A second Telegram group the bots hear from is recorded unbound and
-// ingests nothing, the fleet channel's group staying where it was. Once the
+// ingests nothing, fleet's group staying where it was. Once the
 // operator binds it to a channel, the channel's posts go there and not to
 // the fleet room, a person there is a recipient, and a person's message
 // there arrives as the channel's, stored once and addressed among its loops
@@ -149,8 +149,8 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
-		if loop := srv.loop(name); loop.TGGroupChatID != groupChatID {
-			t.Fatalf("a second group moved %s's fleet room to %d", name, loop.TGGroupChatID)
+		if got := srv.groupChannel(name); got != fleetChannel {
+			t.Fatalf("a second group moved %s's first group off fleet: %q", name, got)
 		}
 	}
 	if got := srv.activityWith(unbound); len(got) != 0 {
@@ -165,7 +165,7 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	for _, send := range []map[string]any{
 		{"destination": "channel:backend", "text": "@beta backend words"},
-		{"destination": "group", "text": "@beta fleet words"},
+		{"destination": "channel:fleet", "text": "@beta fleet words"},
 	} {
 		if res := callSend(t, alpha, send); res.IsError {
 			t.Fatalf("send %v refused: %s", send, resultText(res))
@@ -218,18 +218,24 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 		t.Errorf("the reply was posted unthreaded: %+v", sent)
 	}
 
-	// A loop in the channel with no room of its own reaches no person there:
-	// woken by a person through another loop's room, its reply to them is
-	// refused rather than said on the hub alone, where nobody reads it.
+	// A loop in the channel with no room of its own still reaches a person
+	// there: woken by a person through another loop's room, its reply to
+	// them is kept on the hub, where the channel's timeline is read
+	// (ADR-0068).
 	srv.createLoop("gamma", nil)
 	srv.wantRefusal("PUT", "/api/channels/backend/loops/gamma", nil, 204, "")
 	const toGamma = "@gamma from a room that is not yours"
 	tg.post(backendChat, "supergroup", toGamma, operator)
 	srv.waitForMessage(toGamma)
 	gamma := mcpSession(t, srv, hubMCPToken(t, srv, "gamma"))
-	toPerson := map[string]any{"destination": "channel:backend", "text": "an answer nobody would read",
+	toPerson := map[string]any{"destination": "channel:backend", "text": "an answer read on the hub",
 		"reply_to": "ref:" + strconv.FormatInt(srv.activityWith(toGamma)[0].ID, 10)}
-	wantSendError(t, callSend(t, gamma, toPerson), "no_recipients")
+	if res := callSend(t, gamma, toPerson); res.IsError {
+		t.Fatalf("gamma's reply to a person was refused: %s", resultText(res))
+	}
+	if kept := srv.activityWith("an answer read on the hub"); len(kept) != 1 || kept[0].Channel != "backend" {
+		t.Fatalf("gamma's reply = %s, want it kept once in backend", dump(kept))
+	}
 }
 
 // upgrade turns a basic group into a supergroup under a new chat id, as
@@ -254,7 +260,7 @@ func (tg *fakeTelegram) upgrade(oldChatID, newChatID int64, from user) {
 }
 
 // A group upgraded to a supergroup takes its rooms to the new chat id, bound
-// as they were: the fleet channel hears the new chat and posts there,
+// as they were: the channel hears the new chat and posts there,
 // with no operator step (ADR-0038).
 func TestAnUpgradedGroupKeepsItsRooms(t *testing.T) {
 	t.Parallel()
@@ -266,15 +272,15 @@ func TestAnUpgradedGroupKeepsItsRooms(t *testing.T) {
 	tg.upgrade(groupChatID, upgraded, operator)
 	deadline := time.Now().Add(20 * time.Second)
 	for _, name := range []string{"alpha", "beta"} {
-		for srv.loop(name).TGGroupChatID != upgraded {
+		for room, _ := srv.room(name, strconv.FormatInt(upgraded, 10)); room.Channel != fleetChannel; room, _ = srv.room(name, strconv.FormatInt(upgraded, 10)) {
 			if time.Now().After(deadline) {
 				t.Fatalf("%s's rooms after the upgrade: %+v", name, srv.rooms(name))
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
-	if after, _ := srv.room("alpha", strconv.FormatInt(upgraded, 10)); after.Channel != "group" || after.BoundAt != before.BoundAt {
-		t.Fatalf("alpha's room moved as %+v, want it bound to group since %d", after, before.BoundAt)
+	if after, _ := srv.room("alpha", strconv.FormatInt(upgraded, 10)); after.Channel != fleetChannel || after.BoundAt != before.BoundAt {
+		t.Fatalf("alpha's room moved as %+v, want it bound to fleet since %d", after, before.BoundAt)
 	}
 	if _, ok := srv.room("alpha", strconv.FormatInt(groupChatID, 10)); ok {
 		t.Fatalf("the old chat is still a room: %+v", srv.rooms("alpha"))
@@ -284,8 +290,16 @@ func TestAnUpgradedGroupKeepsItsRooms(t *testing.T) {
 	tg.post(upgraded, "supergroup", inbound, operator)
 	srv.waitForMessage(inbound)
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": "@beta after the upgrade"}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": "@beta after the upgrade"}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
 	tg.waitSentFrom(t, upgraded, "alpha", "after the upgrade")
+}
+
+// groupChannel is the channel a loop's room for the fleet harness's
+// Telegram group carries, "" for unbound or none.
+func (srv *server) groupChannel(loop string) string {
+	srv.t.Helper()
+	room, _ := srv.room(loop, strconv.FormatInt(groupChatID, 10))
+	return room.Channel
 }

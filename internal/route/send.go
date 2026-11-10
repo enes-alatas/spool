@@ -101,8 +101,8 @@ const (
 	ErrOwnerDMUnavailable = "owner_dm_unavailable"
 	ErrSendLimit          = "send_limit"
 	// ErrNoSuchDestination refuses a send to a conversation this loop does
-	// not have: the group, for a loop outside the fleet channel, and
-	// owner_dm, for a loop with no surface (ADR-0032).
+	// not have: a channel it is not in, the retired group, and owner_dm,
+	// for a loop with no surface (ADR-0032, ADR-0068).
 	ErrNoSuchDestination = "no_such_destination"
 	// The two refusals of a resend. Both leave the message unsent, so the
 	// loop can correct the call rather than discover afterwards that it
@@ -137,6 +137,11 @@ const (
 func noSuchDestination(conv loop.Conversations, why string) *SendError {
 	return &SendError{ErrNoSuchDestination, why + "; you can send to " + strings.Join(conv.Destinations(), ", ")}
 }
+
+// retiredGroup is why a send to group, the fleet channel's old
+// destination, is refused: every channel is sent to by its own name now
+// (ADR-0068).
+const retiredGroup = "there is no fleet channel any more, and no group: send to one of your channels as channel:<name>"
 
 // Send validates, persists, and delivers one explicit loop message
 // (ADR-0026). A *SendError is a refusal for the model to correct in-turn;
@@ -210,19 +215,8 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	var dmChat string
 	switch req.Destination {
 	case store.ConversationGroup:
-		if !conv.Group {
-			return nil, noSuchDestination(conv, "this loop is not in the fleet channel, so it has no group"), nil
-		}
-		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, inGroup, req.Destination, "", mentions, replyTo)
-		if serr != nil || err != nil {
-			return nil, serr, err
-		}
-		if (req.From.TGBotToken != "" && store.BoundRoom(rooms, store.SurfaceTelegram, store.FleetChannel) != nil) ||
-			(req.From.SlackBotToken != "" && store.BoundRoom(rooms, store.SurfaceSlack, store.FleetChannel) != nil) {
-			// the loop's bot sits in the room the fleet channel is
-			// mirrored to, so its words are bound there
-			msg.Mirror = store.MirrorPending
-		}
+		// the fleet channel retired, and group with it (ADR-0068)
+		return nil, noSuchDestination(conv, retiredGroup), nil
 	case store.ConversationOwnerDM:
 		// The configured owner, never the DM this turn happens to be
 		// answering: a destination that moved with the incoming message
@@ -263,11 +257,10 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		switch {
 		case !ok:
 			return nil, &SendError{ErrInvalidDestination,
-				fmt.Sprintf("destination must be %s, %s<name>, %s, %s or %s<name>", store.ConversationOwnerDM, store.DMDestinationPrefix,
-					store.ConversationGroup, store.ConversationControlRoom, store.ChannelDestinationPrefix)}, nil
-		case name == store.FleetChannel:
-			return nil, &SendError{ErrInvalidDestination,
-				"the fleet channel is sent to as " + store.ConversationGroup + ", not " + req.Destination}, nil
+				fmt.Sprintf("destination must be %s, %s<name>, %s or %s<name>", store.ConversationOwnerDM, store.DMDestinationPrefix,
+					store.ConversationControlRoom, store.ChannelDestinationPrefix)}, nil
+		case name == store.RetiredChannel:
+			return nil, noSuchDestination(conv, retiredGroup), nil
 		}
 		mine, ok := conv.Channel(name)
 		if !ok {
@@ -279,19 +272,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 				member = inChannel(channel)
 			}
 		}
-		// No person is in a channel until a room carries it, so naming one
-		// there is no recipient: the refusal says where people are. In the
-		// room the loop's bot sits in, a person reads it as in the group.
-		var elsewhere []string
-		if !mine.Room {
-			for _, destination := range conv.Destinations() {
-				if !strings.HasPrefix(destination, store.ChannelDestinationPrefix) {
-					elsewhere = append(elsewhere, destination)
-				}
-			}
-		}
-		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, member, req.Destination,
-			strings.Join(elsewhere, ", "), mentions, replyTo)
+		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, member, req.Destination, mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
@@ -531,18 +512,16 @@ func sameConversation(target *store.Message, destination, fromLoopID, person str
 	return target.ConversationLoopID == fromLoopID
 }
 
-// sharedRecipients resolves the mentions of a send to a channel, the fleet
-// channel or another: loops member says are in it are delivered to, and a
-// loop outside it is no recipient at all. In the fleet channel a known human
-// (an allowed or pending sender on a surface) satisfies the recipient
-// requirement without waking anything, since its room carries the message
-// to them. In a channel the loop has no room for, peopleElsewhere names where
-// people are instead, and a person named or replied to there is no recipient
-// ("" = people are in this channel). A message that addresses nobody it reaches is
-// refused — recipients are enforced mechanically, not just in prompt prose
+// sharedRecipients resolves the mentions of a send to a channel: loops
+// member says are in it are delivered to, and a loop outside it is no
+// recipient at all. A known human (an allowed or pending sender on a
+// surface) satisfies the recipient requirement in every channel without
+// waking anything or reaching them privately: they read the channel in the
+// control room, and in any room that carries it (ADR-0068). A message that
+// addresses nobody it reaches is refused — recipients are enforced mechanically, not just in prompt prose
 // (ADR-0025), and per channel (ADR-0038).
 func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, loops []*store.Loop, member func(*store.Loop) bool,
-	destination, peopleElsewhere string, mentions []string, replyTo *store.Message) (map[string]*store.Loop, *SendError, error) {
+	destination string, mentions []string, replyTo *store.Message) (map[string]*store.Loop, *SendError, error) {
 	byKey := map[string]*store.Loop{}
 	for _, loopRecord := range loops {
 		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
@@ -588,9 +567,8 @@ func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, lo
 	// A reply addresses the message's author without a mention, and adds to
 	// the mentions rather than inheriting the original's other recipients
 	// (ADR-0025). A human author addresses the message without waking
-	// anything, as a named person does — and like one, only where people
-	// are; replying to one's own message addresses nobody by itself.
-	namedPerson := false
+	// anything, as a named person does; replying to one's own message
+	// addresses nobody by itself.
 	if replyTo != nil {
 		switch {
 		case replyTo.FromLoopID == from.ID:
@@ -602,8 +580,7 @@ func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, lo
 				}
 			}
 		default: // a human wrote it
-			namedPerson = true
-			addressed = addressed || peopleElsewhere == ""
+			addressed = true
 		}
 	}
 	for _, mention := range mentions {
@@ -611,18 +588,10 @@ func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, lo
 			targets[loopRecord.ID] = loopRecord
 			addressed = true
 		} else if humans[mention] {
-			namedPerson = true
-			addressed = addressed || peopleElsewhere == ""
+			addressed = true
 		}
 	}
-	switch {
-	case addressed:
-	case namedPerson:
-		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("no person is in %s yet, since no room on a surface carries it; "+
-			"@mention a loop in it, or reach the person in %s", destination, peopleElsewhere)}, nil
-	case peopleElsewhere != "":
-		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("a message to %s must @mention at least one loop in it, or reply to one", destination)}, nil
-	default:
+	if !addressed {
 		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("a message to %s must @mention at least one known loop or person in it, or reply to one", destination)}, nil
 	}
 	return targets, nil, nil

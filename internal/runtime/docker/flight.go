@@ -7,7 +7,7 @@ import (
 
 // flight shares a docker read among the callers that ask for it while it
 // runs: they take its answer instead of queueing to repeat it. A burst of
-// wakes, as a message to the fleet channel makes, then pays for each read
+// wakes, as an @all to a busy channel makes, then pays for each read
 // once rather than once per loop (#1133). A caller that asks once a read
 // has ended starts a new one: nothing is kept past the read.
 type flight[Answer any] struct {

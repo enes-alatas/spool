@@ -27,9 +27,8 @@ func (tg *fakeTelegram) botMembership(token string, chatID int64, title string, 
 }
 
 // An allowed person adding a loop's bot to a group is enough to make the
-// group known to the loop, as their first message there would be: the
-// first binds to the fleet channel while it has no room, a later one is
-// recorded unbound. A stranger's add records nothing, and an allowed
+// group known to the loop, as their first message there would be: it is
+// recorded unbound, the first group included (ADR-0068). A stranger's add records nothing, and an allowed
 // person's message still records that group later. A promotion and a
 // removal change no room (#1320, ADR-0038, ADR-0051).
 func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
@@ -60,14 +59,11 @@ func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
 	// recorded, the stranger's before it has been seen and turned away.
 	tg.botMembership("alpha", strangersChat, "Strangers", stranger, "left", "member")
 	tg.botMembership("alpha", fleetChat, "Fleet", operator, "left", "member")
-	if fleet := waitRoom(fleetID); fleet.Channel != "group" || fleet.Title != "Fleet" {
-		t.Fatalf("the operator's group = %+v, want it bound to the fleet channel", fleet)
+	if first := waitRoom(fleetID); first.Channel != "" || first.Title != "Fleet" {
+		t.Fatalf("the operator's first group = %+v, want it recorded unbound and titled", first)
 	}
 	if _, ok := srv.room("alpha", strangersID); ok {
 		t.Fatalf("a stranger's add recorded a room: %+v", srv.rooms("alpha"))
-	}
-	if srv.loop("alpha").TGGroupChatID != fleetChat {
-		t.Errorf("alpha's fleet group = %d, want %d", srv.loop("alpha").TGGroupChatID, fleetChat)
 	}
 
 	tg.botMembership("alpha", laterChat, "Later", operator, "kicked", "administrator")
@@ -96,7 +92,7 @@ func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
 	if room := waitRoom(strangersID); room.Channel != "" {
 		t.Fatalf("the stranger's group, after the operator's message = %+v, want it recorded unbound", room)
 	}
-	if fleet, _ := srv.room("alpha", fleetID); fleet.Channel != "group" {
-		t.Errorf("the fleet group = %+v, want it still bound", fleet)
+	if first, _ := srv.room("alpha", fleetID); first.Channel != "" {
+		t.Errorf("the first group = %+v, want it still unbound", first)
 	}
 }

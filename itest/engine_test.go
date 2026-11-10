@@ -171,7 +171,7 @@ func TestSendRoutedLoopToLoop(t *testing.T) {
 	s.createLoop("callee", map[string]any{"workspace_path": wsCallee})
 
 	wsCaller := workspaceWithScript(t,
-		`!send {"destination":"group","text":"@callee hello from caller"} @callee note to self about callee`+"\n")
+		`!send {"destination":"channel:fleet","text":"@callee hello from caller"} @callee note to self about callee`+"\n")
 	s.createLoop("caller", map[string]any{"workspace_path": wsCaller})
 	s.message("caller", "go talk")
 

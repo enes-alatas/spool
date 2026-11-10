@@ -111,8 +111,7 @@ func (server *Server) handleGetChannel(w http.ResponseWriter, r *http.Request) {
 	server.writeChannel(w, r, 200, channel)
 }
 
-// handleChannelMessages is one channel's timeline, newest first, as
-// /api/group is the fleet channel's. It answers by name whether or not the
+// handleChannelMessages is one channel's timeline, newest first. It answers by name whether or not the
 // channel still exists: messages said in a deleted channel keep its name,
 // and a channel created again under it continues that history (ADR-0038).
 func (server *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
@@ -133,17 +132,20 @@ func (server *Server) handleChannelMessages(w http.ResponseWriter, r *http.Reque
 }
 
 // handleChannelPost is the operator posting into a channel from the control
-// room, which is in every channel. It is handleGroupPost for any channel,
-// and the same post on the fleet channel: it wakes the loops its text
-// addresses among the channel's, and never leaves the hub (ADR-0032,
-// ADR-0038). A channel that does not exist has no one to hear it.
+// room, which is in every channel. Unlike a loop's composer, it names no
+// loop implicitly: it wakes the loops its text addresses among the
+// channel's, a post that addresses nobody is kept and wakes nobody, as a
+// human's post in a mirrored room is, and it never leaves the hub
+// (ADR-0032, ADR-0038). A reply addresses the author of what it answers,
+// as a native reply does (ADR-0025). A channel that does not exist has no
+// one to hear it.
 func (server *Server) handleChannelPost(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := server.Store.Channels().Get(r.Context(), name); err != nil {
 		server.channelErr(w, r, err)
 		return
 	}
-	var req postGroupReq
+	var req postChannelReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		server.jsonErr(w, 400, "non-empty text required")
 		return
@@ -181,8 +183,8 @@ func (server *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request
 	}
 	channel := &store.Channel{Name: req.Name, Description: strings.TrimSpace(req.Description), CreatedAt: time.Now().UnixMilli(), Team: req.Team}
 	switch {
-	case channel.Name == store.FleetChannel:
-		server.jsonErrCode(w, 400, codeChannelReserved, "%q is the fleet channel, which every hub already has", store.FleetChannel)
+	case channel.Name == store.RetiredChannel:
+		server.jsonErrCode(w, 400, codeChannelReserved, "%q was the fleet channel's name, and no channel takes it again", store.RetiredChannel)
 		return
 	case !store.ValidChannelName(channel.Name):
 		server.jsonErrCode(w, 400, codeChannelNameInvalid, "a channel name is 1 to 32 of a-z, 0-9 and '-', not starting with '-'")
@@ -221,10 +223,6 @@ func (server *Server) handlePatchChannel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := r.PathValue("name")
-	if req.Team != nil && name == store.FleetChannel {
-		server.jsonErrCode(w, 400, codeChannelReserved, "the fleet channel is the whole hub's, and no team's")
-		return
-	}
 	var description string
 	if req.Description != nil {
 		description = strings.TrimSpace(*req.Description)
@@ -302,10 +300,6 @@ func (server *Server) validDescription(w http.ResponseWriter, description string
 }
 
 func (server *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
-	if r.PathValue("name") == store.FleetChannel {
-		server.jsonErrCode(w, 400, codeChannelReserved, "the fleet channel cannot be deleted; take loops out of it instead")
-		return
-	}
 	channel, err := server.Store.Channels().Get(r.Context(), r.PathValue("name"))
 	if err != nil {
 		server.channelErr(w, r, err)
@@ -349,17 +343,7 @@ func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 			server.channelErr(w, r, err)
 			return
 		}
-		if channelName == store.FleetChannel {
-			// The fleet channel is in the loop's prompt and its surface's
-			// mirror, as a PATCH of in_fleet_channel is.
-			updated, err := server.Store.Loops().Get(r.Context(), loopRecord.ID)
-			if err != nil {
-				server.storeErr(w, err, "loop")
-				return
-			}
-			server.Manager.UpdateLoop(updated)
-			server.loopChanged(r.Context(), updated.ID)
-		} else if !in {
+		if !in {
 			// its room for the channel was unbound with it
 			server.roomsChanged(r, loopRecord.ID)
 		}

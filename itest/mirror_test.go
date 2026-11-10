@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// groupMessage is the fleet channel's message with exactly this text.
+// groupMessage is fleet's message with exactly this text.
 func (s *server) groupMessage(text string) (activityMessage, bool) {
 	s.t.Helper()
 	var timeline []activityMessage
-	s.mustJSON("GET", "/api/group?limit=200", nil, &timeline)
+	s.mustJSON("GET", "/api/channels/fleet/messages?limit=200", nil, &timeline)
 	for _, m := range timeline {
 		if m.Text == text {
 			return m, true
@@ -24,7 +24,7 @@ func (s *server) groupMessage(text string) (activityMessage, bool) {
 	return activityMessage{}, false
 }
 
-// waitGroupMessage blocks until the fleet channel's message with this text
+// waitGroupMessage blocks until fleet's message with this text
 // satisfies pred, and returns it.
 func (s *server) waitGroupMessage(text string, pred func(activityMessage) bool) activityMessage {
 	s.t.Helper()
@@ -61,24 +61,24 @@ func TestMirrorSaysWhereAMessageIs(t *testing.T) {
 	tg.post(groupChatID, "supergroup", "@alpha a human in telegram", operator)
 	srv.waitGroupMessage("@alpha a human in telegram", mirrorIs("mirrored"))
 
-	srv.mustJSON("POST", "/api/group", map[string]any{"text": "@beta the operator's words"}, nil)
+	srv.mustJSON("POST", "/api/channels/fleet/messages", map[string]any{"text": "@beta the operator's words"}, nil)
 	srv.waitGroupMessage("@beta the operator's words", mirrorIs("not_mirrored"))
 
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": "@beta alpha's words"}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": "@beta alpha's words"}); res.IsError {
 		t.Fatalf("alpha's group send refused: %s", resultText(res))
 	}
 	tg.waitSentFrom(t, groupChatID, "alpha", "alpha's words")
 	srv.waitGroupMessage("@beta alpha's words", mirrorIs("mirrored"))
 
 	gamma := mcpSession(t, srv, hubMCPToken(t, srv, "gamma"))
-	if res := callSend(t, gamma, map[string]any{"destination": "group", "text": "@alpha gamma has no bot"}); res.IsError {
+	if res := callSend(t, gamma, map[string]any{"destination": "channel:fleet", "text": "@alpha gamma has no bot"}); res.IsError {
 		t.Fatalf("gamma's group send refused: %s", resultText(res))
 	}
 	srv.waitGroupMessage("@alpha gamma has no bot", mirrorIs("not_mirrored"))
 
 	tg.failNextSends(-1)
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": "@beta words that fail"}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": "@beta words that fail"}); res.IsError {
 		t.Fatalf("alpha's group send refused: %s", resultText(res))
 	}
 	failed := srv.waitGroupMessage("@beta words that fail", func(m activityMessage) bool { return m.SendFailedAt != 0 })
@@ -117,7 +117,7 @@ func TestSendInterruptedByAShutdownIsAFailure(t *testing.T) {
 	tg.failNextSends(-1)
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const text = "@beta cut off mid-send"
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": text}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": text}); res.IsError {
 		t.Fatalf("alpha's group send refused: %s", resultText(res))
 	}
 	deadline := time.Now().Add(10 * time.Second)

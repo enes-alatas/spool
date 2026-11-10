@@ -92,7 +92,7 @@ func TestATelegramReactionReachesTheHub(t *testing.T) {
 	srv, tg := startTelegramFleet(t, operator)
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const post = "@beta the build is green"
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": post}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": post}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
 	sent := tg.waitSentFrom(t, groupChatID, "alpha", post)
@@ -152,11 +152,11 @@ func TestALoopReactsThroughItsOwnBot(t *testing.T) {
 		args map[string]any
 		code string
 	}{
-		{map[string]any{"destination": "group", "reply_to": ref, "react": "ok"}, "invalid_reaction"},
-		{map[string]any{"destination": "group", "reply_to": ref, "react": "👍 ok"}, "invalid_reaction"},
-		{map[string]any{"destination": "group", "reply_to": ref, "react": ":partyparrot:"}, "invalid_reaction"},
-		{map[string]any{"destination": "group", "reply_to": ref, "react": "👍", "text": "on it"}, "reaction_carries_nothing_else"},
-		{map[string]any{"destination": "group", "react": "👍"}, "unknown_reply_to"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": "ok"}, "invalid_reaction"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": "👍 ok"}, "invalid_reaction"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": ":partyparrot:"}, "invalid_reaction"},
+		{map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": "👍", "text": "on it"}, "reaction_carries_nothing_else"},
+		{map[string]any{"destination": "channel:fleet", "react": "👍"}, "unknown_reply_to"},
 		{map[string]any{"destination": "control_room", "reply_to": ref, "react": "👍"}, "cross_conversation_reply_to"},
 	} {
 		wantSendError(t, callSend(t, alpha, refused.args), refused.code)
@@ -165,7 +165,7 @@ func TestALoopReactsThroughItsOwnBot(t *testing.T) {
 		t.Fatalf("a refused reaction was recorded: %v", got)
 	}
 
-	res := callSend(t, alpha, map[string]any{"destination": "group", "reply_to": ref, "react": "👍"})
+	res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": "👍"})
 	if res.IsError || !strings.Contains(resultText(res), `"reacted_to":"`+ref+`"`) {
 		t.Fatalf("react refused or unreported: %s", resultText(res))
 	}
@@ -173,7 +173,7 @@ func TestALoopReactsThroughItsOwnBot(t *testing.T) {
 	srv.waitReactions(messageID, reactor+" 👍")
 	tg.waitReactionSet(t, setReaction{Token: "alpha", ChatID: groupChatID, MessageID: post.ids["alpha"], Emoji: "👍"})
 
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "reply_to": ref, "react": "🎉"}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "reply_to": ref, "react": "🎉"}); res.IsError {
 		t.Fatalf("second react refused: %s", resultText(res))
 	}
 	srv.waitReactions(messageID, reactor+" 👍", reactor+" 🎉")
@@ -199,14 +199,14 @@ func TestALoopsReactionToATeammatesPostStaysOnTheHub(t *testing.T) {
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	beta := mcpSession(t, srv, hubMCPToken(t, srv, "beta"))
 	const post = "@beta the build is green"
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": post}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": post}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
 	tg.waitSentFrom(t, groupChatID, "alpha", post)
 	srv.waitForMessage(post)
 	messageID := srv.activityWith(post)[0].ID
 
-	res := callSend(t, beta, map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", messageID), "react": "👍"})
+	res := callSend(t, beta, map[string]any{"destination": "channel:fleet", "reply_to": fmt.Sprintf("ref:%d", messageID), "react": "👍"})
 	if res.IsError {
 		t.Fatalf("react refused: %s", resultText(res))
 	}
@@ -238,7 +238,7 @@ func TestAReactionRidesWithTheNextTurn(t *testing.T) {
 	srv, tg := startTelegramFleet(t, operator)
 	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 	const post = "@beta the build is green"
-	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": post}); res.IsError {
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": post}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
 	sent := tg.waitSentFrom(t, groupChatID, "alpha", post)
@@ -266,7 +266,7 @@ func TestAReactionRidesWithTheNextTurn(t *testing.T) {
 		t.Fatalf("the reaction does not lead the turn's envelopes:\n%s", next.ResultText)
 	}
 	for _, want := range []string{
-		fmt.Sprintf("reacted 👍 to your ref:%d in group", messageID),
+		fmt.Sprintf("reacted 👍 to your ref:%d in channel:fleet", messageID),
 		"the build is green", // enough of the message to know which
 	} {
 		if !strings.Contains(next.ResultText, want) {

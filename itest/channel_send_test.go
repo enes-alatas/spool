@@ -11,7 +11,7 @@ import (
 
 // A loop posts to a channel it is in by name, and only that channel's loops
 // are reached: @all there wakes its members and nobody else, the message is
-// kept under the channel's name and out of the fleet channel's timeline, and
+// kept under the channel's name and out of fleet's timeline, and
 // the envelope names the channel so the answer goes back to it (ADR-0038).
 func TestALoopPostsToItsChannel(t *testing.T) {
 	t.Parallel()
@@ -56,11 +56,11 @@ func TestALoopPostsToItsChannel(t *testing.T) {
 		t.Fatalf("stored channel send = %s, want it in backend, kept on the hub, delivered to briar alone", dump(sent))
 	}
 	var fleet, backend []activityMessage
-	s.mustJSON("GET", "/api/group", nil, &fleet)
+	s.mustJSON("GET", "/api/channels/fleet/messages", nil, &fleet)
 	s.mustJSON("GET", "/api/channels/backend/messages", nil, &backend)
 	for _, m := range fleet {
 		if m.ID == sent.ID {
-			t.Error("a channel's message is in the fleet channel's timeline")
+			t.Error("a channel's message is in fleet's timeline")
 		}
 	}
 	if len(backend) == 0 || backend[0].ID != sent.ID {
@@ -80,7 +80,7 @@ func TestALoopPostsToItsChannel(t *testing.T) {
 
 	// A reply stays in the channel it answers.
 	ref := "ref:" + strconv.FormatInt(sent.ID, 10)
-	wantSendError(t, callSend(t, sess, map[string]any{"destination": "group", "text": "@briar re", "reply_to": ref}), "cross_conversation_reply_to")
+	wantSendError(t, callSend(t, sess, map[string]any{"destination": "channel:fleet", "text": "@briar re", "reply_to": ref}), "cross_conversation_reply_to")
 	res = callSend(t, sess, map[string]any{"destination": "channel:backend", "text": "@briar and more", "reply_to": ref})
 	if res.IsError {
 		t.Errorf("a reply in the channel was refused: %s", resultText(res))
@@ -102,12 +102,12 @@ func TestChannelSendRefusals(t *testing.T) {
 	for _, c := range []struct{ destination, code string }{
 		{"channel:backend", "no_such_destination"},
 		{"channel:nowhere", "no_such_destination"},
-		{"channel:group", "invalid_destination"},
+		{"channel:group", "no_such_destination"},
 		{"backend", "invalid_destination"},
 	} {
 		res := callSend(t, sess, map[string]any{"destination": c.destination, "text": "@briar hi"})
 		wantSendError(t, res, c.code)
-		if c.code == "no_such_destination" && !strings.Contains(resultText(res), "group, control_room") {
+		if c.code == "no_such_destination" && !strings.Contains(resultText(res), "channel:fleet, control_room") {
 			t.Errorf("%s: refusal does not list aster's destinations: %s", c.destination, resultText(res))
 		}
 	}

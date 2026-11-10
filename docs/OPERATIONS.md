@@ -1088,6 +1088,7 @@ CONVENTIONS.md, Releases).
 
 | Release | At its first start | What it means for you |
 |---|---|---|
+| v0.8.0 | Turns the fleet channel, `group`, into an ordinary channel named `fleet` (or the first free `fleet-N`) with the same members, history and bound rooms, in no team. Drops `group` when it has no member, message or bound room, as on a fresh install. Makes no team (ADR-0068). | Nothing to do. Loops now address every channel as `channel:<name>`, and their next wake reads the new prompt. A Telegram group or Slack channel a loop's bot first hears from is recorded unbound: bind it from the loop's page. To make `fleet` a team's home, name it as the team's home channel. |
 | v0.6.0 | Rewrites nothing. A loop's owner is now chosen as a hub user, and stored as that user's link on the loop's surface (#731). | Link your Telegram, or your Slack, in Settings → Account before changing any loop's owner. A user with no link there cannot be chosen. Senders allowed before the upgrade keep working, and keep the loops they own, shown as not linked. |
 | v0.5.0 | Mints `hub.key` and seals every stored secret in `spool.db` under it, rewriting the database (ADR-0046). | The pre-upgrade backup is the only copy of the database a v0.4 binary can read. From now on `hub.key` must be in every backup's keys file. A hub without it will not start. |
 

@@ -43,7 +43,7 @@ func TestRetryingALostSendResolvesIt(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7766, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -103,7 +103,7 @@ func TestDismissingALostSendResolvesItWithoutSending(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7767, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta said into a dead line"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta said into a dead line"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
@@ -166,7 +166,7 @@ func TestARetriedSendIsNotToldToItsSenderAsLost(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7769, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
-		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the deploy is wedged"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
