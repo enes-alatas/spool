@@ -164,6 +164,25 @@ job != "" {
   if (line ~ /actions\/checkout/) {
     checkout[job] = FNR
   }
+  # Rule 7's evidence (#1473), collected in every workflow and judged at END
+  # only in one that runs on pull_request_target. Three shapes:
+  # - a checkout key that picks another commit or repository;
+  # - any event field but the PR's number and head.repo.fork, and
+  #   github.head_ref: the PR's text (title, body, branch, login) is a
+  #   stranger's, and in a `run:` or `env:` it is script injection with the
+  #   write token in reach;
+  # - a command that brings the PR's code in: a fetch, pull, diff, apply,
+  #   patch or `pull/` ref.
+  # Out of range, said rather than left to be found: code that reads the
+  # head's sha or tarball from the API and downloads it some other way
+  # (curl, wget, an action). The reviewer is the check for that.
+  if (line ~ /^[[:space:]]+(ref|repository):/ && !prt_head) prt_head = FNR
+  probe = line
+  gsub(/github\.event\.pull_request\.number/, "", probe)
+  gsub(/github\.event\.pull_request\.head\.repo\.fork/, "", probe)
+  if (probe ~ /github\.(head_ref|event\.(pull_request|issue|comment|review|sender))/ && !prt_head) prt_head = FNR
+  if (line ~ /toJSON\(github\.event\)/ && !prt_head) prt_head = FNR
+  if (line ~ /gh[[:space:]]+pr[[:space:]]+(checkout|diff)|git[[:space:]]+(fetch|pull|apply|am)([[:space:]]|$)|(^|[[:space:]|])patch[[:space:]]|refs\/pull\/|pull\/[^[:space:]]*\/(head|merge)/ && !prt_head) prt_head = FNR
   # Rule 5 (#220, and #203 before it): the scopes a `gh` call needs.
   #
   # `ci-health` asked the API for a workflow run under `permissions: {issues:
@@ -262,6 +281,15 @@ END {
         finding(needs_scope[j, scope], "job `" j "` calls `gh` against the " scope " API, but its effective permissions do not name `" scope "` — an explicit block is a whole grant, so the call gets 403 (#220, and #203 before it).")
       }
     }
+  }
+
+  # Rule 7 (#1473, ADR-0069): a pull_request_target run holds the base
+  # repository's write token and starts without the operator's approval, so
+  # it must never touch the PR's code. Checking out or fetching the head, or
+  # handing its ref to a step, puts code a stranger wrote next to that token.
+  # The one shape allowed is the base branch's own checkout, with no ref.
+  if (("pull_request_target" in trigger) && prt_head) {
+    finding(prt_head, "runs on pull_request_target but picks another commit or repository, brings the PR's code in, or reads an event field other than the PR's number and head.repo.fork — that run holds a write token and needs no approval, so it must run only the base branch's code and no PR text (#1473). Check out with no `ref:` or `repository:`, and read the PR by number.")
   }
 
   for (i = 1; i <= njobs; i++) {

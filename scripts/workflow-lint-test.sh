@@ -450,6 +450,190 @@ pinned '"actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830"' | chec
 pinned './.github/actions/local' | check local-action clean
 pinned "docker://alpine@sha256:$(printf '%064d' 0 | tr 0 a)" | check docker-by-digest clean
 
+# Rule 7 (#1473, ADR-0069) — a pull_request_target run touching the PR's head.
+check prt-checkout-head-ref '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: make test
+YML
+
+check prt-checkout-fork-repository '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: someone/fork
+YML
+
+check prt-gh-pr-checkout '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh pr checkout "$NUM" && make test
+YML
+
+check prt-fetch-pull-ref '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git fetch origin "pull/$NUM/head" && git checkout FETCH_HEAD
+YML
+
+check prt-head-ref-in-env '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          BRANCH: ${{ github.head_ref }}
+        run: echo "$BRANCH"
+YML
+
+check prt-title-in-run '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event.pull_request.title }}"
+YML
+
+check prt-login-in-env '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          WHO: ${{ github.event.pull_request.user.login }}
+        run: echo "hi $WHO"
+YML
+
+check prt-diff-applied '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: gh pr diff "$NUM" | git apply && make test
+YML
+
+check prt-fetch-sha-from-api '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          SHA=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUM" --jq .head.sha)
+          git fetch origin "$SHA"
+          git checkout "$SHA"
+YML
+
+check prt-whole-event '#1473' <<'YML'
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          EVENT: ${{ toJSON(github.event) }}
+        run: echo ok
+YML
+
+check prt-base-checkout-by-number clean <<'YML'
+on:
+  pull_request_target:
+    types: [opened]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.fork
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - env:
+          NUM: ${{ github.event.pull_request.number }}
+        run: bash scripts/label.sh
+YML
+
+# The rule is about pull_request_target only: a plain PR workflow may check
+# out the head, since its run holds no write token from a fork.
+check pull-request-may-pick-ref clean <<'YML'
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+YML
+
 # The repo's own workflows are the fixture that matters most: this is the
 # check that runs in CI, so the rules and the files have to agree today.
 out=$(bash "$root/scripts/workflow-lint.sh" 2>&1)
