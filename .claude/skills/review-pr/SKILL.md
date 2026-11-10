@@ -70,6 +70,8 @@ An author's "fixed in all three places" or "this can't happen" is a claim.
   throwaway worktree, never a checkout someone else is using, and ask what
   the run actually exercised: a green run that took an early exit proved
   nothing.
+  Never for a `community` PR: its code runs only in CI, after the
+  operator approves the run (ADR-0069 item 5). Read its diff instead.
 - **Open the screenshots and recordings.** Look at them; don't trust the
   description. If you can't open them, say so on the PR rather than passing
   them.

@@ -257,6 +257,10 @@ window regardless of loop count (ADR-0018).
   `changes`, `checks` and `itest` jobs run as they do for anyone. So for a
   contribution from outside, the redaction guard is a reviewer reading the
   diff, and it is the reviewer who is the mechanism rather than the workflow.
+  One workflow does act on a fork PR, on `pull_request_target`:
+  `community-pr` labels it `community` and `needs-security-review` and posts
+  a fixed comment, running only the base branch's code (ADR-0069).
+  workflow-lint rule 7 holds any `pull_request_target` workflow to that.
 - **Failures of non-PR workflows are reported** (`ci-health`, #210): a run
   of any workflow but `ci` that does not conclude `success`, `cancelled`,
   `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue
