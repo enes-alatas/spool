@@ -289,7 +289,7 @@ var (
 		"egress-allow", "workstation-health-sec", "problem-down-grace-sec", "exit-grace-sec",
 		"telegram-api-base", "slack-api-base", "cloud-api-base", "github-api-base",
 		"prompts-chat-base", "cloud-start-within-sec", "telegram-answer-timeout-sec",
-		"telegram-bind-settle-sec", "events-retention-days",
+		"telegram-bind-settle-sec", "events-retention-days", "figures-refresh-sec",
 	}
 	hubBoolFlags = []string{
 		"allow-bare", "partial-messages", "cloud-loopback-address", "forget-secrets", "version",

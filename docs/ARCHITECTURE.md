@@ -250,8 +250,12 @@ session exports to the relay while an upstream
 and an ingest key are set (#1297). A bare loop's session exports straight
 to the read address, with the ingest key in its environment and its own
 `spool.loop.*` stamp, while the read address is set too, since the relay
-can't tell one bare loop from another (#1313). Every other session runs
-with telemetry off. A
+can't tell one bare loop from another (#1313). The hub reads each loop's
+figures back from the read address with the read key every five minutes,
+by the `spool.loop.id` stamp alone, prices them from the hub's own
+turns, and serves them at `/api/loops/{name}/figures`. It keeps them in
+memory, so a restart reads the last 30 days again (#1300). Every
+other session runs with telemetry off. A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means. A bare loop can be moved into a workstation with
 `POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,
