@@ -478,16 +478,30 @@ export interface FleetRule {
   enabled: boolean
   created_at: number
   updated_at: number
+  // The team whose loops the rule binds, '' for a hub rule, which binds every
+  // loop (ADR-0066). Deleting the team deletes its rules.
+  team: string
 }
 
 // What the size guard measures and what it allows. section_chars is the
 // rendered size of the enabled set — the number the guard itself checks — so
 // a panel counting against it can never let through what the API rejects.
 export interface RulesBudget {
+  // The section a loop in no team is shown: the hub's rules alone.
   section_chars: number
   section_chars_max: number
   title_chars_max: number
   body_chars_max: number
+  // The section each team's loops are shown, the hub's rules then the team's,
+  // one per team by name (ADR-0066). A write is checked against every one,
+  // and refused 400 `rules_too_large` naming the team it would push over.
+  teams: TeamRulesBudget[]
+}
+
+// Mirrors teamBudget in internal/httpapi/rules.go.
+export interface TeamRulesBudget {
+  team: string
+  section_chars: number
 }
 
 export interface RulesView {
@@ -1736,9 +1750,11 @@ export const api = {
   connectionEvents: (name: string) => req<ConnectionEvent[]>(`/api/connections/${name}/events`),
   loopConnectionEvents: (loop: string) => req<ConnectionEvent[]>(`/api/loops/${loop}/connection-events`),
   rules: () => req<RulesView>('/api/rules'),
-  createRule: (body: { title: string; body: string; enabled: boolean }) =>
+  // team '' or absent makes a hub rule; a team the hub doesn't hold is 404
+  // `team_not_found`.
+  createRule: (body: { title: string; body: string; enabled: boolean; team: string }) =>
     req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),
-  patchRule: (id: string, body: Partial<{ title: string; body: string; enabled: boolean }>) =>
+  patchRule: (id: string, body: Partial<{ title: string; body: string; enabled: boolean; team: string }>) =>
     req<FleetRule>(`/api/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteRule: (id: string) => req<void>(`/api/rules/${id}`, { method: 'DELETE' }),
   // `group` first, then by name.

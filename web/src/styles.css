@@ -4043,6 +4043,9 @@ button.panel-link {
 .rules-budget {
   margin-bottom: 18px;
 }
+.rules-scopes {
+  margin-bottom: 14px;
+}
 /* how much of the injected section is spent — its own meter, deliberately
    not the context gauge's, so the two can diverge */
 .rules-meter {
@@ -4436,9 +4439,10 @@ button.panel-link {
   border-radius: 4px;
   padding: 1px 5px;
 }
-/* whose a channel is (ADR-0066): a team is named in the identity colour, so
-   it stands out from the hub's own channels */
-.rule-badge.channel-team {
+/* whose a channel or a fleet rule is (ADR-0066): a team is named in the
+   identity colour, so it stands out from the hub's own */
+.rule-badge.channel-team,
+.rule-badge.rule-team {
   color: var(--text);
 }
 .rule-body {
