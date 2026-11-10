@@ -134,8 +134,10 @@ check 0 "from a clone: a ref without its files" "gh pr comment 12 --body \"Looks
 # base on origin/main and a branch on top of it.
 url=https://example.invalid/fixture/spool.git
 mkdir -p "$clone/scripts"
-cp "$root/scripts/commit-subjects.sh" "$root/scripts/other-half.sh" "$clone/scripts/"
-git -C "$clone" add scripts
+cp "$root/scripts/commit-subjects.sh" "$root/scripts/other-half.sh" "$root/scripts/issue-headings.sh" "$clone/scripts/"
+mkdir -p "$clone/.github/ISSUE_TEMPLATE"
+cp "$root"/.github/ISSUE_TEMPLATE/*.yml "$clone/.github/ISSUE_TEMPLATE/"
+git -C "$clone" add scripts .github
 git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm scripts
 git -C "$clone" remote add origin "$url"
 wt="$work/wt"
@@ -167,6 +169,21 @@ echo x > "$wt/web/x.ts"
 gitw add web/x.ts
 gitw commit -q -m "feat(web): the room half"
 check 0 "pr create: both halves" "gh pr create --title \"feat: x\" --body-file nohalf.md"
+# An issue filed with gh carries its form's headings (#1474).
+printf '### What needs doing\nx\n### Where it lives\ny\n### Out of scope\nz\n\n%s\n' "$sig" > "$wt/chore.md"
+printf '### Observed behavior\nx\n### Expected behavior\ny\n### Where it lives\nz\n\n%s\n' "$sig" > "$wt/bug.md"
+printf 'No headings.\n\n%s\n' "$sig" > "$wt/plain.md"
+check 0 "issue create: a chore with its headings" "gh issue create --title t --label chore --body-file chore.md"
+check 2 "issue create: a chore without them" "gh issue create --title t --label chore --body-file plain.md" "" "### What needs doing"
+check 2 "issue create: a bug with no severity" "gh issue create -t t -l bug --body-file bug.md" "" "severity:"
+check 0 "issue create: a bug with severity, comma-joined" "gh issue create -t t -l bug,severity:low --body-file bug.md"
+check 0 "issue create: a bug with severity, two flags, -R" "gh -R o/r issue create -t t --label=bug --label \"severity:high\" --body-file bug.md"
+check 2 "issue create: a quoted type label" "gh issue create -t t --label \"new feature\" --body-file chore.md" "" "### Problem statement"
+check 2 "issue create: an inline body" "gh issue create -t t -l chore --body \"no headings $sig\"" "" "### Where it lives"
+check 0 "issue create: untyped is CI's" "gh issue create -t t --body-file plain.md"
+check 0 "issue create: community is exempt" "gh issue create -t t -l community --body-file plain.md"
+check 0 "issue create: --web" "gh issue create --web -l chore"
+check 0 "issue comment: not a filing" "gh issue comment 3 --body-file plain.md"
 gitw commit -q --allow-empty -m "the fleet channel is a tab"
 check 2 "push: a bad subject" "git push" "" "pr-guards will refuse"
 check 2 "push: piped, with an upstream flag" "git push -u origin HEAD 2>&1 | tail -n 5" "" "the subject isn't"

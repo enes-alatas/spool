@@ -197,6 +197,38 @@ if ! printf '%s\n' "$bodies" | LC_ALL=C grep -Eq '—[[:space:]]*[[:alpha:]][^·
 	exit 2
 fi
 
+# An issue filed with gh carries its form's required headings, and a bug a
+# `severity:*` label (#1474): issue-guards' typing check, on the body about
+# to be sent. The labels are the call's --label/-l words; the forms and the
+# script are read at the hook's ref, so the forms stay the one list. A body
+# the hook can't read, a --web filing, or an untyped one goes through for CI.
+issue_create='(^|[^[:alnum:]_./-])gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?[[:space:]]+issue[[:space:]]+create([[:space:]]|$)'
+if printf '%s\n' "$command" | grep -Eq "$issue_create" &&
+	! printf '%s\n' "$command" | grep -Eq '(^|[[:space:]])(--web|-w)([[:space:]]|$)' &&
+	[ -z "$unread" ] && [ -z "$missing" ] && this_repo; then
+	scratch=$(mktemp -d) || exit 0
+	mkdir -p "$scratch/forms"
+	if [ -n "$repo" ]; then
+		for f in $(git -C "$repo" ls-tree --name-only "$ref" .github/ISSUE_TEMPLATE/ 2>/dev/null); do
+			git -C "$repo" show "$ref:$f" > "$scratch/forms/$(basename "$f")" 2>/dev/null
+		done
+	else
+		cp "$here"/../../.github/ISSUE_TEMPLATE/*.yml "$scratch/forms/" 2>/dev/null
+	fi
+	printf '%s\n' "$command" | LC_ALL=C grep -oE "(^|[[:space:]])(--label|-l)(=|[[:space:]]+)(\"[^\"]*\"|'[^']*'|[^[:space:]\"']+)" |
+		sed -E "s/^[[:space:]]*(--label|-l)(=|[[:space:]]+)//; s/^[\"']//; s/[\"']$//" |
+		tr ',' '\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | grep . > "$scratch/labels"
+	printf '%s\n' "$bodies" > "$scratch/body"
+	repo_file scripts/issue-headings.sh > "$scratch/issue-headings.sh" 2>/dev/null
+	said=$(bash "$scratch/issue-headings.sh" "$scratch/forms" "$scratch/labels" < "$scratch/body" 2>/dev/null)
+	status=$?
+	rm -rf "$scratch"
+	if [ "$status" -eq 1 ]; then
+		printf 'this issue is filed without what its form asks for, which issue-guards flags `needs-type` (#1474); copy the form'"'"'s ### headings in order:\n%s\n' "$said" >&2
+		exit 2
+	fi
+fi
+
 # A feat PR that changes one half names its other half (#634): pr-guards'
 # other-half check, on the body about to be sent (#1371). The hook checks
 # the line's form; whether #n is an issue is CI's lookup, so here any #n

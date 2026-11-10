@@ -45,8 +45,10 @@ applies none of them. Feature: Problem statement, Coupling points,
 Seams / ADRs touched, Proposed shape, Acceptance scenarios, Open questions,
 Out of scope. For any other type, read the form; don't go from memory.
 
-*Prevents:* `needs-type` from issue-guards when the type label is missing.
-No guard checks the headings, so get them right first time.
+*Prevents:* `needs-type` from issue-guards, which flags an issue with no
+type label, or one without its form's required headings or, for a bug,
+its `severity:*` label (`scripts/issue-headings.sh`). The repo's hook
+refuses such a `gh issue create` before it runs.
 
 ## 4. Title: one sentence in the operator's words
 

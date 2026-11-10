@@ -150,7 +150,8 @@ jobs:
           if echo "$files" | grep -qxF web/package-lock.json; then
             lockfile=true
           fi
-          if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|scripts/|\.claude/(hooks/|settings\.json$))'; then
+          # The issue forms too: the typing step reads its headings from them (#1474).
+          if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|\.github/ISSUE_TEMPLATE/|scripts/|\.claude/(hooks/|settings\.json$))'; then
             workflows=true
           fi
           # A skill, or the gate that judges skills (ADR-0065). Not every
@@ -537,6 +538,12 @@ jobs:
       - name: the issue-standard flag still flags what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/gate-annotate.sh issue-rewrite-test -- bash scripts/issue-rewrite-test.sh
+      # issue-guards' typing step and the repo's hook read every form's
+      # headings with it; a form edit or a parsing slip would pass every
+      # gh filing green (#1474).
+      - name: the issue-heading check still flags what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gate-annotate.sh issue-headings-test -- bash scripts/issue-headings-test.sh
       # pr-guards checks every PR's commit messages with it; a rule that
       # stopped matching would pass every commit green (#1011).
       - name: the commit-subject check still refuses what it claims to
