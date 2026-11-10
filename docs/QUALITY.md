@@ -153,8 +153,10 @@ window regardless of loop count (ADR-0018).
   daily: govulncheck (the standard library and toolchain included, which
   Dependabot does not watch) and npm audit of the control room's runtime
   dependencies. Each new advisory Spool's code calls, or the room ships,
-  becomes one `chore` issue, filed once (`scripts/advisories.sh`). Dependabot
-  alerts are read alongside it. The routine, each the day it appears:
+  becomes one `chore` issue, filed once (`scripts/advisories.sh`); only an
+  issue the workflow or a maintainer wrote counts as the filing (#1457).
+  Dependabot alerts are read alongside it. The routine, each the day it
+  appears:
   1. The chore issue is triaged and placed like any other.
   2. A PR the same day: the Dependabot PR where one exists, adopted and
      reviewed like any PR; otherwise the bump by hand, `go get

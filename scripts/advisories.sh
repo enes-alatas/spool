@@ -132,7 +132,14 @@ fi
 
 filed=""
 if [ "$dry_run" = false ]; then
-	filed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" --jq '.[].body // ""')
+	# The repository is public, so anyone can open an issue holding a
+	# marker; only one this workflow or a maintainer wrote counts as the
+	# filing, or a stranger's issue could stop an advisory being filed
+	# (#1457).
+	filed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" \
+		--jq '.[] | select(.user.login == "github-actions[bot]"
+			or (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")))
+		| .body // ""')
 fi
 
 work=$(mktemp -d)

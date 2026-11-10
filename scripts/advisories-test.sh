@@ -17,14 +17,21 @@ trap 'rm -rf "$work"' EXIT
 fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }
 pass() { printf 'ok   %s\n' "$1"; }
 
-# The stub answers the chore-issue listing with $work/filed (bodies, one per
-# line, as --jq prints them) and records each call in $work/calls.
+# The stub answers the issue listing by applying the script's own --jq to
+# the GitHub-shaped issues in $work/issues.json, so the author filter is
+# tested as written, and records each call in $work/calls.
 mkdir -p "$work/bin"
 cat >"$work/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$STUB_DIR/calls"
 case $1 in
-api) cat "$STUB_DIR/filed" 2>/dev/null ;;
+api)
+	for ((i = 1; i <= $#; i++)); do
+		j=$((i + 1))
+		[ "${!i}" != --jq ] || expr=${!j}
+	done
+	jq -r "$expr" "$STUB_DIR/issues.json"
+	;;
 issue)
 	for ((i = 1; i <= $#; i++)); do
 		if [ "${!i}" = --body-file ]; then
@@ -48,7 +55,7 @@ creates() { grep -c '^issue create' "$work/calls" 2>/dev/null || true; }
 
 # 1. A called Go advisory, a called stdlib one, and the two npm advisories
 # are filed; the advisory that is only imported is not.
-: >"$work/filed"
+printf "[]\n" >"$work/issues.json"
 if run "$data/govulncheck.json" "$data/npm-audit.json" && [ "$(creates)" = 4 ]; then
 	pass "four advisories filed"
 else
@@ -86,9 +93,21 @@ else
 	pass "no body names Spool's call path"
 fi
 
+# One issue as GitHub lists it: state, the advisory its marker names, who
+# wrote it and their association (the workflow's bot unless named).
+issue() {
+	jq -n --arg s "$1" --arg id "$2" --arg u "${3:-github-actions[bot]}" --arg a "${4:-NONE}" \
+		'{state: $s, user: {login: $u}, author_association: $a,
+		  body: "old text\n<!-- advisory: \($id) -->"}'
+}
+
 # 3. An advisory already filed, open or closed, is not filed again; the
-# marker in a body is what says so.
-printf '%s\n' 'old text' '<!-- advisory: GO-0000-0001 -->' '<!-- advisory: GHSA-xvch-5gv4-984h -->' >"$work/filed"
+# marker in a body the workflow or a maintainer wrote is what says so.
+{
+	issue closed GO-0000-0001
+	issue open GHSA-xvch-5gv4-984h someone MEMBER
+	jq -n '{state: "open", user: {login: "x"}, author_association: "OWNER", body: null}'
+} | jq -s . >"$work/issues.json"
 if run "$data/govulncheck.json" "$data/npm-audit.json" && [ "$(creates)" = 2 ] &&
 	! grep -q -- '--title Advisory GO-0000-0001' "$work/calls" &&
 	! grep -q -- '--title Advisory GHSA-xvch' "$work/calls"; then
@@ -96,7 +115,23 @@ if run "$data/govulncheck.json" "$data/npm-audit.json" && [ "$(creates)" = 2 ] &
 else
 	fail "an advisory already filed is skipped (got $(creates)): $(cat "$work/calls")"
 fi
-: >"$work/filed"
+
+# 3b. The repository is public: a marker in an issue from someone outside
+# the team does not count, and the advisory is filed anyway (#1457). A
+# look-alike login is not the workflow's bot.
+{
+	issue open GO-0000-0001 stranger NONE
+	issue closed GHSA-xvch-5gv4-984h drive-by CONTRIBUTOR
+	issue open GO-0000-0001 github-actions-bot NONE
+} | jq -s . >"$work/issues.json"
+if run "$data/govulncheck.json" "$data/npm-audit.json" && [ "$(creates)" = 4 ] &&
+	grep -q -- '--title Advisory GO-0000-0001' "$work/calls" &&
+	grep -q -- '--title Advisory GHSA-xvch' "$work/calls"; then
+	pass "a stranger's marker does not count as the filing"
+else
+	fail "a stranger's marker does not count as the filing (got $(creates)): $(cat "$work/out")"
+fi
+printf "[]\n" >"$work/issues.json"
 
 # 4. A dry run calls nothing, and prints what it would file.
 if run "$data/govulncheck.json" "$data/npm-audit.json" --dry-run && [ ! -s "$work/calls" ] &&
