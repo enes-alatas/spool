@@ -6,12 +6,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/dialguard"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -136,39 +136,11 @@ func TestCheckMCPServerGuards(t *testing.T) {
 	}))
 	defer server.Close()
 	req, _ := http.NewRequest(http.MethodPost, server.URL, nil)
-	if _, err := guardedTransport(false).RoundTrip(req); err == nil || !strings.Contains(err.Error(), errAddressRefused.Error()) {
+	if _, err := guardedTransport(false).RoundTrip(req); err == nil || !strings.Contains(err.Error(), dialguard.ErrRefused.Error()) {
 		t.Errorf("an off-machine transport dialled loopback: %v", err)
 	}
-	if reason, _ := dialFailure(&net.OpError{Op: "dial", Err: errAddressRefused}); reason != reasonAddressRefused {
+	if reason, _ := dialFailure(&net.OpError{Op: "dial", Err: dialguard.ErrRefused}); reason != reasonAddressRefused {
 		t.Errorf("a refused address reads as %s", reason)
-	}
-
-	for _, tc := range []struct {
-		addr     string
-		loopback bool
-		want     bool
-	}{
-		{"127.0.0.1", true, true},
-		{"::1", true, true},
-		{"0.0.0.0", true, true},
-		{"::", true, true},
-		{"100.100.100.200", false, false},
-		{"100.100.100.201", false, true},
-		{"93.184.215.14", true, false},
-		{"93.184.215.14", false, true},
-		{"10.0.0.5", false, true},
-		{"127.0.0.1", false, false},
-		{"::ffff:127.0.0.1", false, false},
-		{"0.0.0.0", false, false},
-		{"169.254.169.254", false, false},
-		{"::ffff:169.254.169.254", false, false},
-		{"fe80::1", false, false},
-		{"fd00:ec2::254", false, false},
-		{"224.0.0.1", false, false},
-	} {
-		if got := checkMayDial(netip.MustParseAddr(tc.addr), tc.loopback); got != tc.want {
-			t.Errorf("checkMayDial(%s, loopback %v) = %v, want %v", tc.addr, tc.loopback, got, tc.want)
-		}
 	}
 }
 

@@ -13,7 +13,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/dialguard"
 	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -318,9 +318,6 @@ func endMCPSession(client *http.Client, sent *http.Request, session string) {
 	}
 }
 
-// errAddressRefused is the guard refusing the address a name resolved to.
-var errAddressRefused = errors.New("address refused")
-
 // guardedTransport dials only an address a check may reach: for a
 // loopback url, loopback alone; for any other, no loopback, unspecified,
 // link-local, multicast or cloud metadata address. It is judged on the
@@ -328,16 +325,7 @@ var errAddressRefused = errors.New("address refused")
 // somewhere else at dial time than when it was saved gains nothing. It
 // ignores HTTPS_PROXY: through a proxy the guard would judge the proxy.
 func guardedTransport(loopback bool) http.RoundTripper {
-	dialer := &net.Dialer{
-		Timeout: checkTimeout,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			addrPort, err := netip.ParseAddrPort(address)
-			if err != nil || !checkMayDial(addrPort.Addr(), loopback) {
-				return errAddressRefused
-			}
-			return nil
-		},
-	}
+	dialer := dialguard.Dialer(checkTimeout, loopback)
 	return &http.Transport{
 		Proxy:                  nil,
 		DialContext:            dialer.DialContext,
@@ -346,27 +334,6 @@ func guardedTransport(loopback bool) http.RoundTripper {
 		MaxResponseHeaderBytes: checkAnswerLimit,
 		DisableKeepAlives:      true,
 	}
-}
-
-// metadataAddrs are the cloud instance metadata addresses outside
-// link-local, which the guard refuses by range: AWS's on IPv6, a
-// unique-local address, and Alibaba Cloud's, in the shared address space.
-var metadataAddrs = []netip.Addr{
-	netip.MustParseAddr("fd00:ec2::254"),
-	netip.MustParseAddr("100.100.100.200"),
-}
-
-// checkMayDial reports whether a check may connect to addr. For a
-// loopback url that is this machine, an unspecified address included, as
-// ConnectionConfig.Loopback counts it.
-func checkMayDial(addr netip.Addr, loopback bool) bool {
-	addr = addr.Unmap()
-	if loopback {
-		return addr.IsLoopback() || addr.IsUnspecified()
-	}
-	return addr.IsValid() && !addr.IsLoopback() && !addr.IsUnspecified() &&
-		!addr.IsLinkLocalUnicast() && !addr.IsLinkLocalMulticast() && !addr.IsMulticast() &&
-		!slices.Contains(metadataAddrs, addr)
 }
 
 // dialFailure is a failed request as a reason and its sentence: how it
@@ -380,7 +347,7 @@ func dialFailure(err error) (reason, message string) {
 	var recordErr tls.RecordHeaderError
 	var alertErr tls.AlertError
 	switch {
-	case errors.Is(err, errAddressRefused):
+	case errors.Is(err, dialguard.ErrRefused):
 		return reasonAddressRefused, "the url resolves to an address the hub doesn't check: link-local, cloud metadata, or this machine for a url that doesn't name it"
 	case errors.Is(err, context.DeadlineExceeded) || isTimeout(err):
 		return reasonTimedOut, fmt.Sprintf("no answer within %s", checkTimeout)
