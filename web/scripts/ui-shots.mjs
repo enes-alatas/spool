@@ -76,7 +76,7 @@ await member.fill('#password', password)
 await member.click('button[type=submit]')
 await member.waitForSelector('.topbar', { timeout: 15000 })
 const memberShots = [
-  { name: 'member-fleet', path: '/', wait: '.team-cards' },
+  { name: 'member-fleet', path: '/', wait: '.fleet-list' },
   { name: 'member-loop', path: '/loops/gardener', wait: '.side-panel' },
   { name: 'member-connections', path: '/connections', wait: '.connection-row' },
   { name: 'member-settings', path: '/settings', wait: '.account-name' },
@@ -145,7 +145,7 @@ const accountFile = `${outDir}/settings-account.png`
 await page.locator('.account').screenshot({ path: accountFile })
 
 const shots = [
-  { name: 'fleet', path: '/', wait: '.team-cards' },
+  { name: 'fleet', path: '/', wait: '.fleet-list' },
   // A channel's chat, opened from Channels: operator, loop and human
   // posts, a reply's quote, and what each reached (#286, #1443).
   { name: 'channel', path: '/channels/fleet', wait: '.knot' },
@@ -181,6 +181,26 @@ for (const shot of shots) {
   await page.screenshot({ path: file, fullPage: true })
   taken.push(file)
 }
+
+// The fixture has no team, so Fleet opens on its rows (#1484); the cards
+// are the Teams switch away, and the switch is put back after, as it is
+// this browser's saved choice.
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Teams', exact: true }).click()
+await page.waitForSelector('.team-cards', { timeout: 15000 })
+const fleetTeamsFile = `${outDir}/fleet-teams.png`
+await page.screenshot({ path: fleetTeamsFile, fullPage: true })
+taken.push(fleetTeamsFile)
+// The List view's New team popup.
+await page.getByRole('button', { name: 'List', exact: true }).click()
+await page.getByRole('button', { name: '+ New team' }).click()
+const newTeam = page.getByRole('dialog', { name: 'New team' })
+await newTeam.waitFor({ timeout: 15000 })
+const newTeamFile = `${outDir}/fleet-new-team.png`
+await page.screenshot({ path: newTeamFile })
+taken.push(newTeamFile)
+await newTeam.getByRole('button', { name: 'Cancel' }).click()
+await page.evaluate(() => globalThis.localStorage.removeItem('spool.fleet.layout'))
 
 await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
 

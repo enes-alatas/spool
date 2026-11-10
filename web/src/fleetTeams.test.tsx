@@ -129,8 +129,9 @@ describe('LoopTeam', () => {
 
 // The page itself, rendered from a seeded cache: what shows before and after
 // the hub answers for its teams.
-function renderPage(teams: Team[] | undefined) {
+function renderPage(teams: Team[] | undefined, role = 'admin') {
   const client = new QueryClient()
+  client.setQueryData(['session'], { role })
   client.setQueryData(['loops'], loops)
   if (teams) client.setQueryData(['teams'], teams)
   return renderToStaticMarkup(
@@ -162,11 +163,38 @@ describe('Dashboard', () => {
       const html = renderPage([docs])
       expect(html).toContain('fleet-list')
       expect(html).not.toContain('team-cards')
-      expect(html).not.toContain('orb-key')
+      // the rows lead with the cards' circles, so the rings' key stays
+      expect(html).toContain('orb-key')
       expect(html).toContain('aria-pressed="true">List</button>')
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+  it('opens on the rows while the hub has no team, with New team beside the switch', () => {
+    const html = renderPage([])
+    expect(html).toContain('fleet-list')
+    expect(html).not.toContain('team-cards')
+    expect(html).toContain('aria-pressed="true">List</button>')
+    expect(html).toContain('>+ New team</button>')
+    // a member makes no team
+    expect(renderPage([], 'member')).not.toContain('New team')
+  })
+  it('opens on the cards with no team when this browser chose them', () => {
+    const stored = new Map([['spool.fleet.layout', 'teams']])
+    vi.stubGlobal('localStorage', { getItem: (k: string) => stored.get(k) ?? null, setItem: () => {} })
+    try {
+      const html = renderPage([])
+      expect(html).toContain('team-cards')
+      expect(html).not.toContain('fleet-list')
+      // the cards carry their own New team card instead
+      expect(html).not.toContain('>+ New team</button>')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it("leads each row with the loop's ringed circle", () => {
+    const html = renderPage([])
+    expect(html.match(/class="orb row-orb/g)).toHaveLength(loops.length)
   })
   it('shows the fleet and nothing else: no Loops or Fleet channel tabs', () => {
     const html = renderPage([docs])

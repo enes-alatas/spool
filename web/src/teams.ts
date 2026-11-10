@@ -70,17 +70,23 @@ export function teamGroups(teams: Team[], loops: LoopView[]): TeamGroup[] {
 }
 
 // How the Fleet page lays the fleet out: as its teams' cards, or as the rows
-// it showed before teams (#1411). One browser's choice, kept in its storage;
-// a browser that refuses storage gets the cards each time.
+// it showed before teams (#1411). One browser's choice, kept in its storage.
+// Until a browser makes one, the hub's teams decide (#1484): the cards once
+// there is a team, the rows while there is none.
 export type FleetLayout = 'teams' | 'list'
 const FLEET_LAYOUT_KEY = 'spool.fleet.layout'
 
-export function readFleetLayout(): FleetLayout {
+export function readFleetLayout(): FleetLayout | undefined {
   try {
-    return globalThis.localStorage?.getItem(FLEET_LAYOUT_KEY) === 'list' ? 'list' : 'teams'
+    const saved = globalThis.localStorage?.getItem(FLEET_LAYOUT_KEY)
+    return saved === 'list' || saved === 'teams' ? saved : undefined
   } catch {
-    return 'teams'
+    return undefined
   }
+}
+
+export function defaultFleetLayout(teams: readonly unknown[]): FleetLayout {
+  return teams.length > 0 ? 'teams' : 'list'
 }
 
 export function saveFleetLayout(layout: FleetLayout) {

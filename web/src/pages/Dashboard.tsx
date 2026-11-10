@@ -1,25 +1,15 @@
 import { RuntimeBadge } from '../components/RuntimeBadge'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { api, LoopView, Settings } from '../api'
-import {
-  formatTokens,
-  fillTone,
-  hasFillPct,
-  formatSpend,
-  formatUsd,
-  inTurn,
-  nextWake,
-  gradedColor,
-  spendShare,
-  sumCostToday,
-} from '../format'
+import { api, LoopView } from '../api'
+import { formatSpend, inTurn, nextWake, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
 import { PlanUsageStrip } from '../components/PlanUsage'
 import { Doing } from '../components/Doing'
 import { HealthNote } from '../components/Health'
 import { useMay } from '../components/Session'
-import { FleetTeams, OrbKey } from '../components/FleetTeams'
+import { FleetTeams, NewTeamDialog, OrbKey } from '../components/FleetTeams'
+import { RowOrb } from '../components/LoopOrb'
 import { FleetColumns } from '../components/FleetColumns'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
@@ -27,7 +17,7 @@ import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 import { cappedBy } from '../dailyCap'
 import { loopPlanCapped } from '../planCap'
-import { readFleetLayout, saveFleetLayout, type FleetLayout } from '../teams'
+import { defaultFleetLayout, readFleetLayout, saveFleetLayout, type FleetLayout } from '../teams'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -46,69 +36,16 @@ function Countdown({ at }: { at: number }) {
   return <span className="hot">{`${s}s`}</span>
 }
 
-// Context occupancy in one number: the percentage of the model's window when
-// Spool knows it, and the raw token count when it doesn't — never a
-// percentage against a guessed limit.
-function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
-  // Falsy, not `=== 0`: api.ts describes the API as it will be, so a field an
-  // older server doesn't send arrives as undefined and would divide into NaN.
-  if (!loop.context_tokens) return <span className="dim">·</span>
-  // The limit, not the percentage, answers "does Spool know the window": the
-  // percentage truncates, so a measured loop holding ~1,500 tokens of a 200k
-  // window reports 0%, which is a true reading and not an absent one. The loop
-  // page asks the same question of the same field.
-  // Knowing the window is not the same as having been told the fill: an older
-  // server sends the limit and not the percentage, and the tokens are the
-  // honest reading of that.
-  if (!loop.context_limit_tokens || !hasFillPct(loop.context_fill_pct))
-    return <span>{formatTokens(loop.context_tokens)}</span>
-  return (
-    <span
-      className={fillTone(loop.context_fill_pct, thresholds)}
-      title={`${loop.context_tokens} of ${loop.context_limit_tokens} context tokens`}
-    >
-      {loop.context_fill_pct}%
-    </span>
-  )
-}
-
-// The row's part of the fleet's day, as a percent and a bar that draws it, so
-// the loop eating the plan stands out down the column without reading every
-// figure. On a day the fleet has spent nothing every row reads 0% over an
-// empty bar.
-function ShareStat({ cost, total }: { cost: number; total: number }) {
-  const pct = spendShare(cost, total)
-  // The label outside the coloured span, as the context gauge keeps "ctx": the
-  // colour is the figure's, not the words'.
-  return (
-    <>
-      <span
-        className="share"
-        style={{ color: gradedColor(pct) }}
-        title={`${formatUsd(cost)} of the fleet's ${formatUsd(total)} today`}
-      >
-        <span className="share-bar" aria-hidden>
-          <span style={{ width: `${pct}%` }} />
-        </span>
-        {pct}%
-      </span>{' '}
-      <span className="lbl after">of fleet</span>
-    </>
-  )
-}
-
 // One row per loop: identity on the left, the operational numbers to the
 // right of it. The metadata is wrapped in an element that is `display:
 // contents` on a wide screen — its children join the row's grid as columns —
 // and a wrapping line of its own once the columns no longer fit.
 function FleetRow({
   loop,
-  thresholds,
   spentToday,
   planCapped,
 }: {
   loop: LoopView
-  thresholds?: Settings
   spentToday: number
   // Its login's plan cap has fired (#651, #1075): a loop still in its turn
   // sleeps when it ends, so its next wake is the cap's, not one it will
@@ -130,6 +67,7 @@ function FleetRow({
   const cappedNext = planCapped || !!loop.daily_cap_reached
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
+      <RowOrb loop={loop} spentToday={spentToday} />
       <div className="identity">
         <span className="loop-name">{loop.name}</span>
         {/* One row, so every loop's row is the same height whatever its
@@ -213,12 +151,6 @@ function FleetRow({
             <Countdown at={nextWake(loop)} />
           )}
         </span>
-        <span className="f-ctx">
-          <ContextStat loop={loop} thresholds={thresholds} /> <span className="lbl after">ctx</span>
-        </span>
-        <span className="f-share">
-          <ShareStat cost={loop.cost_today_usd} total={spentToday} />
-        </span>
         <span className="f-today" title={formatSpend(loop).title}>
           {formatSpend(loop).text} <span className="lbl after">today</span>
         </span>
@@ -240,8 +172,6 @@ function costDayTitle(loops: LoopView[]): string | undefined {
 export default function Dashboard() {
   const may = useMay()
   const { data: loops, isLoading, isError, error } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  // the rotation thresholds the gauge colours mean something against
-  const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   // the strip's own read, shared through the cache: whether each login's
   // cap has fired
   const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
@@ -266,14 +196,17 @@ export default function Dashboard() {
   // where every channel's chat opens (ADR-0068).
   const [params] = useSearchParams()
   const oldChannelTab = params.get('view') === 'channel'
-  // Teams or the rows they replaced (#1411): the cards are new, so the
-  // rows stay a click away for an operator who reads the fleet that way.
-  // Remembered in this browser, as how one person likes to read the page.
-  const [layout, setLayout] = useState<FleetLayout>(readFleetLayout)
+  // Teams or the rows (#1411). Until this browser chooses, the hub's teams
+  // decide (#1484): the rows while there is none, the cards once there is
+  // one. A choice is remembered in this browser, as how one person likes to
+  // read the page.
+  const [chosen, setChosen] = useState<FleetLayout | undefined>(readFleetLayout)
+  const layout = chosen ?? defaultFleetLayout(teams ?? [])
   const chooseLayout = (next: FleetLayout) => {
-    setLayout(next)
+    setChosen(next)
     saveFleetLayout(next)
   }
+  const [newTeam, setNewTeam] = useState(false)
 
   if (oldChannelTab) return <Navigate to="/channels" replace />
 
@@ -326,7 +259,7 @@ export default function Dashboard() {
 
         {loops && loops.length > 0 && teams && (
           <div className="fleet-bar">
-            {layout === 'teams' && <OrbKey />}
+            <OrbKey />
             {/* Counts only: what needs the operator is on the cards. */}
             <span className="fleet-summary">
               {teams.length} {teams.length === 1 ? 'team' : 'teams'} · {loops.length}{' '}
@@ -345,7 +278,16 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            {/* The cards have their own New team card; the rows have this. */}
+            {layout === 'list' && may('manage') && (
+              <button type="button" className="btn sm" onClick={() => setNewTeam(true)} disabled={newTeam}>
+                + New team
+              </button>
+            )}
           </div>
+        )}
+        {newTeam && (
+          <NewTeamDialog onClose={() => setNewTeam(false)} onCreated={() => chooseLayout('teams')} />
         )}
         {loops && loops.length > 0 && teams && layout === 'teams' && (
           <FleetTeams teams={teams} loops={loops} spentToday={spentToday} manage={may('manage')} />
@@ -357,7 +299,6 @@ export default function Dashboard() {
               <FleetRow
                 key={fleetLoop.id}
                 loop={fleetLoop}
-                thresholds={thresholds}
                 spentToday={spentToday}
                 planCapped={loopPlanCapped(usages, fleetLoop)}
               />

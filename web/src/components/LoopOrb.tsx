@@ -94,6 +94,22 @@ function Rings({ loop, spentToday, big }: { loop: LoopView; spentToday: number; 
   )
 }
 
+// The circle at the head of the loop's row in the Fleet list (#1484): the
+// same rings and initial as its card's circle, smaller, and only a picture;
+// the row is the link.
+export function RowOrb({ loop, spentToday }: { loop: LoopView; spentToday: number }) {
+  const fault = needsYou(loop)
+  return (
+    <span
+      className={`orb row-orb${fault ? ' fault' : ''}${!fault && !inTurn(loop.state) ? ' calm' : ''}`}
+      aria-hidden
+    >
+      <Rings loop={loop} spentToday={spentToday} big={false} />
+      <span className="orb-initial">{loop.name.charAt(0).toUpperCase()}</span>
+    </span>
+  )
+}
+
 // The circle in its team's card: the loop's initial, and on hover or focus its
 // name and what is wrong. A click opens it in the middle of the page.
 export function LoopOrb({

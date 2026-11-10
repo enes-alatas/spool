@@ -5,12 +5,11 @@
 export function FleetColumns() {
   return (
     <div className="fleet-cols" aria-hidden>
+      <span />
       <span>Loop</span>
       <span className="f-state">State</span>
       <div className="f-meta">
         <span className="f-next">Next wake</span>
-        <span className="f-ctx">Context</span>
-        <span className="f-share">Share</span>
         <span className="f-today">Today</span>
       </div>
     </div>

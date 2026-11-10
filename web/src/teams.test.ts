@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LoopView, Team } from './api'
 import {
+  defaultFleetLayout,
   loopsToAdd,
   readFleetLayout,
   saveFleetLayout,
@@ -120,17 +121,23 @@ describe('teamLabel', () => {
 
 describe('the Fleet layout choice', () => {
   afterEach(() => vi.unstubAllGlobals())
-  it('is the cards until this browser keeps the list', () => {
+  it('is none until this browser keeps one', () => {
     const stored = new Map<string, string>()
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => stored.get(k) ?? null,
       setItem: (k: string, v: string) => stored.set(k, v),
     })
-    expect(readFleetLayout()).toBe('teams')
+    expect(readFleetLayout()).toBeUndefined()
     saveFleetLayout('list')
     expect(readFleetLayout()).toBe('list')
+    saveFleetLayout('teams')
+    expect(readFleetLayout()).toBe('teams')
   })
-  it('falls back to the cards when storage refuses', () => {
+  it('opens on the rows until the hub has a team, then on the cards', () => {
+    expect(defaultFleetLayout([])).toBe('list')
+    expect(defaultFleetLayout([team({ name: 'docs' })])).toBe('teams')
+  })
+  it('leaves the choice to the teams when storage refuses', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
         throw new Error('denied')
@@ -139,7 +146,7 @@ describe('the Fleet layout choice', () => {
         throw new Error('denied')
       },
     })
-    expect(readFleetLayout()).toBe('teams')
+    expect(readFleetLayout()).toBeUndefined()
     expect(() => saveFleetLayout('list')).not.toThrow()
   })
 })

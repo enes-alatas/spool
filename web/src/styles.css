@@ -1313,14 +1313,15 @@ textarea {
   container: fleet / inline-size;
 }
 /* The row grid, shared with the column labels so the two cannot drift. The
-   identity column takes what is left; the other five are fixed so they align
-   down the list, and in rem because they exist to hold text and follow it
-   (ADR-0027). What keeps them from squeezing the loop name is the restack
-   below, which the list's own width decides. */
+   loop's circle leads at its own fixed size (#1484); the identity column
+   takes what is left; the other three are fixed so they align down the list,
+   and in rem because they exist to hold text and follow it (ADR-0027). What
+   keeps them from squeezing the loop name is the restack below, which the
+   list's own width decides. */
 .fleet-row,
 .fleet-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 9.5rem 5.75rem 4.75rem 5.5rem 5rem;
+  grid-template-columns: 40px minmax(0, 1fr) 9.5rem 5.75rem 5rem;
   align-items: start;
   gap: 16px;
 }
@@ -1434,7 +1435,7 @@ textarea {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-/* On a wide screen the four numbers are columns of the row's own grid; the
+/* On a wide screen the two numbers are columns of the row's own grid; the
    wrapper only exists so they can become one line together when the columns
    are dropped below. */
 .fleet-row .f-meta,
@@ -1442,8 +1443,6 @@ textarea {
   display: contents;
 }
 .fleet-row .f-next,
-.fleet-row .f-ctx,
-.fleet-row .f-share,
 .fleet-row .f-today {
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -1455,26 +1454,6 @@ textarea {
 .fleet-row .f-today,
 .fleet-cols .f-today {
   text-align: right;
-}
-/* The share's bar is the row's part of the fleet's day, drawn to the width of
-   a fixed track so the bars compare down the column. It takes the share's
-   colour, which the page grades along the share (`gradedColor`). */
-.fleet-row .share-bar {
-  /* inline, not a flex row: a flex container's baseline is its first item's,
-     and the bar has none, so the figure sat lower than the row's others */
-  display: inline-block;
-  vertical-align: 0.2em;
-  margin-right: 6px;
-  width: 2.5rem;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--hairline);
-  overflow: hidden;
-}
-.fleet-row .share-bar > span {
-  display: block;
-  height: 100%;
-  background: currentColor;
 }
 .fleet-row .hot {
   color: var(--active);
@@ -1543,7 +1522,7 @@ textarea {
     justify-content: flex-start;
   }
 }
-/* Below this the five state and number columns stop fitting beside a
+/* Below this the state and number columns stop fitting beside a
    mission anyone would want to read, so the row recomposes rather than
    shrinks: name and state on the first line, mission under it, the numbers on
    a wrapping line of their own. The words the column headers used to supply
@@ -1552,10 +1531,11 @@ textarea {
    The question is the list's width against its columns, so the list answers
    it, not the viewport: the page stops widening at 1100px, and a viewport
    breakpoint kept the wide grid at a large text size on any big screen while
-   its columns outgrew the list (#394). The threshold is the five tracks and
-   their gaps plus 12.5rem for the loop column: 768px of list at the default
-   text size. The share column (#649) moved it out by its own track and gap. */
-@container fleet (max-width: calc(80px + 43rem)) {
+   its columns outgrew the list (#394). The threshold is the fixed tracks
+   (the 40px circle, state, next wake, today) and their four gaps plus 12.5rem
+   for the loop column: 628px of list at the default text size. Dropping the
+   Context and Share columns for the circle's rings (#1484) moved it in. */
+@container fleet (max-width: calc(104px + 32.75rem)) {
   .fleet-cols {
     display: none;
   }
@@ -1563,15 +1543,18 @@ textarea {
     /* fit-content, not auto: an `auto` track is sized to its content's
        maximum, and a max-width on the item inside does not shrink the track
        it sits in. This caps the track itself at 45% of the row. */
-    grid-template-columns: minmax(0, 1fr) fit-content(45%);
+    grid-template-columns: 40px minmax(0, 1fr) fit-content(45%);
     grid-template-areas:
-      'identity state'
-      'meta meta';
+      'orb identity state'
+      'orb meta meta';
     gap: 6px 12px;
     min-height: 56px;
   }
   .fleet-row .identity {
     grid-area: identity;
+  }
+  .fleet-row .row-orb {
+    grid-area: orb;
   }
   /* The name and the state share one line here. A state is an identifier and
      would rather not break, but `model_unrecognized` at a large text size is
@@ -6474,6 +6457,15 @@ button.orb:focus-visible {
   font-size: 1.125rem;
   font-weight: 600;
   transition: opacity 0.18s;
+}
+/* The row's circle (#1484): the card's, at 40px, its initial scaled with it. */
+.row-orb {
+  width: 40px;
+  height: 40px;
+  margin-top: -2px;
+}
+.row-orb .orb-initial {
+  font-size: 0.8125rem;
 }
 .orb.calm .orb-initial {
   color: var(--text-muted);

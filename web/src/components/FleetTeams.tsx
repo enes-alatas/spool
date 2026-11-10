@@ -18,6 +18,7 @@ import {
 import { CharCount } from './CharCount'
 import { EditIcon } from './Icons'
 import { FocusedOrb, LoopOrb } from './LoopOrb'
+import { StepDialog } from './StepDialog'
 
 // The fleet as its teams (ADR-0066, #1411): a card per team with a circle
 // per loop, and the loops in no team in a full-width card last. An admin
@@ -330,10 +331,31 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
   )
 }
 
-// The dashed card where the next team would go: a button, then the form.
+// The dashed card after the teams, which opens the New team dialog.
 function NewTeamCard() {
-  const refresh = useRefresh()
   const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" className="team-card team-card-new" onClick={() => setOpen(true)}>
+        <span aria-hidden>+</span> New team
+      </button>
+      {open && <NewTeamDialog onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+// A team made from its name and description, in a popup over the page,
+// from the Teams view's card or the List view's button (#1484). Typed work
+// is kept from a stray backdrop click or Escape; Cancel and the ✕ still
+// close it. `onCreated` hears the new team's name once the hub has it.
+export function NewTeamDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void
+  onCreated?: (name: string) => void
+}) {
+  const refresh = useRefresh()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
@@ -342,34 +364,28 @@ function NewTeamCard() {
   const badName = name !== '' && !validTeamName(name)
   const tooLong = descriptionLength(description) > TEAM_DESCRIPTION_MAX
 
-  if (!open)
-    return (
-      <button type="button" className="team-card team-card-new" onClick={() => setOpen(true)}>
-        <span aria-hidden>+</span> New team
-      </button>
-    )
-
   const create = async () => {
     setBusy(true)
     setError('')
     try {
       await api.addTeam({ name, description: description.trim() })
-      setName('')
-      setDescription('')
-      setOpen(false)
       refresh()
+      onCreated?.(name)
+      onClose()
     } catch (err) {
       setError(errorText(err))
-    } finally {
       setBusy(false)
     }
   }
 
   return (
-    <section className="team-card">
-      <header className="team-card-head">
-        <h2>New team</h2>
-      </header>
+    <StepDialog
+      title="New team"
+      className="new-team-dialog"
+      dismissible={name === '' && description === ''}
+      busy={busy}
+      onClose={onClose}
+    >
       <TeamForm
         id="team-new"
         name={name}
@@ -391,11 +407,11 @@ function NewTeamCard() {
         >
           {busy ? 'Creating…' : 'Create'}
         </button>
-        <button type="button" className="btn sm" onClick={() => setOpen(false)}>
+        <button type="button" className="btn sm" onClick={onClose} disabled={busy}>
           Cancel
         </button>
       </TeamForm>
-    </section>
+    </StepDialog>
   )
 }
 

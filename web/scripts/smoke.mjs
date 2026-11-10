@@ -89,9 +89,9 @@ try {
 
   step = 'Fleet'
   await heading('Fleet')
+  // The fixture has no team, so the page opens on its rows (#1484).
   for (const name of ['gardener', 'watcher', 'courier', 'archivist']) {
-    // a loop is a circle on its team's card, named "<loop>: <state>" (#1411)
-    await see(page.getByRole('button', { name: new RegExp(`^${name}: `) }), `the ${name} circle`)
+    await see(page.locator(`.fleet-row[href="/loops/${name}"]`), `the ${name} row`)
   }
 
   // An upgraded hub's `fleet` is a channel like any other (ADR-0068): its
@@ -447,6 +447,22 @@ try {
   step = 'Activity'
   await page.goto(base + '/activity')
   await heading('Activity')
+
+  // Last, as it adds a team: the List view's New team opens a popup, and
+  // the first team turns the page to its cards (#1484), where a loop is a
+  // circle named "<loop>: <state>" (#1411).
+  step = 'New team'
+  await page.goto(base + '/')
+  await heading('Fleet')
+  await page.getByRole('button', { name: '+ New team' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New team' })
+  await see(dialog, 'the New team popup')
+  await dialog.getByLabel('Name').fill('smoke-crew')
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  await see(page.locator('.team-card h2', { hasText: 'smoke-crew' }), "the new team's card")
+  for (const name of ['gardener', 'watcher', 'courier', 'archivist']) {
+    await see(page.getByRole('button', { name: new RegExp(`^${name}: `) }), `the ${name} circle`)
+  }
 
   step = 'the page'
   if (pageErrors.length > 0) throw new Error(`${step} threw: ${pageErrors.join('; ')}`)
