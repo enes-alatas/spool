@@ -12,7 +12,6 @@ import {
   channelHash,
   channelOwner,
   channelRefusal,
-  FLEET_CHANNEL,
   descriptionLength,
   loopsNotInTeam,
   loopsOutside,
@@ -137,7 +136,6 @@ function ChannelCard({
   // A refusal is anchored to the card it came from, not the page top, where
   // with several channels on screen it would scroll out of sight.
   const [error, setError] = useState('')
-  const fleet = channel.name === FLEET_CHANNEL
   const addable = loopsOutside(channel, loops)
 
   const act = async (run: () => Promise<unknown>, loop?: string) => {
@@ -154,13 +152,9 @@ function ChannelCard({
     <div className={`rule-item${landed ? ' channel-landed' : ''}`} id={channelAnchor(channel.name)}>
       <div className="rule-head">
         <span className="channel-name">#{channel.name}</span>
-        {fleet ? (
-          <span className="rule-badge">fleet channel</span>
-        ) : (
-          <span className={`rule-badge${channel.team ? ' channel-team' : ''}`}>
-            {channelOwner(channel.team)}
-          </span>
-        )}
+        <span className={`rule-badge${channel.team ? ' channel-team' : ''}`}>
+          {channelOwner(channel.team)}
+        </span>
         {homeOf && (
           <span
             className="rule-badge channel-home"
@@ -172,14 +166,10 @@ function ChannelCard({
         <span className="channel-count">
           {channel.loops.length} loop{channel.loops.length === 1 ? '' : 's'}
         </span>
-        {fleet && (
-          <Link className="channel-open" to={channelChatPath(channel.name)}>
-            Open chat →
-          </Link>
-        )}
-        {/* The fleet channel always exists, and what it is for is fixed:
-            there is nothing to edit or delete, only who is in it. */}
-        {!fleet && manage && (
+        <Link className="channel-open" to={channelChatPath(channel.name)}>
+          Open chat →
+        </Link>
+        {manage && (
           <span className="rule-actions">
             <button className="btn sm" onClick={() => setEditing(!editing)}>
               {editing ? 'Close' : 'Edit'}
@@ -210,11 +200,6 @@ function ChannelCard({
           }}
           onCancel={() => setEditing(false)}
         />
-      ) : fleet ? (
-        <div className="rule-body">
-          The fleet channel. Every loop is in it unless {manage ? 'you take it out' : 'an admin takes it out'}
-          .
-        </div>
       ) : channel.description ? (
         <div className="rule-body">{channel.description}</div>
       ) : (
@@ -368,8 +353,8 @@ export default function Channels() {
     if (loaded && hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'center' })
   }, [loaded, hash])
 
-  // A change to `group` is a change to each loop's in_fleet_channel, which
-  // the fleet and the loop pages read, so they refetch along with the list.
+  // A loop's page and a team's card show channels too, so they refetch
+  // along with the list.
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['channels'] })
     qc.invalidateQueries({ queryKey: ['loops'] })

@@ -2,7 +2,7 @@
 // ADR-0048's amendment records and the hub enforces (#677).
 //
 // The room asks one question, `may`, for every action it might draw. A member
-// talks to loops: messages one, wakes one, posts to a channel or the group,
+// talks to loops: messages one, wakes one, posts to a channel,
 // and attaches a file to any of those. Everything that creates, edits,
 // deletes or operates something is for admins and owners. An action a role
 // may not take is not rendered at all, rather than drawn disabled: a button

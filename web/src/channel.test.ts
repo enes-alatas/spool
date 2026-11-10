@@ -13,7 +13,6 @@ const loop = (over: Partial<LoopView>): LoopView =>
   ({
     name: 'aster',
     status: 'active',
-    in_fleet_channel: true,
     tg_bot_username: '',
     ...over,
   }) as LoopView
@@ -21,9 +20,12 @@ const loop = (over: Partial<LoopView>): LoopView =>
 const fleet = [
   loop({ id: 'l-aster', name: 'aster', tg_bot_username: 'aster_bot' }),
   loop({ id: 'l-briar', name: 'briar', status: 'paused' }),
-  loop({ id: 'l-cedar', name: 'cedar', in_fleet_channel: false }),
+  loop({ id: 'l-cedar', name: 'cedar' }),
   loop({ id: 'l-dune', name: 'dune', status: 'archived' }),
 ]
+
+// The channel the posts are for: every loop but cedar.
+const inIt = inChannelOf(['aster', 'briar', 'dune'])
 
 describe('mentionTokens', () => {
   it('reads mentions the way the server does', () => {
@@ -41,45 +43,48 @@ describe('mentionTokens', () => {
 
 describe('channelRecipients', () => {
   it('reaches a named loop by its name or its bot', () => {
-    expect(channelRecipients('@aster_bot look', fleet)).toEqual(['aster'])
-    expect(channelRecipients('@ASTER look', fleet)).toEqual(['aster'])
+    expect(channelRecipients('@aster_bot look', fleet, undefined, inIt)).toEqual(['aster'])
+    expect(channelRecipients('@ASTER look', fleet, undefined, inIt)).toEqual(['aster'])
   })
 
   // Named explicitly, a paused loop is still delivered to; outside the
   // channel or archived, nobody is (`inGroup`, ADR-0032).
   it('reaches only loops in the channel', () => {
-    expect(channelRecipients('@briar @cedar @dune', fleet)).toEqual(['briar'])
+    expect(channelRecipients('@briar @cedar @dune', fleet, undefined, inIt)).toEqual(['briar'])
   })
 
   // `@all` skips paused loops (`broadcastTargets`): a broadcast is not a
   // reason to wake one.
   it('broadcasts to the active loops in the channel', () => {
-    expect(channelRecipients('@all standup', fleet)).toEqual(['aster'])
-    expect(channelRecipients('@all and @briar', fleet)).toEqual(['aster', 'briar'])
+    expect(channelRecipients('@all standup', fleet, undefined, inIt)).toEqual(['aster'])
+    expect(channelRecipients('@all and @briar', fleet, undefined, inIt)).toEqual(['aster', 'briar'])
   })
 
   it('reaches nobody when it names nobody', () => {
-    expect(channelRecipients('morning, everyone', fleet)).toEqual([])
-    expect(channelRecipients('@rana can you look', fleet)).toEqual([])
+    expect(channelRecipients('morning, everyone', fleet, undefined, inIt)).toEqual([])
+    expect(channelRecipients('@rana can you look', fleet, undefined, inIt)).toEqual([])
   })
   // ADR-0025: a reply addresses what it answers, so answering a loop needs
   // no mention — the router adds the replied-to author (#311).
   it('reaches the loop a reply answers without a mention', () => {
-    expect(channelRecipients('which change?', fleet, { from_loop_id: 'l-briar' })).toEqual(['briar'])
-    expect(channelRecipients('@aster too', fleet, { from_loop_id: 'l-briar' })).toEqual(['aster', 'briar'])
+    expect(channelRecipients('which change?', fleet, { from_loop_id: 'l-briar' }, inIt)).toEqual(['briar'])
+    expect(channelRecipients('@aster too', fleet, { from_loop_id: 'l-briar' }, inIt)).toEqual([
+      'aster',
+      'briar',
+    ])
   })
 
   // The replied-to loop is still held to `inGroup`: a reply to a loop that
   // has since left the channel, or been archived, reaches nobody.
   it('does not reach a replied-to loop outside the channel', () => {
-    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-cedar' })).toEqual([])
-    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-dune' })).toEqual([])
+    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-cedar' }, inIt)).toEqual([])
+    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-dune' }, inIt)).toEqual([])
   })
 
   // A person's post has no loop author; answering it adds nobody, and a
   // missing field (an operator's or a person's post) reads the same.
   it('adds nobody for a reply to a person', () => {
-    expect(channelRecipients('thanks', fleet, {})).toEqual([])
+    expect(channelRecipients('thanks', fleet, {}, inIt)).toEqual([])
   })
 })
 
@@ -97,14 +102,14 @@ describe('mentionAt', () => {
 
 describe('mentionCompletions', () => {
   it('offers loops in the channel, then @all', () => {
-    expect(mentionCompletions('', fleet)).toEqual(['aster', 'briar', 'all'])
-    expect(mentionCompletions('a', fleet)).toEqual(['aster', 'all'])
-    expect(mentionCompletions('b', fleet)).toEqual(['briar'])
+    expect(mentionCompletions('', fleet, inIt)).toEqual(['aster', 'briar', 'all'])
+    expect(mentionCompletions('a', fleet, inIt)).toEqual(['aster', 'all'])
+    expect(mentionCompletions('b', fleet, inIt)).toEqual(['briar'])
   })
 
   it('does not offer a loop a mention would not reach', () => {
-    expect(mentionCompletions('c', fleet)).toEqual([])
-    expect(mentionCompletions('d', fleet)).toEqual([])
+    expect(mentionCompletions('c', fleet, inIt)).toEqual([])
+    expect(mentionCompletions('d', fleet, inIt)).toEqual([])
   })
 })
 
@@ -115,12 +120,12 @@ describe('completeMention', () => {
   })
 })
 
-describe('a channel besides the fleet channel', () => {
-  // aster is in both; briar is in the fleet channel but not docs, and cedar
-  // the other way round, so the two rules are told apart.
+describe('another channel', () => {
+  // aster is in both; briar is in the first channel but not docs, and cedar
+  // the other way round, so each channel's members are told apart.
   const docs = inChannelOf(['aster', 'cedar'])
 
-  it('reaches and offers its own loops, whatever their fleet channel membership', () => {
+  it('reaches and offers its own loops, whatever other channels they are in', () => {
     expect(channelRecipients('@aster @briar @cedar hi', fleet, undefined, docs)).toEqual(['aster', 'cedar'])
     expect(mentionCompletions('', fleet, docs)).toEqual(['aster', 'cedar', 'all'])
   })

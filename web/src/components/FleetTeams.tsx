@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView, type Team } from '../api'
-import { descriptionLength } from '../channels'
+import { channelRefusal, descriptionLength, homeChannelOptions, loopsNotInTeam } from '../channels'
 import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
 import {
@@ -244,12 +244,17 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
   // '' is the hub's default (ADR-0066).
   const [login, setLogin] = useState(team.claude_login ?? '')
   const { data: logins } = useQuery({ queryKey: ['claude-logins'], queryFn: api.claudeLogins })
+  // '' is none. Any hub channel may be picked: naming it gives it to the
+  // team (ADR-0068).
+  const [home, setHome] = useState(team.home_channel)
+  const { data: channels } = useQuery({ queryKey: ['channels'], queryFn: api.channels, retry: false })
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const badName = !validTeamName(name)
   const tooLong = descriptionLength(description) > TEAM_DESCRIPTION_MAX
 
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>, refusal: (err: unknown) => string = errorText) => {
     setBusy(true)
     setError('')
     try {
@@ -257,20 +262,32 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
       refresh()
       onDone()
     } catch (err) {
-      setError(errorText(err))
+      setError(refusal(err))
     } finally {
       setBusy(false)
     }
   }
 
+  // A hub channel holding loops outside the team is refused naming them,
+  // and said here naming them too, with what to do first.
+  const homeRefusal = (err: unknown) =>
+    channelRefusal(err, {
+      channel: home,
+      team: team.name,
+      outsiders: loopsNotInTeam(channels?.find((c) => c.name === home)?.loops ?? [], team.name, loops ?? []),
+    })
+
   const save = () =>
-    run(() =>
-      api.patchTeam(team.name, {
-        ...(name !== team.name && { name }),
-        description: description.trim(),
-        // Only when it changes, so a hub too old for it is asked what it was.
-        ...(login !== (team.claude_login ?? '') && { claude_login: login }),
-      }),
+    run(
+      () =>
+        api.patchTeam(team.name, {
+          ...(name !== team.name && { name }),
+          description: description.trim(),
+          // Only when it changes, so a hub too old for it is asked what it was.
+          ...(login !== (team.claude_login ?? '') && { claude_login: login }),
+          ...(home !== team.home_channel && { home_channel: home }),
+        }),
+      homeRefusal,
     )
 
   // Said before asking the hub, which refuses a team with loops the same way.
@@ -295,6 +312,9 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
         logins && team.claude_login !== undefined
           ? { value: login, onChange: setLogin, options: loginOptions(logins.logins) }
           : undefined
+      }
+      home={
+        channels ? { value: home, onChange: setHome, options: homeChannelOptions(team, channels) } : undefined
       }
     >
       <button type="button" className="btn primary sm" onClick={save} disabled={busy || badName || tooLong}>
@@ -379,6 +399,13 @@ function NewTeamCard() {
   )
 }
 
+// A pick-list a team form offers, by value and label.
+type Picker = {
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+}
+
 function TeamForm({
   id,
   name,
@@ -389,6 +416,7 @@ function TeamForm({
   tooLong,
   error,
   login,
+  home,
   children,
 }: {
   id: string
@@ -400,7 +428,9 @@ function TeamForm({
   tooLong: boolean
   error: string
   // The team's Claude login picker, on an edit.
-  login?: { value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }
+  login?: Picker
+  // The team's home channel picker, on an edit.
+  home?: Picker
   children: React.ReactNode
 }) {
   return (
@@ -432,6 +462,22 @@ function TeamForm({
         placeholder="What it is for (optional)"
         aria-invalid={tooLong}
       />
+      {home && (
+        <>
+          <label htmlFor={`${id}-home`}>Home channel</label>
+          <select id={`${id}-home`} value={home.value} onChange={(e) => home.onChange(e.target.value)}>
+            {home.options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <div className="team-form-note">
+            Every loop in the team joins it. A hub channel becomes the team's, keeping its history, and must
+            hold only the team's loops.
+          </div>
+        </>
+      )}
       {login && (
         <>
           <label htmlFor={`${id}-login`}>Default team login</label>

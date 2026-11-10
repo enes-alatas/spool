@@ -30,7 +30,7 @@ export function messageTime(ts: number, now = new Date()): string {
 // words.
 //
 // Shared by every place the room renders a conversation as a thread — a
-// loop's control room and the fleet channel (#286) — for the reason
+// loop's control room and a channel's chat (#286) — for the reason
 // `UndeliveredMark` is shared: two renderings of the same row would drift,
 // and the operator would learn the same message twice. What differs between
 // the places goes in the slots: `meta` after the time on the who line,

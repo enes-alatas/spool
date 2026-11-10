@@ -1,7 +1,7 @@
 import type { ChatMessage, LoopView } from './api'
 
-// The fleet channel's addressing, as the compose box needs to see it before
-// the post is sent (#286). The server decides who a post reaches; this
+// A channel's addressing, as the compose box needs to see it before the
+// post is sent (#286). The server decides who a post reaches; this
 // module predicts it, so the rules below mirror `internal/route/router.go`
 // and a difference between the two is a bug here, not a second policy.
 
@@ -21,12 +21,10 @@ export function mentionTokens(text: string): string[] {
   return [...seen]
 }
 
-// Whether a loop is in the channel a post is for. The fleet channel's
-// membership is on the loop itself; any other channel's is its loop list
-// (ADR-0038), and the router resolves names among the same loops.
+// Whether a loop is in the channel a post is for. A channel's membership is
+// its loop list (ADR-0038, ADR-0068), and the router resolves names among
+// the same loops.
 export type InChannel = (loop: LoopView) => boolean
-
-export const inFleetChannel: InChannel = (loop) => loop.in_fleet_channel
 
 export function inChannelOf(members: string[]): InChannel {
   return (loop) => members.includes(loop.name)
@@ -47,8 +45,8 @@ export function inChannelOf(members: string[]): InChannel {
 export function channelRecipients(
   text: string,
   loops: LoopView[],
-  replyTo?: Pick<ChatMessage, 'from_loop_id'>,
-  inChannel: InChannel = inFleetChannel,
+  replyTo: Pick<ChatMessage, 'from_loop_id'> | undefined,
+  inChannel: InChannel,
 ): string[] {
   const tokens = new Set(mentionTokens(text))
   const all = tokens.has(BROADCAST)
@@ -81,11 +79,7 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
 // name starts with it, then `@all` when it fits. Archived loops are gone and
 // loops outside the channel would reach nobody, so offering either would be
 // offering a mistake.
-export function mentionCompletions(
-  query: string,
-  loops: LoopView[],
-  inChannel: InChannel = inFleetChannel,
-): string[] {
+export function mentionCompletions(query: string, loops: LoopView[], inChannel: InChannel): string[] {
   const q = query.toLowerCase()
   const names = loops
     .filter((l) => inChannel(l) && l.status !== 'archived' && l.name.toLowerCase().startsWith(q))

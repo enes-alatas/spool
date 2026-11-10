@@ -70,7 +70,6 @@ export function useGlobalStream() {
         break
       case 'message':
         qc.invalidateQueries({ queryKey: ['activity'] })
-        qc.invalidateQueries({ queryKey: ['group'] })
         qc.invalidateQueries({ queryKey: ['channel'] })
         qc.invalidateQueries({ queryKey: ['loops'] })
         break
@@ -93,7 +92,6 @@ export function useGlobalStream() {
       case 'poll':
       case 'message_dropped':
         qc.invalidateQueries({ queryKey: ['activity'] })
-        qc.invalidateQueries({ queryKey: ['group'] })
         qc.invalidateQueries({ queryKey: ['channel'] })
         qc.invalidateQueries({ queryKey: ['conversation'] })
         break

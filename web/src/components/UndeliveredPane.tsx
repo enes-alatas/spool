@@ -33,7 +33,7 @@ function fallback(m: ChatMessage): Undelivered {
     resolution: '',
     resentAs: 0,
     leftByLoop: m.send_left_by_loop ?? false,
-    fleetChannel: m.conversation === 'group',
+    inChannel: m.conversation === 'group',
   }
 }
 
@@ -117,7 +117,7 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
         className="btn sm"
         onClick={() => act('retry')}
         disabled={busy !== ''}
-        title={`Send this message to ${destinationLabel(msg.conversation)} again`}
+        title={`Send this message to ${destinationLabel(msg)} again`}
       >
         {busy === 'retry' ? 'retrying…' : retrying ? 'retrying' : 'retry'}
       </button>
@@ -184,11 +184,11 @@ export function UndeliveredPane({ name }: { name: string }) {
               reason on a line of their own; the wide one lays the two out as
               grid columns through it (`display: contents`, styles.css). */}
           <span className="undelivered-where">
-            {/* "to group", not "group". The bare label is Activity's, where
+            {/* "to #fleet", not "#fleet". The bare label is Activity's, where
                 this slot says where a message came *from*; here it says where
                 it was going, and the same word in the same place meaning the
                 opposite way round is half of why the row read wrong (#282). */}
-            <span className="origin">to {destinationLabel(m.conversation)}</span>
+            <span className="origin">to {destinationLabel(m)}</span>
             {/* The surface's own reason, verbatim: the sender scrubbed it of
                 credentials before it was stored (#155). The row carries it
                 rather than hiding it in hover text, because this pane exists

@@ -5,6 +5,8 @@ import {
   channelOwner,
   channelRefusal,
   descriptionLength,
+  homeChannelOptions,
+  joinsOnCreate,
   loopList,
   loopsNotInTeam,
   loopsOutside,
@@ -136,13 +138,11 @@ describe('channelRefusal', () => {
 })
 
 describe('whereSaid', () => {
-  it('names a channel besides the fleet channel as a loop sends to it', () => {
+  it('names every channel as a loop sends to it, fleet included', () => {
     expect(whereSaid({ conversation: 'group', channel: 'docs', origin: 'loop' })).toBe('channel:docs')
-  })
-
-  it('keeps the fleet channel as group, with or without its name on the row', () => {
-    expect(whereSaid({ conversation: 'group', channel: 'group', origin: 'loop' })).toBe('group')
-    expect(whereSaid({ conversation: 'group', origin: 'telegram_group' })).toBe('group')
+    expect(whereSaid({ conversation: 'group', channel: 'fleet', origin: 'telegram_group' })).toBe(
+      'channel:fleet',
+    )
   })
 
   it('names a private conversation by its kind, and falls back to the origin', () => {
@@ -152,10 +152,57 @@ describe('whereSaid', () => {
 })
 
 describe('channelLabel', () => {
-  it('names the fleet channel by what it is, never its wire name', () => {
-    expect(channelLabel('group')).toBe('fleet channel')
-  })
-  it('names any other channel with a hash', () => {
+  it('names every channel with a hash, fleet as any other', () => {
     expect(channelLabel('docs')).toBe('#docs')
+    expect(channelLabel('fleet')).toBe('#fleet')
+  })
+})
+
+describe('joinsOnCreate', () => {
+  // ADR-0068: no channel spans the fleet, so a new loop joins its
+  // team's home channel or none, whatever else the hub holds.
+  it("names the team's home channel", () => {
+    expect(joinsOnCreate({ name: 'handbook', home_channel: 'handbook' })).toBe(
+      "Joins #handbook, team handbook's home channel.",
+    )
+  })
+
+  it('says a loop joins no channel in a team with no home, or in no team', () => {
+    expect(joinsOnCreate({ name: 'handbook', home_channel: '' })).toMatch(
+      /^Team handbook has no home channel/,
+    )
+    expect(joinsOnCreate(undefined)).toMatch(/^In no team, it joins no channel/)
+  })
+})
+
+describe('homeChannelOptions', () => {
+  const channels = [
+    { name: 'fleet', team: '' },
+    { name: 'handbook', team: 'handbook' },
+    { name: 'handbook-ops', team: 'handbook' },
+    { name: 'release', team: 'release' },
+    { name: 'random', team: '' },
+  ]
+
+  // ADR-0068: a hub channel becomes the home in one step, `fleet`
+  // included; another team's channel would be refused, so it isn't offered.
+  it("offers none, the team's channels, then every hub channel", () => {
+    expect(
+      homeChannelOptions({ name: 'handbook', channels: ['handbook', 'handbook-ops'] }, channels),
+    ).toEqual([
+      { value: '', label: 'no home channel' },
+      { value: 'handbook', label: '#handbook' },
+      { value: 'handbook-ops', label: '#handbook-ops' },
+      { value: 'fleet', label: '#fleet · hub channel' },
+      { value: 'random', label: '#random · hub channel' },
+    ])
+  })
+
+  it('offers the hub channels to a team with none of its own', () => {
+    expect(homeChannelOptions({ name: 'new', channels: [] }, channels).map((o) => o.value)).toEqual([
+      '',
+      'fleet',
+      'random',
+    ])
   })
 })

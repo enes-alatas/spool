@@ -5,12 +5,11 @@ import {
   channelRecipients,
   completeMention,
   inChannelOf,
-  inFleetChannel,
   mentionAt,
   mentionCompletions,
   type InChannel,
 } from '../channel'
-import { FLEET_CHANNEL } from '../channels'
+import { channelLabel } from '../channels'
 import { wordsTaken } from '../edits'
 import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from './Attachments'
 import { MessageKnot } from './MessageKnot'
@@ -19,9 +18,9 @@ import { surfaceNote } from '../messages'
 // A channel's conversation: its thread and a composer, which live on the hub
 // and are native to the control room (ADR-0032, #286). Any channel a loop
 // is in is a pane of that loop's page (#549), read and posted by the
-// channel's name. Given no channel, it is the fleet channel, the one
-// conversation that belongs to no loop; that is the fleet's, so it is a tab
-// of the Fleet page rather than a destination of its own. Not a part of
+// channel's name, and every channel's chat is a page under Channels
+// (#1443). No channel is the fleet's: `fleet` is one like any other
+// (ADR-0068). Not a part of
 // Activity: that is a read-only log of every conversation, owner DMs
 // included (ADR-0025), and a compose box there would sit beside them.
 //
@@ -169,11 +168,7 @@ function Compose({
       // Uploaded at send, as on a loop's composer: an upload no message
       // names is dropped within the hour.
       const attached = file ? await api.uploadAttachment(file) : undefined
-      if (channel === FLEET_CHANNEL) {
-        await api.postGroup(draft.trim(), replyTo?.id, attached?.id)
-      } else {
-        await api.postChannel(channel, draft.trim(), replyTo?.id, attached?.id)
-      }
+      await api.postChannel(channel, draft.trim(), replyTo?.id, attached?.id)
       track('', 0)
       setFile(null)
       onReplyDone()
@@ -220,7 +215,7 @@ function Compose({
   return (
     <div className="channel-compose">
       {options.length > 0 && (
-        <div className="mention-menu" role="listbox" aria-label={`Loops in ${channelPhrase(channel)}`}>
+        <div className="mention-menu" role="listbox" aria-label={`Loops in ${channelLabel(channel)}`}>
           {options.map((name, i) => (
             <button
               key={name}
@@ -257,7 +252,7 @@ function Compose({
           placeholder={
             replyTo
               ? `Reply to @${replyTo.author}`
-              : `Post to ${channelPhrase(channel)}: @name the loops it is for, or @all`
+              : `Post to ${channelLabel(channel)}: @name the loops it is for, or @all`
           }
           value={draft}
           onChange={(e) => track(e.target.value, e.target.selectionStart)}
@@ -288,17 +283,12 @@ function Compose({
   )
 }
 
-// The query a channel's thread is under: the fleet channel keeps its own
-// key, which the stream and the composer on a loop's page refetch by.
+// The query a channel's thread is under, which the stream refetches by.
 function channelKey(channel: string): string[] {
-  return channel === FLEET_CHANNEL ? ['group'] : ['channel', channel]
+  return ['channel', channel]
 }
 
-function channelPhrase(channel: string): string {
-  return channel === FLEET_CHANNEL ? 'the fleet channel' : `#${channel}`
-}
-
-export function ChannelChat({ channel = FLEET_CHANNEL, members }: { channel?: string; members?: string[] }) {
+export function ChannelChat({ channel, members }: { channel: string; members: string[] }) {
   const {
     data: msgs,
     isLoading,
@@ -306,11 +296,11 @@ export function ChannelChat({ channel = FLEET_CHANNEL, members }: { channel?: st
     error,
   } = useQuery({
     queryKey: channelKey(channel),
-    queryFn: () => (channel === FLEET_CHANNEL ? api.group() : api.channelMessages(channel)),
+    queryFn: () => api.channelMessages(channel),
     refetchInterval: 5000,
   })
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  const inChannel = channel === FLEET_CHANNEL || !members ? inFleetChannel : inChannelOf(members)
+  const inChannel = inChannelOf(members)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   // Follow the tail unless the reader has scrolled up to read; the same rule
@@ -331,17 +321,17 @@ export function ChannelChat({ channel = FLEET_CHANNEL, members }: { channel?: st
   }
 
   return (
-    <div className="fleet-channel">
+    <div className="channel-chat">
       {isLoading && <div className="fleet-note">Loading…</div>}
       {isError && (
         <div className="form-error" role="alert">
-          Could not load {channelPhrase(channel)}: {error instanceof Error ? error.message : String(error)}
+          Could not load {channelLabel(channel)}: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
       <div className="pane-scroll" ref={scroller} onScroll={onScroll}>
         {msgs && msgs.length === 0 ? (
-          <div className="empty">Nothing in {channelPhrase(channel)} yet. Name a loop below to start it.</div>
+          <div className="empty">Nothing in {channelLabel(channel)} yet. Name a loop below to start it.</div>
         ) : (
           <div className="timeline">
             {thread.map((m) => (

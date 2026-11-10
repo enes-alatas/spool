@@ -1,16 +1,11 @@
-import { ApiError, type ChatMessage } from './api'
+import { ApiError, type Channel, type ChatMessage, type Team } from './api'
 
 // The rules the Channels page checks before it asks the hub, mirrored from
 // internal/store (ValidChannelName) and internal/httpapi (the description
 // limit), so a form can say what is wrong while it is being typed. The hub
 // still decides; a refusal from it is shown as it came.
 
-// The fleet channel's name on the wire. It always exists, can't be created
-// or deleted, and holds every loop the operator hasn't taken out of it.
-export const FLEET_CHANNEL = 'group'
-
-// Where a channel's chat opens: its own page under Channels (#1443). Only
-// the fleet channel's chat opens so far.
+// Where a channel's chat opens: its own page under Channels (#1443).
 export function channelChatPath(name: string): string {
   return `/channels/${name}`
 }
@@ -30,10 +25,10 @@ export function descriptionLength(description: string): number {
   return [...description].length
 }
 
-// A channel as the control room names it to the operator: the fleet channel
-// by what it is, never by its wire name, and any other as #name.
+// A channel as the control room names it to the operator: #name. None is
+// special, `fleet` included (ADR-0068).
 export function channelLabel(name: string): string {
-  return name === FLEET_CHANNEL ? 'fleet channel' : `#${name}`
+  return `#${name}`
 }
 
 // The loops a channel could take, in the order the pick-list offers them. A
@@ -99,11 +94,10 @@ export function channelRefusal(
 }
 
 // Where a message was said, as a loop names it to send there (store
-// Message.Destination): a channel besides the fleet channel as
-// channel:<name>, and the fleet channel, the control room and owner DMs by
-// their kind.
+// Message.Destination): a channel as channel:<name>, and the control room
+// and private chats by their kind.
 export function whereSaid(m: Pick<ChatMessage, 'conversation' | 'channel' | 'origin'>): string {
-  if (m.conversation === 'group' && m.channel && m.channel !== FLEET_CHANNEL) return `channel:${m.channel}`
+  if (m.conversation === 'group' && m.channel) return `channel:${m.channel}`
   return m.conversation || m.origin
 }
 
@@ -115,4 +109,32 @@ export function channelAnchor(name: string): string {
 
 export function channelHash(name: string): string {
   return `#${channelAnchor(name)}`
+}
+
+// The channel a new loop joins, as the New loop form says it (ADR-0068): a
+// loop made in a team joins the team's home channel, and any other
+// joins none. No loop joins a channel for being the hub's second.
+export function joinsOnCreate(team: Pick<Team, 'name' | 'home_channel'> | undefined): string {
+  if (!team) return 'In no team, it joins no channel. Add it to one on Channels once it exists.'
+  if (!team.home_channel)
+    return `Team ${team.name} has no home channel, so it joins no channel. Add it to one on Channels once it exists.`
+  return `Joins #${team.home_channel}, team ${team.name}'s home channel.`
+}
+
+// What a team's home channel picker offers (ADR-0068): none, the
+// team's own channels, then every hub channel, `fleet` among them, since
+// naming a hub channel gives it to the team in the same step. Another
+// team's channel is not offered: the hub refuses it 409
+// `channel_in_other_team`.
+export function homeChannelOptions(
+  team: Pick<Team, 'name' | 'channels'>,
+  channels: Pick<Channel, 'name' | 'team'>[],
+): { value: string; label: string }[] {
+  const own = channels.filter((c) => c.team === team.name || team.channels.includes(c.name))
+  const hub = channels.filter((c) => c.team === '' && !team.channels.includes(c.name))
+  return [
+    { value: '', label: 'no home channel' },
+    ...own.map((c) => ({ value: c.name, label: channelLabel(c.name) })),
+    ...hub.map((c) => ({ value: c.name, label: `${channelLabel(c.name)} · hub channel` })),
+  ]
 }

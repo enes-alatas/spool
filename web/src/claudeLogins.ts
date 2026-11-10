@@ -182,12 +182,13 @@ export function cloudTeamLoginNote(loop: Pick<LoopView, 'runtime' | 'team'>, tea
   return `Team ${team.name}'s default login is ${team.claude_login}, but a cloud loop doesn't take its team's default: it runs on its own login, or the hub's default.`
 }
 
-// What a loop's login picker offers. Its 'default' option is naming none,
-// so it is called after the login the loop then runs on: its team's when
-// the team names one and the loop isn't a cloud loop, with that login's own
-// signed-out state, not the hub default's.
+// What a loop's login picker offers, or the New loop form's for the loop it
+// makes, whose runtime is '' until the hub says its default. Its 'default'
+// option is naming none, so it is called after the login the loop then runs
+// on: its team's when the team names one and the loop isn't a cloud loop,
+// with that login's own signed-out state, not the hub default's.
 export function loopLoginOptions(
-  loop: Pick<LoopView, 'runtime'>,
+  loop: { runtime: string },
   team: Team | undefined,
   logins: ClaudeLogin[],
 ): { value: string; label: string }[] {

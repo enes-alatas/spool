@@ -88,7 +88,7 @@ export function slackAttachError(e: unknown): SlackAttachError {
       return {
         field: '',
         message:
-          "This app is in a different workspace from this hub's other Slack loops. A hub's Slack loops share one workspace, because the fleet channel is one channel. Create the app in that workspace instead.",
+          "This app is in a different workspace from this hub's other Slack loops. A hub's Slack loops share one workspace. Create the app in that workspace instead.",
       }
   }
   return { field: '', message: message || 'could not save the tokens' }
@@ -121,21 +121,6 @@ export function slackReadiness(
     return `Waiting for the Slack app to connect before it can message ${owner}.`
   return `Not ready to message ${owner} yet.`
 }
-
-// The Slack channel the loop's fleet room is, or that it has none yet; the
-// loop hears every room it has bound (#548), which the rooms panel lists.
-export function slackChannel(status: Pick<SlackStatus, 'channel_id' | 'channel_name'>): string {
-  if (!status.channel_id) return 'not bound yet'
-  return status.channel_name ? `#${status.channel_name}` : status.channel_id
-}
-
-// What binds it. An invite alone does not: the fleet channel binds to the
-// first Slack channel an allowed sender writes in, a linked user or one
-// allowed before links, and a stranger's message is dropped before that
-// (#230), so an operator told to invite the app would re-invite one that is
-// already there (#438).
-export const SLACK_UNBOUND_HINT =
-  'The fleet channel binds to the first Slack channel someone allowed to reach the loops writes in with the app invited: a linked user, or someone allowed by an old pairing code. A stranger does not count: they link from Settings → Account first.'
 
 // An app created from a manifest older than ADR-0040 lacks the reaction
 // scopes and events. Slack keeps the app as created, so nothing here can add

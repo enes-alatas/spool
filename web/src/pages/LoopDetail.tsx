@@ -18,7 +18,6 @@ import {
   EVENT_WINDOW,
   LoopEvent,
   LoopView,
-  MessageDestination,
   PrivateConversation,
   Rehome,
   Settings,
@@ -39,14 +38,7 @@ import { Problems } from '../components/Health'
 import { LoopConnections } from '../components/LoopConnections'
 import { LoopChangesPanel, LoopProvenance } from '../components/LoopChanges'
 import { needsLogin } from '../session'
-import {
-  loopSurface,
-  SLACK_POLLS_HINT,
-  SLACK_REACTIONS_HINT,
-  SLACK_UNBOUND_HINT,
-  slackChannel,
-  slackReadiness,
-} from '../slack'
+import { loopSurface, SLACK_POLLS_HINT, SLACK_REACTIONS_HINT, slackReadiness } from '../slack'
 import { ownerChoices, type OwnerPerson } from '../owner'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS, SUBAGENT_LABELS, noSubagentsHint } from '../options'
@@ -301,7 +293,7 @@ function ModelEditor({ loop, context }: { loop: LoopView; context: ReactNode }) 
 }
 
 // Whether the loop may spawn subagents (#855): switched on, its turns can't,
-// from its next wake. A switch, as the fleet channel is, since it
+// from its next wake. A switch, since it
 // is on or off. A cloud loop's session takes tools the hub has no say over,
 // so there it stays off, disabled, with that reason.
 function NoSubagents({
@@ -1058,8 +1050,8 @@ function WorkspaceRows({ loop }: { loop: LoopView }) {
 }
 
 // Where the loop is reachable besides this control room: at most one surface,
-// Telegram or Slack (#230), whether it is in the fleet channel, and the
-// surface's groups or channels (#849).
+// Telegram or Slack (#230), and the surface's groups or channels (#849),
+// each bound to one of the loop's channels or waiting for one.
 // A loop starts with no surface and gets one here (#287); a loop without one
 // is a private loop, which is a choice rather than a fault, so the empty
 // state says what it means instead of warning.
@@ -1077,8 +1069,6 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['loop', loop.name] })
       qc.invalidateQueries({ queryKey: ['loops'] })
-      // The fleet-channel switch is a change to `group`'s loops.
-      qc.invalidateQueries({ queryKey: ['channels'] })
       setError('')
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
@@ -1148,29 +1138,6 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           {attaching === 'slack' && <SlackStep loop={loop} onClose={() => setAttaching('')} />}
         </>
       )}
-      {manage ? (
-        <label className="switch-row">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={loop.in_fleet_channel}
-            disabled={patch.isPending}
-            onChange={(e) => patch.mutate({ in_fleet_channel: e.target.checked })}
-          />
-          <span>
-            In the fleet channel
-            <span className="hint">{fleetChannelHint(loop)}</span>
-          </span>
-        </label>
-      ) : (
-        <>
-          <div className="row" style={{ marginTop: 12 }}>
-            <span className="k">fleet channel</span>
-            <span className="v">{loop.in_fleet_channel ? 'in it' : 'not in it'}</span>
-          </div>
-          <div className="hint">{fleetChannelHint(loop)}</div>
-        </>
-      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -1179,12 +1146,6 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
       <LoopRooms loop={loop} />
     </div>
   )
-}
-
-function fleetChannelHint(loop: LoopView): string {
-  return loop.in_fleet_channel
-    ? 'Hears what is addressed to it in the fleet channel, and can post there.'
-    : 'Nothing posted in the fleet channel reaches it, and it has no group to post to.'
 }
 
 // The owner as a fact, for a session that may not choose one (#679). The
@@ -1236,16 +1197,11 @@ function SlackSurface({
         <span className="v">{status ? status.team_name : '…'}</span>
       </div>
       <div className="row">
-        <span className="k">fleet room</span>
-        <span className="v">{status ? slackChannel(status) : '…'}</span>
-      </div>
-      <div className="row">
         <span className="k">socket</span>
         <span className={`v ${status?.bridge.connected ? 'ok' : status ? 'bad' : ''}`}>
           {status ? (status.bridge.connected ? 'connected' : 'not connected') : '…'}
         </span>
       </div>
-      {status && !status.channel_id && <div className="hint surface-hint">{SLACK_UNBOUND_HINT}</div>}
       <div className="hint surface-hint">{SLACK_REACTIONS_HINT}</div>
       <div className="hint surface-hint">{SLACK_POLLS_HINT}</div>
       {status?.bridge.last_error && (
@@ -1500,7 +1456,6 @@ export default function LoopDetail() {
   // frames — the only progress signal a long verb has.
   const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
-  const [dest, setDest] = useState<MessageDestination>('control_room')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -1888,20 +1843,15 @@ export default function LoopDetail() {
   }
 
   // The draft is cleared only once the hub has taken the message. A refusal
-  // — a loop outside the fleet channel answers 409 for `group` — keeps what
-  // was typed and says why, where it used to vanish without a word. The
-  // reason is about the draft and destination it was sent with, so changing
-  // either retires it: it never sits under a message it does not describe.
-  const pickDest = (to: MessageDestination) => {
-    setDest(to)
-    setSendError('')
-  }
+  // keeps what was typed and says why, where it used to vanish without a
+  // word. The reason is about the draft it was sent with, so editing it
+  // retires the reason: it never sits under a message it does not describe.
   const pickFile = (picked: File) => {
     const refused = pickRefusal(picked)
     setSendError(refused)
     if (!refused) setFile(picked)
   }
-  const send = async (to: MessageDestination) => {
+  const send = async () => {
     const text = draft.trim()
     if (!text || sending) return
     setSending(true)
@@ -1910,7 +1860,7 @@ export default function LoopDetail() {
       // Uploaded at send rather than at pick: the hub drops an upload no
       // message names within the hour, and a draft can sit longer than that.
       const attached = file ? await api.uploadAttachment(file) : undefined
-      await api.message(name, text, to, attached?.id)
+      await api.message(name, text, attached?.id)
       setDraft('')
       setFile(null)
       qc.invalidateQueries({ queryKey: ['conversation', name] })
@@ -1946,11 +1896,6 @@ export default function LoopDetail() {
   }
 
   const paused = loop.status === 'paused'
-  // A loop outside the fleet channel has no group to post to. The choice is
-  // still drawn, so it cannot vanish from under a draft meant for it, but it
-  // cannot be picked; a send already aimed there is refused by the hub (409)
-  // and the refusal is shown, rather than the message quietly going private.
-  const outside = !loop.in_fleet_channel
 
   return (
     <div className="page">
@@ -2095,36 +2040,11 @@ export default function LoopDetail() {
                 )
               ) : (
                 <>
-                  <div className="dest-picker">
-                    <span className="dest-label">to</span>
-                    <button
-                      className={`dest${dest === 'control_room' ? ' on' : ''}`}
-                      onClick={() => pickDest('control_room')}
-                    >
-                      control room
-                    </button>
-                    <button
-                      className={`dest${dest === 'group' ? ' on' : ''}`}
-                      onClick={() => pickDest('group')}
-                      disabled={outside && dest !== 'group'}
-                      title={
-                        outside
-                          ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it`
-                          : undefined
-                      }
-                    >
-                      {outside ? 'fleet channel · not in it' : 'fleet channel'}
-                    </button>
-                  </div>
                   {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
-                  <div className="composer" style={{ marginTop: 8 }}>
+                  <div className="composer">
                     <AttachButton onPick={pickFile} disabled={sending} />
                     <textarea
-                      placeholder={
-                        dest === 'group'
-                          ? `Post to the fleet channel: the loops see it, nothing goes to Telegram or Slack, and @${loop.name} is delivered either way`
-                          : `Message @${loop.name} in the control room…`
-                      }
+                      placeholder={`Message @${loop.name} in the control room…`}
                       value={draft}
                       onChange={(e) => {
                         setDraft(e.target.value)
@@ -2133,13 +2053,13 @@ export default function LoopDetail() {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault()
-                          send(dest)
+                          send()
                         }
                       }}
                     />
                     <button
                       className="btn primary"
-                      onClick={() => send(dest)}
+                      onClick={() => send()}
                       disabled={!draft.trim() || sending}
                     >
                       Send

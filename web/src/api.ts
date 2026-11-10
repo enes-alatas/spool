@@ -99,7 +99,6 @@ export interface LoopView {
   // the turn's end.
   daily_cap_reached?: boolean
   tg_bot_username: string
-  tg_group_chat_id: number
   status: 'active' | 'paused' | 'archived'
   current_session_id: string
   current_pid: number
@@ -178,9 +177,6 @@ export interface LoopView {
   // chat, so it can only reach an owner who has written to this loop's own
   // bot first (#73).
   owner_dm_ready: boolean
-  // Whether the loop is in the fleet channel: it receives what addresses it
-  // there and may post to it (ADR-0032). Always present since #295.
-  in_fleet_channel: boolean
   // The team the loop is in (ADR-0066), '' when it is in none. A loop is in
   // one team at most.
   team: string
@@ -235,10 +231,6 @@ export interface LoopEvent {
   subtype: string
   payload: string
 }
-
-// The two destinations the composer offers (ADR-0026): the loop's private
-// control_room thread, or a post to the shared group conversation.
-export type MessageDestination = 'control_room' | 'group'
 
 export interface ChatMessage {
   id: number
@@ -306,9 +298,9 @@ export interface ChatMessage {
   // is one, narrowed in `messages.ts`. Optional because a server from before
   // #301 omits it, and an absent field is that server, not an answer.
   mirror?: string
-  // The message this one explicitly replies to, when it is a reply. In the
-  // fleet channel a reply addresses the replied-to loop with no mention
-  // needed (ADR-0025); the channel page draws it as a quote (#286).
+  // The message this one explicitly replies to, when it is a reply. In a
+  // channel a reply addresses the replied-to loop with no mention needed
+  // (ADR-0025); the channel page draws it as a quote (#286).
   reply_to_id?: number
   // The files that came with it (#460). Absent when there are none.
   attachments?: Attachment[]
@@ -317,10 +309,9 @@ export interface ChatMessage {
   // The ballot it carries if it is a loop's poll (ADR-0041, #554). Absent on
   // every other message.
   poll?: Poll
-  // The channel a channel message was posted in: 'group' for the fleet
-  // channel. Absent on owner_dm and control_room messages, and on a server
-  // from before channels (#483). Mirrored for the api.ts/Go sync rule;
-  // nothing in the room reads it yet.
+  // The channel a channel message was posted in, by name; its conversation
+  // is 'group' in every channel (ADR-0068). Absent on owner_dm and
+  // control_room messages, and on a server from before channels (#483).
   channel?: string
   // The message this one corrects, when a person edited or deleted what they
   // said on a surface (ADR-0055): this is what they now stand behind, and
@@ -451,11 +442,8 @@ export interface SlackSender {
   updated_at: number
 }
 
-// A Slack loop's live state (#230). channel_id is the Slack channel the
-// loop's fleet room is: the fleet channel binds to the first Slack channel
-// an allowed sender writes in with the app invited; an invite alone, or a
-// stranger's message, binds nothing (#438). channel_id is '' until
-// then. ignored_events counts messages from Slack channels the app has no
+// A Slack loop's live state (#230). The Slack channels it is in are its
+// rooms, which `rooms` lists (ADR-0068). ignored_events counts messages from Slack channels the app has no
 // bound room in (#548): the hint that one is waiting on the loop page.
 // last_file_error says why Slack last withheld a shared file and what brings
 // files back, '' once Slack hands one over again (#480).
@@ -465,8 +453,6 @@ export interface SlackStatus {
   bot_name: string
   team_id: string
   team_name: string
-  channel_id: string
-  channel_name: string
   bridge: {
     connected: boolean
     last_event_at: number
@@ -516,9 +502,9 @@ export interface RulesView {
   budget: RulesBudget
 }
 
-// A channel: a conversation the hub holds, and the loops in it (#483).
-// `group` is the fleet channel; it always exists, and its loops are the ones
-// with in_fleet_channel set.
+// A channel: a conversation the hub holds, and the loops in it (#483). No
+// channel is special: an upgraded hub's old fleet channel is one named
+// `fleet`, and a fresh hub has none (ADR-0068).
 export interface Channel {
   name: string
   // "" when unset.
@@ -544,8 +530,8 @@ export interface Room {
   // The chat's name as the surface last reported it; "" for a room bound by
   // id before the bot ever heard from it.
   title: string
-  // The channel it carries; "" while unbound. The fleet channel's room
-  // carries `group`.
+  // The channel it carries; "" while unbound. A new room arrives unbound,
+  // for the operator to bind (ADR-0068).
   channel: string
   first_seen_at: number
   // 0 while unbound.
@@ -1316,9 +1302,6 @@ export interface CreateLoopReq {
   // rotates, both '' detaches, and one alone is a 400 (#230).
   slack_app_token?: string
   slack_bot_token?: string
-  // Whether the loop is in the fleet channel (ADR-0032). On create, absent
-  // means the server's default: out for a fleet's first loop, in otherwise.
-  in_fleet_channel?: boolean
   // The team to put the loop in (ADR-0066): another team moves it, '' takes
   // it out, and leaving it out leaves the loop where it is. A team the hub
   // doesn't hold is refused 404 `team_not_found`.
@@ -1501,18 +1484,17 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ user }),
     }),
-  message: (
-    name: string,
-    text: string,
-    destination: MessageDestination = 'control_room',
-    attachmentID?: number,
-  ) =>
+  // The operator writing to the loop in its control room (ADR-0026), the one
+  // destination this route takes: a channel is written to from its own chat,
+  // as no conversation spans the fleet (ADR-0068), and any other
+  // destination is a 400.
+  message: (name: string, text: string, attachmentID?: number) =>
     req<{ queued: boolean }>(`/api/loops/${name}/message`, {
       method: 'POST',
       body: JSON.stringify({
         author: 'operator',
         text,
-        destination,
+        destination: 'control_room',
         attachment_id: attachmentID || undefined,
       }),
     }),
@@ -1563,25 +1545,6 @@ export const api = {
     req<LoopChange[]>(
       `/api/changes?${new URLSearchParams({ ...(loop ? { loop } : {}), limit: String(limit) })}`,
     ),
-  // The fleet channel's timeline, newest first like a loop's conversation.
-  // It is the hub's rather than any loop's (ADR-0032), so it is not
-  // reached through one.
-  group: (limit = 100) => req<ChatMessage[]>(`/api/group?limit=${limit}`),
-  // The operator posting to the fleet channel. It wakes the loops the text
-  // addresses and no others, and never leaves the hub (ADR-0032):
-  // nobody on an attached surface sees it. 202 — delivery is the loops'.
-  // `replyTo` is the fleet-channel message it answers (#311); the server
-  // refuses one that is gone (`unknown_reply_to`) or from another
-  // conversation (`cross_conversation_reply_to`) with a 400.
-  postGroup: (text: string, replyTo?: number, attachmentID?: number) =>
-    req<{ queued: boolean }>('/api/group', {
-      method: 'POST',
-      body: JSON.stringify({
-        text,
-        reply_to_id: replyTo || undefined,
-        attachment_id: attachmentID || undefined,
-      }),
-    }),
   conversation: (
     name: string,
     kind: 'control_room' | PrivateConversation['conversation'] = 'control_room',
@@ -1595,7 +1558,7 @@ export const api = {
   // A reader gets an empty thread, not an error, for one that is not theirs.
   privateConversations: (name: string) => req<PrivateConversation[]>(`/api/loops/${name}/conversations`),
   telegramStatus: (name: string) =>
-    req<{ configured: boolean; bot_username: string; group_bound: boolean; bridge?: unknown }>(
+    req<{ configured: boolean; bot_username: string; bridge?: unknown }>(
       `/api/loops/${name}/telegram/status`,
     ),
   rooms: (name: string) => req<Room[]>(`/api/loops/${name}/rooms`),
@@ -1772,8 +1735,12 @@ export const api = {
   // One channel's messages, newest first; a deleted channel's still read.
   channelMessages: (name: string, limit = 100) =>
     req<ChatMessage[]>(`/api/channels/${name}/messages?limit=${limit}`),
-  // The operator posting into a channel: as postGroup, which it is for
-  // `group`. The reply must be from the same channel.
+  // The operator posting into a channel. It wakes the loops the text
+  // addresses and no others, and never leaves the hub (ADR-0032): nobody on
+  // an attached surface sees it. 202, as delivery is the loops'. `replyTo`
+  // is the message it answers (#311), which must be from the same channel:
+  // one that is gone is 400 `unknown_reply_to`, one from another
+  // conversation 400 `cross_conversation_reply_to`.
   postChannel: (name: string, text: string, replyTo?: number, attachmentID?: number) =>
     req<{ queued: boolean }>(`/api/channels/${name}/messages`, {
       method: 'POST',
@@ -1793,8 +1760,7 @@ export const api = {
   patchChannel: (name: string, body: { description?: string; team?: string }) =>
     req<Channel>(`/api/channels/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteChannel: (name: string) => req<void>(`/api/channels/${name}`, { method: 'DELETE' }),
-  // Both idempotent. On `group` these are the same write as PATCHing the
-  // loop's in_fleet_channel.
+  // Both idempotent.
   addChannelLoop: (channel: string, loop: string) =>
     req<void>(`/api/channels/${channel}/loops/${loop}`, { method: 'PUT' }),
   removeChannelLoop: (channel: string, loop: string) =>
@@ -1904,8 +1870,14 @@ export const api = {
   // A rename answers the team under its new name; refused as addTeam is.
   // claude_login '' or 'default' puts the team back on the hub's default; a
   // login the hub doesn't hold is 400 `claude_login`.
-  patchTeam: (name: string, body: { name?: string; description?: string; claude_login?: string }) =>
-    req<Team>(`/api/teams/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // home_channel names the channel every loop of the team joins, '' for
+  // none: a hub channel is given to the team in the same step (ADR-0068),
+  // refused 409 `channel_has_outsiders` while it holds a loop outside the
+  // team, and another team's channel 409 `channel_in_other_team`.
+  patchTeam: (
+    name: string,
+    body: { name?: string; description?: string; claude_login?: string; home_channel?: string },
+  ) => req<Team>(`/api/teams/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   // Refused 409 `team_has_loops` while it has loops, the error naming them.
   deleteTeam: (name: string) => req<void>(`/api/teams/${name}`, { method: 'DELETE' }),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a

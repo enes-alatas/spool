@@ -94,15 +94,17 @@ try {
     await see(page.getByRole('button', { name: new RegExp(`^${name}: `) }), `the ${name} circle`)
   }
 
-  step = 'Fleet channel'
+  // An upgraded hub's `fleet` is a channel like any other (ADR-0068): its
+  // card opens its chat, as every card does.
+  step = 'channel chat'
   await page.goto(base + '/channels')
-  await page.getByRole('link', { name: 'Open chat →' }).click()
-  await heading('Fleet channel')
+  await page.locator('#channel-fleet').getByRole('link', { name: 'Open chat →' }).click()
+  await heading('#fleet')
   await see(page.getByText('Three pages, all fixed', { exact: false }), "gardener's channel post")
-  // the chat was a tab on Fleet (#286); a saved link to it lands here (#1443)
+  // the chat was a tab on Fleet (#286); a saved link to it lands on
+  // Channels, where every channel's chat opens
   await page.goto(base + '/?view=channel')
-  await heading('Fleet channel')
-  await see(page.getByText('Three pages, all fixed', { exact: false }), "gardener's channel post")
+  await heading('Channels')
 
   step = 'loop page'
   await page.goto(base + '/loops/gardener')

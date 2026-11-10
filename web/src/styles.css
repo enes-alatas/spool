@@ -1924,15 +1924,10 @@ textarea {
   margin-top: 16px;
 }
 /* the pills shrink and wrap their own labels rather than moving to a line of
-   their own: the picker reads as one choice between two, and keeping that
+   their own: the tabs read as one row of choices, and keeping that
    shape is worth more than keeping each label on one line */
 .dest-picker .dest {
   min-width: 0;
-}
-.dest-picker .dest-label {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 .dest-picker .dest {
   background: var(--surface);
@@ -1978,7 +1973,7 @@ textarea {
   resize: vertical;
   min-height: 44px;
 }
-/* On a phone the paperclip narrows the box until the fleet channel's
+/* On a phone the paperclip narrows the box until a channel's
    placeholder takes three lines: room for all three (the 18px is the
    textarea's padding and border). */
 @media (max-width: 520px) {
@@ -2029,7 +2024,7 @@ textarea {
   color: var(--text-muted);
 }
 
-/* The fleet channel (#286). Its thread is a loop's control room with two
+/* A channel's chat (#286). Its thread is a loop's control room with two
    more lines per message: the quote a reply answers, above, and the loops
    the hub delivered it to, below. Both muted and in the who-line's face, so
    the message text stays the thing the eye lands on. */
@@ -2051,7 +2046,7 @@ textarea {
 }
 /* The thread takes the viewport less the header, the page title and the
    compose box, so the compose box stays in view below it. */
-.fleet-channel .pane-scroll {
+.channel-chat .pane-scroll {
   max-height: max(18rem, calc(100vh - 22rem));
 }
 .reached {
@@ -2433,7 +2428,7 @@ button.panel-link {
   font-size: 0.8125rem;
   cursor: pointer;
 }
-/* An on/off state rather than a form option — a loop is in the fleet channel
+/* An on/off state rather than a form option — a setting is on
    or is not — drawn as a switch. It stays a native checkbox underneath, so
    the keyboard and the label click work as before, and `role="switch"` has a
    screen reader announce it as one. */
@@ -4014,14 +4009,14 @@ button.panel-link {
   .main {
     padding-bottom: 4rem;
   }
-  /* The fleet channel's thread, less what narrow screens add below and
-     above it: the fixed bar under the compose box, and the Fleet summary
+  /* A channel's thread, less what narrow screens add below and
+     above it: the fixed bar under the compose box, and the page title
      that wraps onto a line of its own. The compose box and the line under it
      — who a post reaches, that it stays on the hub, why Send is refused —
      must clear the bar with the page unscrolled. `dvh`, so a phone's browser
      toolbar is not counted as room. A lower floor than the wide screen's: on
      a short phone a taller thread would push that line off the screen. */
-  .fleet-channel .pane-scroll {
+  .channel-chat .pane-scroll {
     max-height: max(10rem, calc(100dvh - 26rem));
   }
   .detail {
@@ -4560,10 +4555,15 @@ button.panel-link {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-/* the fleet channel's way into its chat, at the right end of its head (#1443) */
+/* a channel's way into its chat, at the right end of its head (#1443),
+   just before an admin's Edit and Delete, which then sit beside it rather
+   than splitting the free space with it */
 .channel-open {
   margin-left: auto;
   font-size: 0.8125rem;
+}
+.channel-open + .rule-actions {
+  margin-left: 12px;
 }
 .rule-body.channel-undescribed {
   color: var(--text-muted);

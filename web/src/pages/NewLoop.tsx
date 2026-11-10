@@ -13,7 +13,8 @@ import {
   GITHUB_PROXY_DOCS,
 } from '../options'
 import { useModelOptions } from '../models'
-import { customModelError, startsInFleetChannel } from '../forms'
+import { customModelError } from '../forms'
+import { joinsOnCreate } from '../channels'
 import { PACE_HINT, type Pace } from '../pace'
 import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
@@ -27,7 +28,7 @@ import { CapChips } from '../components/CapChips'
 import { EgressHints, ImportedFrom, PromptsChatFill, SkillHints } from '../components/PromptsChatImport'
 import { skillsRefused, skillsToInstall } from '../skills'
 import { TeamDraft } from '../components/TeamDraft'
-import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
+import { LOGIN_SAY_SO, loginAccount, loopLoginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -109,13 +110,13 @@ export function NewLoopForm({
     queryKey: ['settings'],
     queryFn: api.settings,
   })
-  // `null` until the operator touches the switch, so the default follows the
-  // fleet list if it loads after the form. Until that list answers there is
-  // no default to show: the switch waits, and a create sent meanwhile says
-  // nothing, leaving the choice to the server, which reads the same rule.
-  const { data: fleet } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  const [inChannel, setInChannel] = useState<boolean | null>(null)
-  const joinsChannel = inChannel ?? (fleet ? startsInFleetChannel(fleet) : undefined)
+  // The team the loop is made in, '' for none (ADR-0066). It decides the
+  // channel the loop starts in: its team's home channel, or none, as no
+  // channel spans the fleet (ADR-0068). A hub too old for teams answers
+  // 404, and the form offers none.
+  const { data: teams } = useQuery({ queryKey: ['teams'], queryFn: api.teams, retry: false })
+  const [teamName, setTeamName] = useState('')
+  const inTeam = teams?.find((t) => t.name === teamName)
   // Until the settings have answered the form knows nothing about this hub, and a
   // guess is worse than the silence it replaces: a create that names `docker`
   // on a bare-only hub is refused, where one that names nothing was always
@@ -243,9 +244,8 @@ export function NewLoopForm({
         tick_interval_sec: pace.tick,
         min_wake_sec: pace.min,
         max_wake_sec: pace.max,
-        // Sent whenever the switch shows a state, so it means what it shows; the
-        // server's own default covers a form that has none yet.
-        in_fleet_channel: joinsChannel,
+        // Omitted for none, which a hub too old for teams reads the same way.
+        team: inTeam?.name || undefined,
         // Omitted for the default, which a loop that names none runs on, so
         // a hub too old to know the field creates the same loop.
         claude_login: pickLogin && login !== 'default' ? login : undefined,
@@ -444,6 +444,21 @@ export function NewLoopForm({
         </div>
       )}
 
+      {teams && teams.length > 0 && (
+        <div className="field">
+          <label htmlFor="nl-team">Team</label>
+          <select id="nl-team" value={teamName} onChange={(e) => setTeamName(e.target.value)}>
+            <option value="">no team</option>
+            {teams.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <div className="hint">{joinsOnCreate(inTeam)}</div>
+        </div>
+      )}
+
       <div className="field">
         <label htmlFor="nl-login">Claude login</label>
         <select
@@ -457,7 +472,7 @@ export function NewLoopForm({
           disabled={!pickLogin}
         >
           {pickLogin ? (
-            loginOptions(logins.logins).map((o) => (
+            loopLoginOptions({ runtime: chosenRuntime }, inTeam, logins.logins).map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -546,26 +561,10 @@ export function NewLoopForm({
         )}
       </div>
 
-      <label className="switch-row">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={joinsChannel ?? false}
-          disabled={joinsChannel === undefined}
-          onChange={(e) => setInChannel(e.target.checked)}
-        />
-        <span>
-          In the fleet channel
-          <span className="hint">
-            {joinsChannel === undefined
-              ? 'Reading the fleet to pick the default…'
-              : joinsChannel
-                ? 'Hears what is addressed to it in the fleet channel, and can post there.'
-                : 'Starts outside the fleet channel: nothing posted there reaches it.'}{' '}
-            A Telegram bot, if it wants one, is attached on its page once it exists.
-          </span>
-        </span>
-      </label>
+      <div className="hint" style={{ marginBottom: 14 }}>
+        {!teams?.length && 'It starts in no channel: add it to one on Channels once it exists. '}A Telegram
+        bot or Slack app, if it wants one, is attached on its page once it exists.
+      </div>
 
       <div>
         <button

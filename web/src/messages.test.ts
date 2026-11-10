@@ -37,7 +37,7 @@ describe('undelivered', () => {
       resolution: '',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
   })
 
@@ -81,7 +81,7 @@ describe('undelivered', () => {
       resolution: 'delivered',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'dismissed' })),
@@ -91,7 +91,7 @@ describe('undelivered', () => {
       resolution: 'dismissed',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
   })
 
@@ -108,7 +108,7 @@ describe('undelivered', () => {
       resolution: 'resent',
       resentAs: 42,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
   })
 
@@ -125,7 +125,7 @@ describe('undelivered', () => {
       resolution: 'unknown',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
   })
 
@@ -138,7 +138,7 @@ describe('undelivered', () => {
       resolution: '',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
   })
 })
@@ -154,7 +154,7 @@ describe('undeliveredLabel', () => {
         resolution: '',
         resentAs: 0,
         leftByLoop: false,
-        fleetChannel: false,
+        inChannel: false,
       }),
     ).toBe('not delivered')
   })
@@ -169,7 +169,7 @@ describe('undeliveredLabel', () => {
       resolution: 'delivered',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(label).toBe('delivered on retry')
     expect(label).not.toContain('not delivered')
@@ -184,7 +184,7 @@ describe('undeliveredLabel', () => {
       resolution: 'dismissed',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(label).toContain('not delivered')
     expect(label).toContain('dismissed')
@@ -200,7 +200,7 @@ describe('undeliveredLabel', () => {
       resolution: 'resent',
       resentAs: 42,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(label).toContain('not delivered')
     expect(label).toContain('said again')
@@ -218,7 +218,7 @@ describe('undeliveredLabel', () => {
       resolution: 'unknown',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(label).toBeTruthy()
     expect(label).toContain('not delivered')
@@ -236,7 +236,7 @@ describe('undeliveredTitle', () => {
       resolution: '',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toContain('timeout')
     expect(title).toContain('never received this')
@@ -251,7 +251,7 @@ describe('undeliveredTitle', () => {
       resolution: 'delivered',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toContain('got through')
     expect(title).not.toContain('never received this')
@@ -266,7 +266,7 @@ describe('undeliveredTitle', () => {
       resolution: 'dismissed',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toContain('never received this')
     expect(title).toContain('dismissed')
@@ -282,7 +282,7 @@ describe('undeliveredTitle', () => {
       resolution: 'resent',
       resentAs: 42,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toContain('never received this')
     expect(title).toContain('message 42')
@@ -297,7 +297,7 @@ describe('undeliveredTitle', () => {
       resolution: 'unknown',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toBeTruthy()
     expect(title).toContain('never received this')
@@ -310,7 +310,7 @@ describe('undeliveredTitle', () => {
       resolution: '',
       resentAs: 0,
       leftByLoop: false,
-      fleetChannel: false,
+      inChannel: false,
     })
     expect(title).toContain('never received this')
     expect(title).not.toContain('. .')
@@ -363,24 +363,30 @@ describe('undeliveredNote', () => {
 
 describe('destinationLabel', () => {
   it("says the store's kinds the way the room says them", () => {
-    expect(destinationLabel('group')).toBe('group')
-    expect(destinationLabel('control_room')).toBe('control room')
-    expect(destinationLabel('owner_dm')).toBe('owner DM')
+    expect(destinationLabel({ conversation: 'control_room' })).toBe('control room')
+    expect(destinationLabel({ conversation: 'owner_dm' })).toBe('owner DM')
+  })
+
+  // ADR-0068: `group` is every channel's kind, so the channel says which.
+  it('names a channel by its name, fleet as any other', () => {
+    expect(destinationLabel({ conversation: 'group', channel: 'fleet' })).toBe('#fleet')
+    expect(destinationLabel({ conversation: 'group', channel: 'handbook' })).toBe('#handbook')
+    expect(destinationLabel({ conversation: 'group' })).toBe('a channel')
   })
 
   // A kind added server-side before the room learns it is still a real
   // failure, and the operator is better served by its raw name than by a
   // dash that hides which conversation lost a message.
   it('names an unknown kind verbatim', () => {
-    expect(destinationLabel('slack_channel')).toBe('slack_channel')
+    expect(destinationLabel({ conversation: 'slack_channel' })).toBe('slack_channel')
   })
 
   it('has something to say when the kind is missing', () => {
-    expect(destinationLabel('')).toBe('unknown')
+    expect(destinationLabel({ conversation: '' })).toBe('unknown')
   })
 })
 
-describe('the undelivered mark in the fleet channel', () => {
+describe('the undelivered mark in a channel', () => {
   const failedPost = (over: Partial<ChatMessage> = {}) =>
     undelivered(
       msg({
@@ -396,10 +402,10 @@ describe('the undelivered mark in the fleet channel', () => {
   // never reaching anyone. It is in the channel; only the mirror failed.
   it('says the mirror failed, not the message', () => {
     const u = failedPost()
-    expect(u.fleetChannel).toBe(true)
+    expect(u.inChannel).toBe(true)
     expect(undeliveredLabel(u)).toBe('not mirrored')
     const title = undeliveredTitle(u)
-    expect(title).toContain('it is in the fleet channel')
+    expect(title).toContain('it is in its channel')
     expect(title).not.toContain('never received this')
   })
 
@@ -411,9 +417,9 @@ describe('the undelivered mark in the fleet channel', () => {
   })
 
   // A DM to the owner has no hub reader: the surface was the only way there.
-  it('still says not delivered outside the fleet channel', () => {
+  it('still says not delivered outside a channel', () => {
     const u = failedPost({ conversation: 'owner_dm' })
-    expect(u.fleetChannel).toBe(false)
+    expect(u.inChannel).toBe(false)
     expect(undeliveredLabel(u)).toBe('not delivered')
   })
 })
@@ -483,7 +489,7 @@ describe('surfaceNote', () => {
 })
 
 describe('the loop-side outcomes', () => {
-  const failed = { at: 1, reason: 'timeout', resentAs: 0, fleetChannel: false }
+  const failed = { at: 1, reason: 'timeout', resentAs: 0, inChannel: false }
 
   // The loop's call, said as the loop's: the operator reading the thread
   // needs to know they did not dismiss it themselves (#561).

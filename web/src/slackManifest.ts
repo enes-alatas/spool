@@ -10,13 +10,13 @@
 // What the bot may call, each for a path the surface takes (Terra's list on
 // #345). `auth.test`, which checks a pasted token, needs none.
 export const slackBotScopes = [
-  // posting in the group and the owner DM; a thread reply is the same call
+  // posting in a Slack channel and the owner DM; a thread reply is the same call
   'chat:write',
   // the owner DM: hearing it, and opening it on a tick before the owner has
   // written
   'im:history',
   'im:write',
-  // the group, public or private: hearing it, and `conversations.info` on it
+  // a Slack channel, public or private: hearing it, and `conversations.info` on it
   // so the surface can say "not a member" instead of going quiet. A team's
   // working channel is often private, and without the `groups:` pair the
   // attach would fail with nothing to say why.
@@ -39,7 +39,7 @@ export const slackBotScopes = [
 ] as const
 
 // What Slack pushes over the socket. No `app_mention`: the channel events
-// already carry every message in the group, mentions included, and the
+// already carry every message in a Slack channel, mentions included, and the
 // router finds mentions in the text, so it would deliver each one twice.
 // The reaction events are a person's reactions in the app's conversations.
 export const slackBotEvents = [

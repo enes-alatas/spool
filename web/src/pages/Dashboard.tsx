@@ -27,7 +27,6 @@ import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 import { cappedBy } from '../dailyCap'
 import { loopPlanCapped } from '../planCap'
-import { channelChatPath, FLEET_CHANNEL } from '../channels'
 import { readFleetLayout, saveFleetLayout, type FleetLayout } from '../teams'
 
 function Countdown({ at }: { at: number }) {
@@ -262,9 +261,9 @@ export default function Dashboard() {
   // — and it is the one number in the room the operator was previously running
   // SQL for.
   const spentToday = sumCostToday(loops ?? [])
-  // The fleet channel's chat was a tab here (#286) until the page became the
-  // fleet and nothing else (#1443); a saved link to the tab lands on the chat
-  // on the Channels page.
+  // A channel's chat was a tab here (#286) until the page became the fleet
+  // and nothing else (#1443); a saved link to the tab lands on Channels,
+  // where every channel's chat opens (ADR-0068).
   const [params] = useSearchParams()
   const oldChannelTab = params.get('view') === 'channel'
   // Teams or the rows they replaced (#1411): the cards are new, so the
@@ -276,7 +275,7 @@ export default function Dashboard() {
     saveFleetLayout(next)
   }
 
-  if (oldChannelTab) return <Navigate to={channelChatPath(FLEET_CHANNEL)} replace />
+  if (oldChannelTab) return <Navigate to="/channels" replace />
 
   return (
     <div className="page">

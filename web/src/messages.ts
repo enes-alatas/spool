@@ -6,6 +6,7 @@
 // message itself carried no mark — so the operator reading the conversation
 // saw text that looks exactly like text that arrived (#201).
 import type { ChatMessage } from './api'
+import { channelLabel } from './channels'
 
 export interface Undelivered {
   // When the send was given up on, for the mark's own timestamp.
@@ -39,7 +40,7 @@ export interface Undelivered {
   // nothing about it (#561). Only ever true while it is unresolved:
   // it says whose the failure is now, not what became of it.
   leftByLoop: boolean
-  // Whether this was a post in the fleet channel, which the hub holds and
+  // Whether this was a post in a channel, which the hub holds and
   // delivers to the loops it addresses before any surface is involved: what
   // failed is its mirror, the copy for the surface's room, and the mark says
   // so. Not a claim that some loop has it — a post that addresses none
@@ -48,7 +49,7 @@ export interface Undelivered {
   // and a failure means the message never arrived at all. Said by the
   // conversation rather than by `mirror`, which only tells the state of the
   // copy, not whether the copy was all that failed.
-  fleetChannel: boolean
+  inChannel: boolean
 }
 
 // undelivered reports a loop's own message that the surface never accepted.
@@ -83,7 +84,7 @@ export function undelivered(m: ChatMessage): Undelivered | null {
     resolution: narrow(m.send_resolution),
     resentAs: m.send_resent_as ?? 0,
     leftByLoop: m.send_left_by_loop ?? false,
-    fleetChannel: m.conversation === 'group',
+    inChannel: m.conversation === 'group',
   }
 }
 
@@ -120,11 +121,11 @@ function narrow(resolution: string | undefined): Undelivered['resolution'] {
 // finishing with it, not the message arriving, and three of the readings
 // describe a message that never did.
 export function undeliveredLabel(u: Undelivered): string {
-  // In the fleet channel the message is on the hub whatever the surface did,
+  // In a channel the message is on the hub whatever the surface did,
   // so "not delivered" there sits under a "reached @x" and reads as a
   // second, contradicting failure (#300 review). What did not arrive is the
   // mirror, and the mark names that instead.
-  const [missed, retried] = u.fleetChannel
+  const [missed, retried] = u.inChannel
     ? ['not mirrored', 'mirrored on retry']
     : ['not delivered', 'delivered on retry']
   switch (u.resolution) {
@@ -164,8 +165,8 @@ export function undeliveredLabel(u: Undelivered): string {
 export function undeliveredTitle(u: Undelivered): string {
   const when = new Date(u.at).toLocaleString()
   const why = u.reason ? `${u.reason}. ` : ''
-  const lost = u.fleetChannel
-    ? "it is in the fleet channel, but its copy never reached the surface's room"
+  const lost = u.inChannel
+    ? "it is in its channel, but its copy never reached the surface's room"
     : 'the recipient never received this'
   switch (u.resolution) {
     case 'delivered':
@@ -222,11 +223,12 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
 // Where a message was headed, for a reader who is looking at failures across
 // the whole fleet rather than at one conversation. The store's own kinds
 // (`store.go`: group, control_room, owner_dm), said the way the room says
-// them elsewhere.
-export function destinationLabel(conversation: string): string {
-  switch (conversation) {
+// them elsewhere: a channel's message by its channel's name, as the kind
+// `group` is every channel's (ADR-0068).
+export function destinationLabel(m: Pick<ChatMessage, 'conversation' | 'channel'>): string {
+  switch (m.conversation) {
     case 'group':
-      return 'group'
+      return m.channel ? channelLabel(m.channel) : 'a channel'
     case 'control_room':
       return 'control room'
     case 'owner_dm':
@@ -234,7 +236,7 @@ export function destinationLabel(conversation: string): string {
     default:
       // A kind this build does not know is still a real row, and naming it
       // verbatim beats hiding the failure behind a dash.
-      return conversation || 'unknown'
+      return m.conversation || 'unknown'
   }
 }
 
@@ -257,7 +259,7 @@ export function mirrorOf(m: ChatMessage): Mirror {
   }
 }
 
-// Whether a fleet-channel message stayed on the hub by design, which the
+// Whether a channel's message stayed on the hub by design, which the
 // channel page says beside its time: the operator's posts (ADR-0032)
 // and a loop's when it has no surface. A failed mirror is not this — it was
 // meant to leave and did not, which is the undelivered mark's to say, so a
@@ -266,7 +268,7 @@ export function hubOnly(m: ChatMessage): boolean {
   return mirrorOf(m) === 'not_mirrored' && !undelivered(m)
 }
 
-// The surface a fleet-channel post came in through, by its origin. A
+// The surface a channel post came in through, by its origin. A
 // human's post arrived through one of these, and naming it is how the
 // operator learns this person cannot read a reply written here (ADR-0032).
 const CHANNEL_SURFACES: Record<string, string> = {

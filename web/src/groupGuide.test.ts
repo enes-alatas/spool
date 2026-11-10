@@ -13,35 +13,26 @@ const room = (room_id: string, channel = ''): Room => ({
 
 describe('groupProgress', () => {
   it('waits on the first two steps until a group the steps did not know arrives', () => {
-    const fleet = room('-1001', 'group')
-    expect(groupProgress(new Set(), [])).toEqual({ arrived: undefined, needsChannel: false, done: 0 })
-    expect(groupProgress(new Set(['-1001']), [fleet])).toEqual({
+    expect(groupProgress(new Set(), [])).toEqual({ arrived: undefined, done: 0 })
+    expect(groupProgress(new Set(['-1001']), [room('-1001', 'fleet')])).toEqual({
       arrived: undefined,
-      needsChannel: true,
       done: 0,
     })
   })
 
-  it('is done when the first group arrives carrying the fleet channel', () => {
-    const fleet = room('-1001', 'group')
-    expect(groupProgress(new Set(), [fleet])).toEqual({ arrived: fleet, needsChannel: false, done: 3 })
+  // ADR-0068: no group binds itself, a loop's first included, so the
+  // operator always picks the channel it carries.
+  it('asks for a channel when the first group arrives unbound, then is done once it carries one', () => {
+    const first = room('-1001')
+    expect(groupProgress(new Set(), [first])).toEqual({ arrived: first, done: 2 })
+    const bound = room('-1001', 'handbook')
+    expect(groupProgress(new Set(), [bound])).toEqual({ arrived: bound, done: 3 })
   })
 
-  it('asks for a channel when a later group arrives unbound, then is done once it carries one', () => {
+  it('asks the same for a later group, whatever the loop already has', () => {
     const known = new Set(['-1001'])
-    const fleet = room('-1001', 'group')
     const later = room('-1002')
-    expect(groupProgress(known, [later, fleet])).toEqual({ arrived: later, needsChannel: true, done: 2 })
-    const bound = room('-1002', 'docs')
-    expect(groupProgress(known, [bound, fleet])).toEqual({ arrived: bound, needsChannel: true, done: 3 })
-  })
-
-  it('asks for a channel for any group that arrives unbound, fleet group or not', () => {
-    const later = room('-1002')
-    expect(groupProgress(new Set(['-1003']), [room('-1003'), later])).toEqual({
-      arrived: later,
-      needsChannel: true,
-      done: 2,
-    })
+    expect(groupProgress(known, [later, room('-1001', 'fleet')])).toEqual({ arrived: later, done: 2 })
+    expect(groupProgress(known, [later, room('-1001')])).toEqual({ arrived: later, done: 2 })
   })
 })

@@ -146,9 +146,9 @@ await page.locator('.account').screenshot({ path: accountFile })
 
 const shots = [
   { name: 'fleet', path: '/', wait: '.team-cards' },
-  // The fleet channel's chat, opened from Channels: operator, loop and human
+  // A channel's chat, opened from Channels: operator, loop and human
   // posts, a reply's quote, and what each reached (#286, #1443).
-  { name: 'channel', path: '/channels/group', wait: '.knot' },
+  { name: 'channel', path: '/channels/fleet', wait: '.knot' },
   // A card per channel, with the fixture's loops in them (#484).
   { name: 'channels', path: '/channels', wait: '.channel-loop' },
   { name: 'loop-timeline', path: '/loops/gardener', wait: '.timeline' },
@@ -910,7 +910,7 @@ await page.unroute('**/api/onboarding')
 
 // A Slack loop's rooms panel (#548). The fixture's loops are all on
 // Telegram, so the gardener is shot as a Slack loop, with an unbound Slack
-// channel waiting above its fleet room.
+// channel waiting above the room that carries #fleet.
 const slackLoop = (loop) => ({
   ...loop,
   surface: 'slack',
@@ -936,7 +936,7 @@ await page.route('**/api/loops/gardener/rooms', (route) =>
         surface: 'slack',
         room_id: 'C07GENERAL0',
         title: 'general',
-        channel: 'group',
+        channel: 'fleet',
         first_seen_at: Date.now(),
       },
     ],
