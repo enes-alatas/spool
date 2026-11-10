@@ -90,10 +90,21 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
 - **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+- **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
+- **Traces, if you want them.** With [Langfuse beside the hub](docs/OPERATIONS.md#langfuse-beside-the-hub), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
+- **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [OPERATIONS.md](docs/OPERATIONS.md#management-tokens) has the setup.
+
+### Teams
+
+A hub can hold *teams*. A team is a named set of loops with channels and settings of its own (ADR-0066). A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
+
+- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. The `default` team an upgrade makes has none, and its loops keep talking in the fleet channel. A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
+- **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](docs/OPERATIONS.md#claude-logins) its contained loops run on.
+- **A loop knows its team.** A loop in a team sees the team's name in its prompt.
 
 ### Where loops run
 
-Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([OPERATIONS.md](docs/OPERATIONS.md#cloud-loops)).
+Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([OPERATIONS.md](docs/OPERATIONS.md#cloud-loops)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
 
 A cloud loop works beside the others like any loop, and you talk to it the same way:
 
@@ -101,7 +112,7 @@ https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
 
 ### Start from prompts.chat
 
-New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. A [team](https://prompts.chat/bots/teams) makes all its loops and the channel they share in one step:
+New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop takes none. A [team](https://prompts.chat/bots/teams) makes all its loops and the channel they share in one step:
 
 https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 
@@ -116,7 +127,7 @@ https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 
 ## Chat surfaces
 
-A loop starts with the control room only. Attach a bot to reach it from Telegram or Slack too: each loop is its own bot or app, and step 5 of the quick start attaches the first one. [docs/TELEGRAM.md](docs/TELEGRAM.md) covers BotFather, groups and reactions; [docs/SLACK.md](docs/SLACK.md) covers the app manifest, the two tokens, reactions and polls.
+A loop starts with the control room only. Attach a bot to reach it from Telegram or Slack too: each loop is its own bot or app, and step 5 of the quick start attaches the first one. To put a loop's Telegram bot in a group, follow **Add to a group** on the loop's page: the hub records the group when someone on your allowlist adds the bot, and the page shows the group as soon as it does. [docs/TELEGRAM.md](docs/TELEGRAM.md) covers BotFather, groups and reactions; [docs/SLACK.md](docs/SLACK.md) covers the app manifest, the two tokens, reactions and polls.
 
 ### Who can talk to your loops
 

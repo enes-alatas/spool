@@ -367,8 +367,8 @@ and a passed check before it runs again (#1228).
 
 A *management token* is the credential an operator's own agent holds to look
 after the hub, in place of the operator token (ADR-0067). It opens only
-the management MCP, below, and Settings will mint one too (#1403).
-Until then an admin manages them over the API:
+the management MCP, below. An admin mints, lists and revokes them in
+Settings → Management tokens (#1403), or over the API:
 
 - `POST /api/management-tokens` with `{"name": "watcher"}` mints one and
   answers with it once, as plain text. Copy it then: the hub keeps only
