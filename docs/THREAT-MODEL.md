@@ -992,6 +992,20 @@ the CLI (ADR-0018).
   refuses a CONNECT or a forward to `langfuse-web` and to the hosts of both
   Langfuse addresses, whatever the allowlist says, while it holds the
   relay file (a restart drops it, below).
+- **The hub's read back takes numbers and names** (#1300). Every five
+  minutes the hub pages Langfuse's Observations API at the read address
+  with the read key, and follows no redirect, so the key goes to that
+  address alone. Its dial is guarded as a connection check's is: the
+  address the name resolves to is judged as it is dialled, so the key
+  never reaches a link-local or cloud metadata address, and a read address
+  naming this machine reaches this machine alone. It asks for no input or
+  output. A refresh reads at most 500 pages of up to 64 MiB each. It keeps
+  only observations stamped with a loop the hub has, and of each only its
+  ids and its parent's, its Claude session ID, durations, tokens, type
+  and name, its `spool.loop.id` stamp, its error class and a tool's
+  success, in memory. It reads no cost from Langfuse.
+  `GET /api/loops/{name}/figures`, which any signed-in user may read,
+  serves those sums and never a key.
 
 **Doesn't hold:**
 - **The proxy matches names, not content.** It can't tell a fetch from an
@@ -1007,6 +1021,14 @@ the CLI (ADR-0018).
     rewrite it or post spans in another loop's name, and its attribution
     is trusted no further than the loop;
   - the relay's bounds don't apply to it.
+
+  A bare loop that posts spans in another loop's name therefore moves that
+  loop's figures too (#1300): the hub attributes by the stamp alone. The
+  window's spend is the exception: it is the hub's own record of the
+  loop's turns, which no span changes. A per-turn row's cost follows the
+  spans' attribution like the rest. A span carrying another loop's stamp,
+  one of its session IDs and a matching start can put a real turn's cost
+  on a row it made up, though the window's total stays the hub's.
 
   A bare loop can also read the hub's Langfuse file, `hub.env`, which the
   hub reads at start (#1388). That file holds the key pair alone, which

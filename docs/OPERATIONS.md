@@ -1170,6 +1170,26 @@ docker compose -f docker/langfuse/compose.yml \
     chmod 600 docker/langfuse/hub.env   # > keeps an existing file's mode
     ```
 
+### Reading figures back
+
+- **The hub reads each loop's figures back** from the read address,
+  with the read key, every five minutes (#1300). With the profile,
+  `hub.env` sets both. `GET /api/loops/{name}/figures?window=24h` serves
+  a loop's turns, failures, spend, tokens, turn durations, tool mix and
+  per-turn rows over `1h`, `24h`, `7d` or `30d`, numbers and names only.
+- **Spend is the hub's own.** Langfuse holds no cost for Claude Code's
+  spans, so the figures take spend from the turns the hub prices
+  already, joined to a trace by its session. Tokens, durations, tools and
+  failures come from Langfuse.
+- **`langfuse` in the answer says what it holds:** `ok`; `stale`, the
+  last figures while Langfuse isn't answering; `pending`, before the
+  first read; `off`, no read address or read key; `unsupported`, a cloud
+  loop, which exports nothing.
+- **A restart reads the last 30 days again.** The hub keeps the figures
+  in memory, not in `spool.db`.
+- **A bare loop's figures are trusted as far as the loop**: it can post
+  spans in another loop's name (ADR-0064 item 4).
+
 ### Turning it off
 
 - **Moving `hub.env` away and restarting the hub** turns every loop's

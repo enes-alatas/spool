@@ -37,7 +37,7 @@ var memberRoutes = []string{
 	"GET /api/loops", "GET /api/loops/{name}", "GET /api/loops/{name}/telegram/status",
 	"GET /api/loops/{name}/slack/status", "GET /api/loops/{name}/rooms",
 	"GET /api/loops/{name}/conversation", "GET /api/loops/{name}/conversations",
-	"GET /api/loops/{name}/connection-events",
+	"GET /api/loops/{name}/connection-events", "GET /api/loops/{name}/figures",
 	"GET /api/loops/{name}/stream", "GET /api/stream", "GET /api/activity", "GET /api/changes",
 	"GET /api/attachments/{id}", "GET /api/undelivered",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",

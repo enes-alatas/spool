@@ -26,6 +26,7 @@ import (
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/egress"
+	"github.com/enes-alatas/spool/internal/figures"
 	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
@@ -122,6 +123,7 @@ func main() {
 	// and the CLI path is the only one.
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
+	figuresRefreshSec := flag.Int("figures-refresh-sec", 0, "seconds between the hub's reads of each loop's figures from Langfuse (0 = the production five minutes; tests shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	forgetSecrets := flag.Bool("forget-secrets", false, "start even though "+sqlite.KeyFile+" is missing or wrong, forgetting every stored secret: connections are revoked, chat bots unbound and the setup-token cleared, to be entered again (ADR-0046). With the right key it changes nothing")
 	showVersion := flag.Bool("version", false, "print the build's version and exit")
@@ -551,6 +553,13 @@ func main() {
 		os.Exit(1)
 	}
 	deps.PlanCap = planCap
+	// each loop's figures, read back from the operator's Langfuse on a
+	// slow cadence, never on a loop's turn (#1300)
+	figuresEvery := 5 * time.Minute
+	if *figuresRefreshSec > 0 {
+		figuresEvery = time.Duration(*figuresRefreshSec) * time.Second
+	}
+	loopFigures := figures.NewReader(rdb.Settings(), rdb.Loops(), rdb.Turns(), figures.NewLangfuseSource(30*time.Second), figuresEvery, log)
 	cloudSignIn, err := newClaudeSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"), dockerRuntime)
 	if err != nil {
 		log.Error("remove an unfinished cloud sign-in", "err", err)
@@ -591,6 +600,7 @@ func main() {
 	go scheduler.Run(ctx)
 	go manager.WatchSends(ctx)
 	go planCap.Run(ctx)
+	go loopFigures.Run(ctx)
 	go loginRefresh.Run(ctx)
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
@@ -633,6 +643,7 @@ func main() {
 		Models:       models,
 		LoginChecker: loginChecker,
 		PlanCap:      planCap,
+		Figures:      loopFigures,
 		Users:        hubUsers,
 		Surfaces: map[string]surface.Surface{
 			store.SurfaceTelegram: bridge,

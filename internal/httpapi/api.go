@@ -23,6 +23,7 @@ import (
 	"unicode"
 
 	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/figures"
 	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/gitws"
 	"github.com/enes-alatas/spool/internal/loop"
@@ -57,6 +58,9 @@ type Server struct {
 	// re-judges them. Required: a serving hub always has one, and the
 	// handlers that read it do not check.
 	PlanCap *loop.PlanCap
+	// Figures reads each loop's numbers back from the operator's Langfuse
+	// (ADR-0064, #1300). Optional: without it the figures route answers off.
+	Figures *figures.Reader
 	// Users signs users in and keeps their sessions (ADR-0048). Required:
 	// the guard reads every session cookie through it.
 	Users *users.Users
@@ -243,6 +247,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/loops/{name}/message", server.handleLoopMessage)
 	mux.HandleFunc("GET /api/loops/{name}/events", server.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", server.handleLoopTurns)
+	mux.HandleFunc("GET /api/loops/{name}/figures", server.handleLoopFigures)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", server.handleTelegramStatus)
 	mux.HandleFunc("GET /api/loops/{name}/slack/status", server.handleSlackStatus)
 	mux.HandleFunc("PUT /api/loops/{name}/owner", server.handlePutOwner)
