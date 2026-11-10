@@ -199,6 +199,16 @@ prompt and the API land in one PR, in separate commits. The surfaces'
 binding (item 5) is its own PR, and so is the control room's half. No
 release is tagged between them.
 
+**Amendment (2026-11-10, #1449): the hub half is one commit.** Once
+`group` is gone, the surfaces' first-room bind has no channel left to
+bind to, so the PR that removes `group` also removes that bind and records
+every new room unbound: item 5 is part of that PR, not a PR of its own.
+The migration, the routing, the prompt, the API and item 5 land in one
+commit rather than one each. The loop's fleet-channel fields and the
+`group` name are read by every one of them, so no part builds or passes
+its tests without the rest. The control room's half is still its own PR,
+and no release is tagged between them.
+
 ## Alternatives considered
 
 - **Keep the name `group` for the converted channel.** The migration
