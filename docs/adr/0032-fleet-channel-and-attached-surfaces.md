@@ -1,6 +1,6 @@
 # ADR-0032: The fleet channel is a hub conversation; surfaces are attached later and mirror it
 
-Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts); 2026-10-01 (item 2: membership per channel); 2026-10-01 (item 3: a mirror per room) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
+Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23; superseded by ADR-0068: item 1's fleet channel existing on every hub, and `group` in the tool (the conversation kind on the hub's wire stays), item 2's fleet channel membership (its first paragraph) and its #287 second-loop amendment) · Amended: 2026-09-24 (item 2: where a new loop starts); 2026-10-01 (item 2: membership per channel); 2026-10-01 (item 3: a mirror per room) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
 
 ## Context
 

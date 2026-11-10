@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275; superseded by ADR-0068: item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and, if item 8 is accepted, its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424)
 
 ## Context
 
