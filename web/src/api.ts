@@ -505,6 +505,11 @@ export interface Channel {
   created_at: number
   // Loop names, sorted.
   loops: string[]
+  // The team the channel belongs to, '' for a hub channel (ADR-0066). A
+  // team's channel holds only that team's loops: a loop from outside is
+  // refused 409 `channel_in_other_team`, and giving the team a channel that
+  // holds outsiders 409 `channel_has_outsiders`.
+  team: string
 }
 
 // A chat on a surface that the loop's bot is in: for now a Telegram group
@@ -1752,9 +1757,14 @@ export const api = {
         attachment_id: attachmentID || undefined,
       }),
     }),
-  createChannel: (body: { name: string; description: string }) =>
+  // team '' makes a hub channel; a team the hub doesn't hold is 404
+  // `team_not_found`.
+  createChannel: (body: { name: string; description: string; team: string }) =>
     req<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
-  patchChannel: (name: string, body: { description: string }) =>
+  // team gives the channel to a team, or '' back to the hub: refused 409
+  // `channel_has_outsiders` while it holds a loop outside that team, and 409
+  // `channel_is_home` while it is its team's home channel.
+  patchChannel: (name: string, body: { description?: string; team?: string }) =>
     req<Channel>(`/api/channels/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteChannel: (name: string) => req<void>(`/api/channels/${name}`, { method: 'DELETE' }),
   // Both idempotent. On `group` these are the same write as PATCHing the

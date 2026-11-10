@@ -4436,6 +4436,11 @@ button.panel-link {
   border-radius: 4px;
   padding: 1px 5px;
 }
+/* whose a channel is (ADR-0066): a team is named in the identity colour, so
+   it stands out from the hub's own channels */
+.rule-badge.channel-team {
+  color: var(--text);
+}
 .rule-body {
   font-size: 0.8125rem;
   line-height: 1.55;

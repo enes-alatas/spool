@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, Channel } from '../api'
+import { api, ApiError, Channel, LoopView } from '../api'
 import { CharCount } from '../components/CharCount'
 import {
   CHANNEL_DESCRIPTION_MAX,
@@ -10,8 +10,11 @@ import {
   channelAnchor,
   channelChatPath,
   channelHash,
+  channelOwner,
+  channelRefusal,
   FLEET_CHANNEL,
   descriptionLength,
+  loopsNotInTeam,
   loopsOutside,
   validChannelName,
 } from '../channels'
@@ -20,17 +23,23 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// Edits a channel's description in place of the line that shows it.
-function DescriptionEditor({
+// Edits a channel's description and whose it is, in place of the line that
+// shows them.
+function ChannelEditor({
   channel,
+  teams,
+  loops,
   onDone,
   onCancel,
 }: {
   channel: Channel
+  teams: string[]
+  loops: LoopView[]
   onDone: () => void
   onCancel: () => void
 }) {
   const [description, setDescription] = useState(channel.description)
+  const [team, setTeam] = useState(channel.team)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const tooLong = descriptionLength(description) > CHANNEL_DESCRIPTION_MAX
@@ -39,10 +48,21 @@ function DescriptionEditor({
     setBusy(true)
     setError('')
     try {
-      await api.patchChannel(channel.name, { description: description.trim() })
+      // The team only when it changes: it is the half the hub can refuse.
+      await api.patchChannel(channel.name, {
+        description: description.trim(),
+        ...(team !== channel.team && { team }),
+      })
       onDone()
     } catch (err) {
-      setError(errorText(err))
+      setError(
+        channelRefusal(err, {
+          channel: channel.name,
+          team,
+          home: channel.team,
+          outsiders: loopsNotInTeam(channel.loops, team, loops),
+        }),
+      )
     } finally {
       setBusy(false)
     }
@@ -60,6 +80,22 @@ function DescriptionEditor({
         onChange={(e) => setDescription(e.target.value)}
         placeholder="What it is for"
       />
+      {/* A hub with no teams has nothing to give the channel to. */}
+      {(teams.length > 0 || channel.team) && (
+        <>
+          <div className="rule-field" style={{ marginTop: 10 }}>
+            <label htmlFor={`team-${channel.name}`}>team</label>
+          </div>
+          <select id={`team-${channel.name}`} value={team} onChange={(e) => setTeam(e.target.value)}>
+            <option value="">no team (hub channel)</option>
+            {teams.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -80,11 +116,17 @@ function DescriptionEditor({
 function ChannelCard({
   channel,
   loops,
+  teams,
+  homeOf,
   refresh,
   landed,
 }: {
   channel: Channel
-  loops: string[]
+  loops: LoopView[]
+  // The hub's teams by name, for the editor's team list.
+  teams: string[]
+  // The team this channel is home to, '' when none.
+  homeOf: string
   refresh: () => void
   // The card a team create just landed on (#1266), marked so it is found.
   landed: boolean
@@ -96,14 +138,14 @@ function ChannelCard({
   // with several channels on screen it would scroll out of sight.
   const [error, setError] = useState('')
   const fleet = channel.name === FLEET_CHANNEL
-  const addable = loopsOutside(channel.loops, loops)
+  const addable = loopsOutside(channel, loops)
 
-  const act = async (run: () => Promise<unknown>) => {
+  const act = async (run: () => Promise<unknown>, loop?: string) => {
     setError('')
     try {
       await run()
     } catch (err) {
-      setError(errorText(err))
+      setError(channelRefusal(err, { channel: channel.name, team: channel.team, home: homeOf, loop }))
     }
     refresh()
   }
@@ -112,7 +154,21 @@ function ChannelCard({
     <div className={`rule-item${landed ? ' channel-landed' : ''}`} id={channelAnchor(channel.name)}>
       <div className="rule-head">
         <span className="channel-name">#{channel.name}</span>
-        {fleet && <span className="rule-badge">fleet channel</span>}
+        {fleet ? (
+          <span className="rule-badge">fleet channel</span>
+        ) : (
+          <span className={`rule-badge${channel.team ? ' channel-team' : ''}`}>
+            {channelOwner(channel.team)}
+          </span>
+        )}
+        {homeOf && (
+          <span
+            className="rule-badge channel-home"
+            title={`Every loop put in team ${homeOf} joins this channel`}
+          >
+            home channel
+          </span>
+        )}
         <span className="channel-count">
           {channel.loops.length} loop{channel.loops.length === 1 ? '' : 's'}
         </span>
@@ -144,8 +200,10 @@ function ChannelCard({
         )}
       </div>
       {editing ? (
-        <DescriptionEditor
+        <ChannelEditor
           channel={channel}
+          teams={teams}
+          loops={loops}
           onDone={() => {
             setEditing(false)
             refresh()
@@ -184,7 +242,10 @@ function ChannelCard({
             className="channel-add"
             value=""
             aria-label={`Add a loop to #${channel.name}`}
-            onChange={(e) => act(() => api.addChannelLoop(channel.name, e.target.value))}
+            onChange={(e) => {
+              const loop = e.target.value
+              act(() => api.addChannelLoop(channel.name, loop), loop)
+            }}
           >
             <option value="" disabled>
               + Add loop
@@ -206,9 +267,10 @@ function ChannelCard({
   )
 }
 
-function NewChannel({ onCreated }: { onCreated: () => void }) {
+function NewChannel({ teams, onCreated }: { teams: string[]; onCreated: () => void }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [team, setTeam] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   // Said once a name is typed, not before: an empty field isn't a mistake.
@@ -219,9 +281,10 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
     setBusy(true)
     setError('')
     try {
-      await api.createChannel({ name, description: description.trim() })
+      await api.createChannel({ name, description: description.trim(), team })
       setName('')
       setDescription('')
+      setTeam('')
       onCreated()
     } catch (err) {
       setError(errorText(err))
@@ -257,6 +320,22 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
           placeholder="What it is for (optional)"
           aria-label="Description"
         />
+        {/* A team's channel takes only that team's loops. */}
+        {teams.length > 0 && (
+          <select
+            className="channel-team-input"
+            value={team}
+            onChange={(e) => setTeam(e.target.value)}
+            aria-label="Team"
+          >
+            <option value="">no team</option>
+            {teams.map((name) => (
+              <option key={name} value={name}>
+                team {name}
+              </option>
+            ))}
+          </select>
+        )}
         <button className="btn primary" onClick={create} disabled={busy || !name || badName || tooLong}>
           {busy ? 'Creating…' : 'Create'}
         </button>
@@ -279,6 +358,8 @@ export default function Channels() {
   const may = useMay()
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels })
   const loops = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // A hub too old for teams answers 404: its channels are all the hub's.
+  const teams = useQuery({ queryKey: ['teams'], queryFn: api.teams, retry: false })
   // A team create lands here on its channel's card (#1266), which exists
   // only once the list has loaded, after the browser looked for it.
   const { hash } = useLocation()
@@ -293,6 +374,7 @@ export default function Channels() {
     qc.invalidateQueries({ queryKey: ['channels'] })
     qc.invalidateQueries({ queryKey: ['loops'] })
     qc.invalidateQueries({ queryKey: ['loop'] })
+    qc.invalidateQueries({ queryKey: ['teams'] })
   }
 
   if (channels.isPending) return <div className="page measure placeholder">Loading…</div>
@@ -312,7 +394,10 @@ export default function Channels() {
     )
   }
 
-  const loopNames = (loops.data ?? []).map((loop) => loop.name)
+  const teamNames = (teams.data ?? []).map((team) => team.name)
+  const homes = new Map(
+    (teams.data ?? []).filter((team) => team.home_channel).map((team) => [team.home_channel, team.name]),
+  )
   return (
     <div className="page measure">
       <h1>Channels</h1>
@@ -328,12 +413,14 @@ export default function Channels() {
         <ChannelCard
           key={channel.name}
           channel={channel}
-          loops={loopNames}
+          loops={loops.data ?? []}
+          teams={teamNames}
+          homeOf={homes.get(channel.name) ?? ''}
           refresh={refresh}
           landed={hash === channelHash(channel.name)}
         />
       ))}
-      {may('manage') && <NewChannel onCreated={refresh} />}
+      {may('manage') && <NewChannel teams={teamNames} onCreated={refresh} />}
     </div>
   )
 }
