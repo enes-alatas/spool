@@ -1398,12 +1398,13 @@ async function answer(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
-// A loop's figures from Langfuse (#1300, #1301): numbers and names only,
-// over one window, from the hub's cache. langfuse says what there is to
-// show: 'ok' fresh; 'stale' the last figures, as of fetched_at, while
-// Langfuse doesn't answer; 'pending' traces are on and nothing is fetched
-// yet; 'off' the hub has no Langfuse read address or key; 'unsupported' a
-// cloud loop, which exports nothing. figures is null for the last three.
+// A loop's figures from Langfuse (#1300, #1301), priced from the hub's
+// turns: numbers and names only, over one window, from the hub's cache.
+// langfuse says what there is to show: 'ok' fresh; 'stale' the last
+// figures, as of fetched_at, while Langfuse doesn't answer; 'pending'
+// traces are on and nothing is fetched yet; 'off' the hub has no Langfuse
+// read address or key; 'unsupported' a cloud loop, which exports nothing.
+// figures is null for the last three.
 // Times are Unix ms; fetched_at is 0 before any fetch.
 export type FiguresWindow = '1h' | '24h' | '7d' | '30d'
 export type FiguresLangfuse = 'ok' | 'stale' | 'pending' | 'off' | 'unsupported'
@@ -1418,12 +1419,16 @@ export interface LoopFigures {
 export interface Figures {
   turns: number
   failed_turns: number
-  // Langfuse's price for the window's generations, which can differ from the
-  // turns' cost_usd, the CLI's count; the strip labels it as Langfuse's.
+  // the hub's own spend: the loop's turns started in the window, the same
+  // figures as its turns table, since Langfuse holds no cost for these spans.
+  // It is priced live, while turns counts Langfuse's cached traces; the
+  // strip's spend a turn still divides one by the other until the route
+  // sends the hub's own turn count (#1515).
   cost_usd: number
   tokens: { input: number; output: number; cache_read: number; cache_write: number }
   turn_duration_ms: { p50: number; p95: number; max: number }
-  // by Langfuse's error class
+  // by class: 'tool', 'model_request' or 'error' (a failed turn nothing
+  // else explains), or the span's own error class
   failures: { class: string; count: number }[]
   // by calls, most first
   tools: { name: string; calls: number; failures: number; duration_ms_p50: number }[]
@@ -1433,6 +1438,7 @@ export interface Figures {
 export interface FiguresTurn {
   started_at: number
   duration_ms: number
+  // the hub's turn of the same session that holds this trace, 0 when none does
   cost_usd: number
   input_tokens: number
   output_tokens: number
