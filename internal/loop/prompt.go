@@ -974,20 +974,24 @@ func pollBallot(poll *store.Poll) string {
 	return strings.Join(lines, "\n")
 }
 
-// TickEnvelope formats a scheduler tick.
+// TickEnvelope formats a scheduler tick. It reminds the loop of both
+// trailers, next-wake and doing, because the tick is what a loop reads
+// every wake, long after the system prompt that explains them (#1514).
 func TickEnvelope(now time.Time, loopRecord *store.Loop) Envelope {
 	ts := now.UTC().Format("2006-01-02 15:04 UTC")
 	if loopRecord.Pacing == store.PacingSelf {
 		head := fmt.Sprintf("[tick · %s · self-paced]", ts)
 		body := fmt.Sprintf(`Continue working toward your mission. If nothing needs doing right now, reply
 with a one-line status note. Remember: you schedule yourself — end your reply
-with [next-wake: ...] (allowed range: %s–%s).`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
+with [next-wake: ...] (allowed range: %s–%s), and a [doing: ...] line
+saying what you are working on.`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
 		return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 	}
 	head := fmt.Sprintf("[tick · %s · interval %s]", ts, dur(loopRecord.TickIntervalSec))
 	body := fmt.Sprintf(`Continue working toward your mission. If nothing needs doing right now, reply
 with a one-line status note. You may schedule your next wake by ending your
-reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
+reply with a trailer like [next-wake: 45m] (allowed range: %s–%s), and a
+[doing: ...] line saying what you are working on.`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
 	return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 }
 
