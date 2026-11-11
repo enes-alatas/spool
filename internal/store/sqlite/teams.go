@@ -173,6 +173,15 @@ func (table teams) CreateFromChannel(ctx context.Context, team *store.Team) erro
 	if teamed > 0 {
 		return store.ErrChannelHasTeamLoops
 	}
+	// a member the upgrade to channel chats left with no bot on the
+	// chat's surface can't be moved into a team by it (ADR-0070)
+	members, err := channelLoopIDs(ctx, tx, team.HomeChannel)
+	if err != nil {
+		return err
+	}
+	if err := requireOnSurface(ctx, tx, team.HomeChannel, members); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE channels SET team=? WHERE name=?`, team.Name, team.HomeChannel); err != nil {
 		return err
 	}
@@ -276,9 +285,23 @@ func setHome(ctx context.Context, tx *sql.Tx, team, channel string, at int64) er
 	if _, err := tx.ExecContext(ctx, `UPDATE teams SET home_channel=? WHERE name=?`, channel, team); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
-		SELECT ?, id, ? FROM loops WHERE team=? ON CONFLICT (channel, loop_id) DO NOTHING`, channel, at, team)
-	return err
+	teamLoops, err := scanIDs(tx.QueryContext(ctx, `SELECT id FROM loops WHERE team=? ORDER BY id`, team))
+	if err != nil {
+		return err
+	}
+	joining, err := notMembers(ctx, tx, channel, teamLoops)
+	if err != nil {
+		return err
+	}
+	// a channel with a chat takes only loops on its surface (ADR-0070)
+	if err := requireOnSurface(ctx, tx, channel, joining); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
+		SELECT ?, id, ? FROM loops WHERE team=? ON CONFLICT (channel, loop_id) DO NOTHING`, channel, at, team); err != nil {
+		return err
+	}
+	return bindJoined(ctx, tx, channel, joining, at)
 }
 
 func (table teams) Delete(ctx context.Context, name string) error {
@@ -317,16 +340,29 @@ func (table teams) Delete(ctx context.Context, name string) error {
 	return tx.Commit()
 }
 
-// execer is a transaction or the database itself.
-type execer interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
 // moveTeamChannels follows a loop from one team to another: out of every
 // channel of the team it left, its rooms there unbound as leaving a channel
 // does, and into the home channel of the team it joined, if it has one
-// (ADR-0066). "" is no team on either side.
-func moveTeamChannels(ctx context.Context, tx execer, loopID, left, joined string, at int64) error {
+// (ADR-0066), its room for that channel's chat bound if its bot has one. A
+// home channel with a chat takes it only with a bot on the chat's surface:
+// a *NotOnSurfaceError otherwise (ADR-0070). "" is no team on either side.
+func moveTeamChannels(ctx context.Context, tx querier, loopID, left, joined string, at int64) error {
+	home, joining := "", []string(nil)
+	if joined != "" {
+		err := tx.QueryRowContext(ctx, `SELECT COALESCE(home_channel, '') FROM teams WHERE name=?`, joined).Scan(&home)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if home != "" {
+		var err error
+		if joining, err = notMembers(ctx, tx, home, []string{loopID}); err != nil {
+			return err
+		}
+		if err := requireOnSurface(ctx, tx, home, joining); err != nil {
+			return err
+		}
+	}
 	if left != "" {
 		const leftChannels = `SELECT name FROM channels WHERE team=?`
 		if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0
@@ -345,5 +381,5 @@ func moveTeamChannels(ctx context.Context, tx execer, loopID, left, joined strin
 			return err
 		}
 	}
-	return nil
+	return bindJoined(ctx, tx, home, joining, at)
 }

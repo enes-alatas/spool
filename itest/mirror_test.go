@@ -49,14 +49,17 @@ func mirrorIs(want string) func(activityMessage) bool {
 // Every message says whether it is on the surface too (ADR-0032), as
 // a spelled state: what came in from Telegram is on it; a loop's send is
 // pending until the bridge's send lands and mirrored after; the operator's
-// words and a surface-less loop's send stay on the hub. A failed send is
+// words and the send of a loop whose bot is not in the chat stay on the
+// hub. A failed send is
 // pending with the failure on the send fields, and a retry that lands
 // mirrors it.
 func TestMirrorSaysWhereAMessageIs(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5151, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
-	srv.createLoop("gamma", nil)
+	tg.addBot("gamma")
+	tg.leave(groupChatID, "gamma")
+	srv.createLoop("gamma", map[string]any{"tg_bot_token": "gamma"})
 
 	tg.post(groupChatID, "supergroup", "@alpha a human in telegram", operator)
 	srv.waitGroupMessage("@alpha a human in telegram", mirrorIs("mirrored"))
@@ -72,10 +75,10 @@ func TestMirrorSaysWhereAMessageIs(t *testing.T) {
 	srv.waitGroupMessage("@beta alpha's words", mirrorIs("mirrored"))
 
 	gamma := mcpSession(t, srv, hubMCPToken(t, srv, "gamma"))
-	if res := callSend(t, gamma, map[string]any{"destination": "channel:fleet", "text": "@alpha gamma has no bot"}); res.IsError {
+	if res := callSend(t, gamma, map[string]any{"destination": "channel:fleet", "text": "@alpha gamma's bot is not there"}); res.IsError {
 		t.Fatalf("gamma's group send refused: %s", resultText(res))
 	}
-	srv.waitGroupMessage("@alpha gamma has no bot", mirrorIs("not_mirrored"))
+	srv.waitGroupMessage("@alpha gamma's bot is not there", mirrorIs("not_mirrored"))
 
 	tg.failNextSends(-1)
 	if res := callSend(t, alpha, map[string]any{"destination": "channel:fleet", "text": "@beta words that fail"}); res.IsError {

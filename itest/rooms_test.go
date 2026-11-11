@@ -42,15 +42,16 @@ func roomBody(roomID int64, channel string) map[string]any {
 // The operator binds a loop's rooms by id, one per channel, only to a
 // channel the loop is in and only for a loop with a bot or app to sit
 // there, the id spelled as its surface spells it; a
-// room carries one channel across loops; leaving a channel unbinds its
-// room, and a forgotten room is gone (ADR-0038).
+// room carries one channel across loops and a channel has one chat;
+// leaving a channel unbinds its room, and a forgotten room is gone
+// (ADR-0038, ADR-0070).
 func TestRoomsRoundTrip(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 6161, First: "Operator", Username: "operator"}
 	srv, _ := startTelegramFleet(t, operator)
-	srv.createLoop("gamma", nil) // no bot
+	srv.createLoop("gamma", map[string]any{"fleet": false}) // no bot
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "backend"}, nil)
-	for _, name := range []string{"alpha", "beta", "gamma"} {
+	for _, name := range []string{"alpha", "beta"} {
 		srv.wantRefusal("PUT", "/api/channels/backend/loops/"+name, nil, 204, "")
 	}
 
@@ -65,12 +66,16 @@ func TestRoomsRoundTrip(t *testing.T) {
 	if bound.Channel != "backend" || bound.Title != "" || bound.BoundAt == 0 {
 		t.Fatalf("bound by id = %+v, want an untitled room bound to backend", bound)
 	}
-	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, fleetChannel), 409, "room_in_use")
+	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, fleetChannel), 409, "channel_has_chat")
+	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "qa"}, nil)
+	srv.wantRefusal("PUT", "/api/channels/qa/loops/beta", nil, 204, "")
+	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, "qa"), 409, "room_in_use")
 	srv.wantRefusal("PUT", "/api/loops/beta/rooms", roomBody(backendRoom, "backend"), 200, "")
 	srv.wantRefusal("PUT", "/api/loops/alpha/rooms", roomBody(-1009000000002, "release"), 400, "channel_not_found")
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "release"}, nil)
 	srv.wantRefusal("PUT", "/api/loops/alpha/rooms", roomBody(-1009000000002, "release"), 409, "not_in_channel")
-	srv.wantRefusal("PUT", "/api/loops/gamma/rooms", roomBody(-1009000000002, "backend"), 409, "no_bot")
+	srv.wantRefusal("PUT", "/api/channels/release/loops/gamma", nil, 204, "")
+	srv.wantRefusal("PUT", "/api/loops/gamma/rooms", roomBody(-1009000000002, "release"), 409, "no_bot")
 	srv.wantRefusal("PUT", "/api/loops/alpha/rooms",
 		map[string]any{"surface": "slack", "room_id": "C0123", "channel": "backend"}, 409, "no_bot")
 	for _, body := range []map[string]any{
@@ -85,8 +90,12 @@ func TestRoomsRoundTrip(t *testing.T) {
 		map[string]any{"surface": "teams", "room_id": "x", "channel": "backend"}, 400, "room_surface_unsupported")
 	srv.wantRefusal("PUT", "/api/loops/nobody/rooms", roomBody(backendRoom, "backend"), 404, "")
 
-	// A second room for backend replaces the first, which stays listed unbound.
+	// A channel has one chat: a second room for backend takes the first
+	// chat's unbinding, after which the first stays listed unbound
+	// (ADR-0070).
 	const otherRoom int64 = -1009000000003
+	srv.wantRefusal("PUT", "/api/loops/alpha/rooms", roomBody(otherRoom, "backend"), 409, "channel_has_chat")
+	srv.wantRefusal("DELETE", "/api/channels/backend/chat", nil, 204, "")
 	srv.mustJSON("PUT", "/api/loops/alpha/rooms", roomBody(otherRoom, "backend"), nil)
 	if old, _ := srv.room("alpha", strconv.FormatInt(backendRoom, 10)); old.Channel != "" {
 		t.Fatalf("the replaced room = %+v, want it unbound", old)
@@ -218,11 +227,13 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 		t.Errorf("the reply was posted unthreaded: %+v", sent)
 	}
 
-	// A loop in the channel with no room of its own still reaches a person
-	// there: woken by a person through another loop's room, its reply to
-	// them is kept on the hub, where the channel's timeline is read
-	// (ADR-0068).
-	srv.createLoop("gamma", nil)
+	// A loop in the channel with no room of its own, its bot not yet in
+	// the chat, still reaches a person there: woken by a person through
+	// another loop's room, its reply to them is kept on the hub, where the
+	// channel's timeline is read (ADR-0068, ADR-0070).
+	tg.addBot("gamma")
+	tg.leave(backendChat, "gamma")
+	srv.createLoop("gamma", map[string]any{"tg_bot_token": "gamma", "fleet": false})
 	srv.wantRefusal("PUT", "/api/channels/backend/loops/gamma", nil, 204, "")
 	const toGamma = "@gamma from a room that is not yours"
 	tg.post(backendChat, "supergroup", toGamma, operator)

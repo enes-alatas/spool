@@ -284,6 +284,10 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("DELETE /api/channels/{name}", server.handleDeleteChannel)
 	mux.HandleFunc("PUT /api/channels/{name}/loops/{loop}", server.handleChannelLoop(true))
 	mux.HandleFunc("DELETE /api/channels/{name}/loops/{loop}", server.handleChannelLoop(false))
+	mux.HandleFunc("GET /api/channels/{name}/chats/found", server.handleFoundChats)
+	mux.HandleFunc("PUT /api/channels/{name}/chat", server.handlePutChat)
+	mux.HandleFunc("DELETE /api/channels/{name}/chat", server.handleDeleteChat)
+	mux.HandleFunc("PUT /api/channels/{name}/chat/members/{loop}", server.handlePutChatMember)
 	mux.HandleFunc("GET /api/teams", server.handleListTeams)
 	mux.HandleFunc("POST /api/teams", server.handleCreateTeam)
 	mux.HandleFunc("GET /api/teams/{name}", server.handleGetTeam)
@@ -1081,6 +1085,9 @@ func (server *Server) storeLoop(ctx context.Context, loopRecord *store.Loop) *re
 	refusal, err := server.putOnLogin(ctx, loopRecord.ClaudeLogin, func() error {
 		return server.Store.Loops().Create(ctx, loopRecord)
 	})
+	if onSurface := server.loopNotOnSurface(ctx, err); onSurface != nil && refusal == nil {
+		return onSurface
+	}
 	switch {
 	case refusal != nil:
 		return refusal
@@ -1404,6 +1411,10 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	})
 	if refusal != nil {
 		server.refuse(w, refusal)
+		return
+	}
+	if onSurface := server.loopNotOnSurface(r.Context(), err); onSurface != nil {
+		server.refuse(w, onSurface)
 		return
 	}
 	if err != nil {

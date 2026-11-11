@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"slices"
@@ -113,7 +114,62 @@ func (database *DB) migrate() error {
 			return err
 		}
 	}
+	for _, note := range upgradeNotes {
+		if err := note(database.db); err != nil {
+			// a note is the operator's news, not the schema: the hub starts
+			// without it, and the record it reads stays for the next start
+			slog.Warn("an upgrade note failed; it is tried again at the next start", "err", err)
+		}
+	}
 	return nil
+}
+
+// upgradeNotes run at every start, after the migrations, each for what a
+// migration left behind for it to report, such as what it changed. Each
+// reads a plain table the migration made and drops it once reported, so it
+// does nothing once done and a failed one runs again at the next start.
+var upgradeNotes = []func(db *sql.DB) error{
+	logChannelChatUpgrade,
+}
+
+// logChannelChatUpgrade logs each channel whose rooms migration 0083 sent
+// back to unbound (ADR-0070), so the operator knows which channel pages
+// flag a member, and drops the migration's record of them.
+func logChannelChatUpgrade(db *sql.DB) error {
+	var left int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='channel_chat_upgrade_unbound'`).Scan(&left); err != nil || left == 0 {
+		return err
+	}
+	rows, err := db.Query(`SELECT unbound.channel, COUNT(*),
+		EXISTS (SELECT 1 FROM channel_chats WHERE channel_chats.channel = unbound.channel)
+		FROM channel_chat_upgrade_unbound AS unbound GROUP BY unbound.channel ORDER BY unbound.channel`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var channel string
+		var unbound int
+		var hasChat bool
+		if err := rows.Scan(&channel, &unbound, &hasChat); err != nil {
+			return err
+		}
+		if hasChat {
+			slog.Warn("channel chat upgrade: rooms in another chat than the channel's went back to unbound; "+
+				"their loops show on the channel's page until their bot is in its chat",
+				"channel", channel, "rooms", unbound)
+			continue
+		}
+		slog.Warn("channel chat upgrade: the channel's chat was kept for another channel that bound it earlier, "+
+			"so its rooms went back to unbound; bind a chat on the channel's page",
+			"channel", channel, "rooms", unbound)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	_, err = db.Exec(`DROP TABLE channel_chat_upgrade_unbound`)
+	return err
 }
 
 func (database *DB) Close() error { return database.db.Close() }
@@ -254,7 +310,14 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		hash = tokenHash(loopRecord.HubMCPToken)
 	}
 	sealer := table.sealer
-	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash, team) VALUES
+	// the loop and its place in its team's home channel land together: a
+	// home channel that refuses it (ADR-0070) leaves no loop behind
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash, team) VALUES
 		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULLIF(?, ''))`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
@@ -277,10 +340,10 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	if err != nil {
 		return err
 	}
-	if err := moveTeamChannels(ctx, table.db, loopRecord.ID, "", loopRecord.Team, loopRecord.CreatedAt); err != nil {
+	if err := moveTeamChannels(ctx, tx, loopRecord.ID, "", loopRecord.Team, loopRecord.CreatedAt); err != nil {
 		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
 // Edit writes the named fields in one statement and reads the row back, so

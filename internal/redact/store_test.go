@@ -454,6 +454,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "SetDescription": false, "Delete": false,
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
 			"SetTeam": false,
+			// A channel's chat is a surface, a chat id, the chat's title as
+			// the surface reports it, timestamps and who bound it, as the
+			// audit names a user (ADR-0070).
+			"Chat": false, "BindChat": false, "MoveChat": false, "UnbindChat": false,
+			"BindMember": false, "FoundChats": false,
 		},
 		"TeamStore": {
 			// A team's description is operator-written text, like a

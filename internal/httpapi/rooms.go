@@ -102,17 +102,42 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 		server.jsonErrCode(w, 409, codeNoBot, "%s has no Slack app to sit in the channel", loopRecord.Name)
 		return
 	}
-	room, err := server.Store.Rooms().Bind(r.Context(), loopRecord.ID, body.Surface, roomID,
-		channel.Name, time.Now().UnixMilli())
+	// A room binds through its channel's chat (ADR-0070): a channel with no
+	// chat takes this one as its chat, which binds every member's room for
+	// it, and a channel whose chat this is binds this loop's room for it.
+	now := time.Now().UnixMilli()
+	chat, err := server.Store.Channels().Chat(r.Context(), channel.Name)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		_, err = server.Store.Channels().BindChat(r.Context(), &store.ChannelChat{Channel: channel.Name,
+			Surface: body.Surface, ChatID: roomID, BoundAt: now, BoundBy: authorOf(r, "")})
+		if errors.Is(err, store.ErrRoomInUse) {
+			server.moveRoom(w, r, loopRecord, channel, body.Surface, roomID)
+			return
+		}
+		if refusal := server.chatRefusal(r.Context(), err, channel.Name); refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+	case err != nil:
+		server.jsonErr(w, 500, "%v", err)
+		return
+	case chat.Surface != body.Surface || chat.ChatID != roomID:
+		server.jsonErrCode(w, 409, codeChannelHasChat, "channel %q is carried in another chat; a channel has one chat", channel.Name)
+		return
+	}
+	// the chat bound the room the loop's bot had; a pasted id it never
+	// heard from is added bound
+	room, err := server.Store.Rooms().Bind(r.Context(), loopRecord.ID, body.Surface, roomID, channel.Name, now)
 	if errors.Is(err, store.ErrRoomInUse) {
-		server.moveRoom(w, r, loopRecord, channel, body.Surface, roomID)
+		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
 		return
 	}
 	if err != nil {
 		server.storeErr(w, err, "loop")
 		return
 	}
-	server.roomsChanged(r, loopRecord.ID)
+	server.membersRoomsChanged(r, channel.LoopIDs)
 	writeJSON(w, 200, viewOfRoom(room))
 }
 
@@ -164,19 +189,23 @@ func (server *Server) moveRoom(w http.ResponseWriter, r *http.Request, loopRecor
 			name, carried, channel.Name)
 		return
 	}
-	err = server.Store.Rooms().BindTogether(r.Context(), together, surface, roomID, channel.Name, time.Now().UnixMilli())
-	if errors.Is(err, store.ErrRoomInUse) {
+	// the chat moves from the channel it carries to this one, with every
+	// member's room for it (ADR-0070)
+	_, err = server.Store.Channels().MoveChat(r.Context(), carried, &store.ChannelChat{Channel: channel.Name,
+		Surface: surface, ChatID: roomID, BoundAt: time.Now().UnixMilli(), BoundBy: authorOf(r, "")})
+	if errors.Is(err, store.ErrRoomInUse) || errors.Is(err, store.ErrNotFound) {
 		// bound elsewhere meanwhile, by a sighting or another request
 		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
 		return
 	}
-	if err != nil {
-		server.storeErr(w, err, "loop")
+	if refusal := server.chatRefusal(r.Context(), err, channel.Name); refusal != nil {
+		server.refuse(w, refusal)
 		return
 	}
 	for _, loopID := range together {
 		server.roomsChanged(r, loopID)
 	}
+	server.membersRoomsChanged(r, channel.LoopIDs)
 	rooms, err := server.Store.Rooms().List(r.Context(), loopRecord.ID)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)

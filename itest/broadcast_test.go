@@ -15,15 +15,18 @@ import (
 // is still private text.
 
 // A human's @all in the group reaches every eligible loop once — including
-// one with no surface, since a channel is the hub's and not Telegram's —
-// and skips the loop the operator paused and the one taken out of the
-// channel.
+// one whose bot is not in the chat, since a channel is the hub's and not
+// Telegram's — and skips the loop the operator paused and the one taken
+// out of the channel.
 func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8181, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
-	srv.createLoop("gamma", nil)
-	srv.createLoop("delta", nil)
+	for _, name := range []string{"gamma", "delta"} {
+		tg.addBot(name)
+		srv.createLoop(name, map[string]any{"tg_bot_token": name})
+	}
+	tg.leave(groupChatID, "gamma")
 	srv.mustJSON("POST", "/api/loops/beta/pause", nil, nil)
 	srv.mustJSON("DELETE", "/api/channels/fleet/loops/delta", nil, nil)
 

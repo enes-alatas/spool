@@ -69,13 +69,29 @@ func (server *Server) channelViews(r *http.Request, channels ...*store.Channel) 
 	return views, nil
 }
 
+// channelDetail is one channel as its page reads it: the list's view, its
+// chat, and the surfaces every member has a bot on (ADR-0070).
+type channelDetail struct {
+	channelView
+	// Chat is the channel's chat, null for none.
+	Chat *chatView `json:"chat"`
+	// Surfaces are the surfaces a chat may be added on: those every member
+	// has a bot on.
+	Surfaces []string `json:"surfaces"`
+}
+
 func (server *Server) writeChannel(w http.ResponseWriter, r *http.Request, status int, channel *store.Channel) {
 	views, err := server.channelViews(r, channel)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	writeJSON(w, status, views[0])
+	chat, surfaces, err := server.channelChat(r.Context(), channel)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, status, channelDetail{channelView: views[0], Chat: chat, Surfaces: surfaces})
 }
 
 // channelErr answers a store error about the channel named in the path.
@@ -337,6 +353,10 @@ func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 			write = server.Store.Channels().AddLoop
 		}
 		if err := write(r.Context(), channelName, loopRecord.ID, time.Now().UnixMilli()); err != nil {
+			if refusal := server.loopNotOnSurface(r.Context(), err); refusal != nil {
+				server.refuse(w, refusal)
+				return
+			}
 			if errors.Is(err, store.ErrChannelInOtherTeam) {
 				server.jsonErrCode(w, 409, codeChannelInOtherTeam, "channel %q is team %q's, and loop %q isn't in that team",
 					channelName, channel.Team, loopRecord.Name)
@@ -345,8 +365,12 @@ func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 			server.channelErr(w, r, err)
 			return
 		}
-		if !in {
-			// its room for the channel was unbound with it
+		// taken out, its room for the channel was unbound with it; put in, its
+		// room for the channel's chat was bound, if the channel has a chat
+		// (ADR-0070). Telling the actor costs it an update, which a loop just
+		// made can be mid-wake for, so a put in a channel with no chat, which
+		// binds nothing, tells it nothing.
+		if !in || server.channelHasChat(r, channelName) {
 			server.roomsChanged(r, loopRecord.ID)
 		}
 		w.WriteHeader(http.StatusNoContent)
