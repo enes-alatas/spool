@@ -9,16 +9,17 @@
 
 :root {
   --canvas: #050505;
-  /* the only raised value: row hover, input wells, interim panels */
+  /* the raised value for row hover and input wells; a container that
+     holds one thing is glass (below) */
   --surface: #0c0c0e;
   /* Carries a fractional display scale: at 125% a 1px rule is split across
      two device rows at 78% and 56% strength, so the value is picked for what
      survives that rather than for what it measures at 100% (ADR-0027). */
   --hairline: #24242a;
   --text: #f2f1ed;
-  /* nudged 3 steps from the approved #77777c so it clears 4.5:1 on --surface
-     as well as on --canvas; see ADR-0027 */
-  --text-muted: #7a7a7f;
+  /* clears 4.5:1 on glass over the glow, the brightest background text
+     lands on, as well as on --surface and --canvas (ADR-0027, #1518) */
+  --text-muted: #86868b;
   /* active work, and anything wanting the operator's attention soon */
   --active: #ff8a1f;
   --ready: #3fe39a;
@@ -46,6 +47,29 @@
      is asked for by name ahead of it; anything without it falls through to
      the stack as it was. Still system faces, still nothing downloaded. */
   --sans: 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Glass (ADR-0027, #1489): the raised layer for a container that holds
+     one thing, a card, a panel or a strip. Never nested: rows inside it
+     divide by hairlines. */
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-fill: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015) 60%);
+  --glass-blur: blur(18px) saturate(140%);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  --glass-radius: 12px;
+
+  /* The type scale (ADR-0027, #1489): every font size is one of these
+     nine. A size off the scale carries an `off-scale:` comment saying why. */
+  --fs-label: 0.625rem;
+  --fs-meta: 0.6875rem;
+  --fs-small: 0.75rem;
+  --fs-body: 0.8125rem;
+  --fs-input: 0.875rem;
+  --fs-card-title: 1rem;
+  --fs-page-title: 1.125rem;
+  --fs-figure: 1.25rem;
+  --fs-display: 1.5rem;
+  /* the one letter-spacing besides none: caps labels */
+  --tracking-label: 0.14em;
 }
 
 /* The wordmark's face: the README banner's Nunito, served by the hub itself
@@ -70,11 +94,26 @@ body,
   height: 100%;
 }
 
+/* The glow behind the glass (ADR-0027, #1489): it belongs to the canvas,
+   so it sits behind every page and stays put as the page scrolls. Cool
+   neutrals only, never a state hue. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 18% 30%, rgba(150, 170, 210, 0.07), transparent 70%),
+    radial-gradient(35% 45% at 82% 65%, rgba(120, 130, 170, 0.08), transparent 70%),
+    radial-gradient(30% 40% at 55% 10%, rgba(220, 225, 235, 0.05), transparent 70%);
+  filter: blur(20px);
+}
 body {
   background: var(--canvas);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   line-height: 1.5;
   /* The thumb is the text colour at low opacity — the same way a meter draws
      data (ADR-0027) — and the track is nothing at all, so a pane that is
@@ -188,8 +227,8 @@ textarea {
   align-items: center;
   gap: 10px;
   font-family: 'Nunito', var(--sans);
-  font-size: 1.4375rem;
-  letter-spacing: 0.01em;
+  font-size: 1.4375rem; /* off-scale: the wordmark keeps its own size (ADR-0027) */
+  letter-spacing: 0;
   color: var(--text);
 }
 /* A centred row puts the middle of the text's line box on the glyph's
@@ -212,7 +251,7 @@ textarea {
   align-items: center;
   gap: 14px;
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .btn {
@@ -268,7 +307,7 @@ textarea {
 }
 .btn.sm {
   padding: 3px 10px;
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   border-radius: 5px;
 }
 
@@ -288,7 +327,7 @@ textarea {
   padding: 0 10px;
   margin: -6px -10px;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
@@ -316,7 +355,7 @@ textarea {
   align-items: center;
   gap: 7px;
   padding: 6px 2px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   white-space: nowrap;
   transition: color 120ms;
@@ -396,18 +435,18 @@ textarea {
   text-align: center;
 }
 .page h1 {
-  font-size: 1.1875rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: var(--fs-page-title);
+  font-weight: 500;
+  letter-spacing: 0;
   margin-bottom: 18px;
 }
 /* the heading of a second thing on a page that already has a title: smaller
    than the title, and carrying its own space above so the section reads as a
    break rather than as more of the section before it */
 .section-head {
-  font-size: 0.9375rem;
+  font-size: var(--fs-card-title);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   margin: 34px 0 10px;
 }
 /* the first one follows the page title, which has left its space already */
@@ -447,7 +486,7 @@ textarea {
    for something other than a sign-in, so it says what. */
 .login-title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: var(--fs-page-title);
   font-weight: 600;
   text-align: center;
 }
@@ -457,7 +496,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .login-or::before,
@@ -472,7 +511,7 @@ textarea {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -499,13 +538,13 @@ textarea {
   align-items: baseline;
 }
 .fact dt {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .fact dd {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 /* Settings' Account section (#674): who this session is, in a panel, with
@@ -529,7 +568,7 @@ textarea {
   border-radius: 50%;
   background: var(--canvas);
   font-family: var(--mono);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   text-transform: uppercase;
   color: var(--text);
 }
@@ -540,14 +579,14 @@ textarea {
   min-width: 0;
 }
 .account-name {
-  font-size: 0.9375rem;
+  font-size: var(--fs-card-title);
   color: var(--text);
   overflow-wrap: anywhere;
 }
 .account-role {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -646,7 +685,7 @@ textarea {
 /* a message the surface never took: the fault belongs to the message, so it
    reads as an annotation on it rather than as another message in the thread */
 .undelivered {
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   font-family: var(--mono);
   color: var(--danger);
   margin-top: 3px;
@@ -668,7 +707,7 @@ textarea {
 /* a message a loop dropped (#1238): the undelivered mark's look, since it
    is the same kind of fact about a message: nobody on the other end has it */
 .dropped {
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   font-family: var(--mono);
   color: var(--danger);
   margin-top: 3px;
@@ -692,7 +731,7 @@ textarea {
 .undelivered-pending,
 .undelivered-error {
   flex-basis: 100%;
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   line-height: 1.5;
 }
 .undelivered-pending {
@@ -813,7 +852,7 @@ textarea {
    page by accident. */
 .undelivered-reason {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--danger);
   padding-top: 2px;
 }
@@ -826,7 +865,7 @@ textarea {
 
 /* one fleet-wide fault, said once at the top instead of per loop */
 .fleet-alert {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
@@ -839,7 +878,7 @@ textarea {
 }
 /* the reason a loop's workstation is unreachable, under its header */
 .ws-down-note {
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
@@ -850,7 +889,7 @@ textarea {
 /* a cloud loop's allowlist not confirmed (ADR-0059): a warning, not
    an alarm, so in the warning's colour rather than the danger's */
 .ws-warn-note {
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   color: var(--active);
   background: var(--active-wash);
   border: 1px solid var(--active-line);
@@ -860,7 +899,7 @@ textarea {
 }
 /* a workstation the operator switched off — deliberate, so not an alarm */
 .ws-off-note {
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   border: 1px solid var(--hairline);
   border-radius: 7px;
@@ -881,7 +920,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   border-radius: 7px;
   padding: 5px 6px 5px 11px;
 }
@@ -915,7 +954,7 @@ textarea {
 }
 .problem-line .btn {
   padding: 3px 10px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* the Fleet row's health note: a dot and the open problems, in the colour of
    the loop's health */
@@ -945,13 +984,13 @@ textarea {
 }
 /* a power control the server says is still running */
 .ws-progress {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--active);
   margin-top: 8px;
 }
 /* the typed-name gate in front of a destructive recreate */
 .ws-confirm {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--text);
   background: var(--danger-wash);
@@ -968,7 +1007,7 @@ textarea {
 
 .state-name {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* who made the loop, under its name (#696): a fact about the record, set
@@ -976,7 +1015,7 @@ textarea {
 .loop-provenance {
   margin: -6px 0 12px;
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* the Changes panel names who in the body colour, so a row reads by its
@@ -993,7 +1032,7 @@ textarea {
    unsafe condition, not a state, so it takes the danger tokens (ADR-0027) */
 .containment-badge {
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--danger);
   border: 1px solid var(--danger-line);
   border-radius: 4px;
@@ -1022,7 +1061,7 @@ textarea {
 }
 .fleet-summary {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* The plan strip (#648): what the fleet is costing, between the header and
@@ -1041,12 +1080,12 @@ textarea {
   align-items: baseline;
   gap: 8px 28px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .plan-title {
-  font-size: 0.65625rem;
-  letter-spacing: 0.12em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 .plan-window {
@@ -1102,7 +1141,7 @@ textarea {
   border: 1px solid var(--danger-line);
   background: var(--danger-wash);
   border-radius: 7px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text);
 }
 .cap-banner .cap-reason {
@@ -1114,7 +1153,7 @@ textarea {
 }
 .cap-idle,
 .cap-reach {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .fleet-row .f-state.capped {
@@ -1227,7 +1266,7 @@ textarea {
 .login-ring-capped-label {
   fill: var(--danger);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 8px; /* off-scale: SVG text inside a fixed 80px ring */
 }
 .login-ring-capped-row {
   align-items: center;
@@ -1243,7 +1282,7 @@ textarea {
 .login-ring-name {
   fill: var(--text);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 10px; /* off-scale: SVG text inside a fixed 80px ring */
 }
 .login-ring-details {
   position: absolute;
@@ -1306,7 +1345,7 @@ textarea {
 }
 .fleet-note {
   color: var(--text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   padding: 18px 0;
 }
 .fleet-list {
@@ -1330,7 +1369,7 @@ textarea {
    figures they name. */
 .fleet-cols {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   padding-bottom: 10px;
   border-bottom: 1px solid var(--hairline);
@@ -1357,12 +1396,12 @@ textarea {
 }
 .fleet-row .loop-name {
   font-family: var(--mono);
-  font-size: 0.90625rem;
+  font-size: var(--fs-input);
   overflow-wrap: anywhere;
 }
 .fleet-row .mission {
   color: var(--text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   /* one line is enough to tell two loops apart; the hover and the detail
      page have the rest (#752) */
   white-space: nowrap;
@@ -1378,7 +1417,7 @@ textarea {
   gap: 4px 10px;
   margin-top: 2px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .fleet-row .note {
@@ -1397,7 +1436,7 @@ textarea {
 .fleet-row .note.doing {
   flex-basis: 100%;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text);
   white-space: normal;
   overflow-wrap: anywhere;
@@ -1413,7 +1452,7 @@ textarea {
 .loop-doing {
   display: block;
   margin: -4px 0 12px;
-  font-size: 0.9375rem;
+  font-size: var(--fs-card-title);
   color: var(--text);
 }
 .loop-doing.stale {
@@ -1432,7 +1471,7 @@ textarea {
 }
 .fleet-row .f-state {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* On a wide screen the two numbers are columns of the row's own grid; the
@@ -1445,7 +1484,7 @@ textarea {
 .fleet-row .f-next,
 .fleet-row .f-today {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* A cost lines up on its decimal point, so the column is right-aligned, and
@@ -1621,7 +1660,7 @@ textarea {
    to look past it. */
 .load-older {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   background: none;
   border: none;
@@ -1638,7 +1677,7 @@ textarea {
 }
 .load-older-failed {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--danger);
 }
 
@@ -1709,7 +1748,7 @@ textarea {
 
 .knot .who {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-bottom: 3px;
 }
@@ -1759,7 +1798,7 @@ textarea {
   flex-direction: column;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .attachment {
@@ -1792,7 +1831,7 @@ textarea {
 }
 .tool-line {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   padding: 1px 0;
 }
@@ -1805,7 +1844,7 @@ textarea {
    control shares it. */
 .text-button {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   background: none;
   border: none;
@@ -1814,7 +1853,7 @@ textarea {
 }
 .thinking-body {
   color: var(--text-muted);
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   white-space: pre-wrap;
   margin-top: 4px;
 }
@@ -1822,7 +1861,7 @@ textarea {
   display: flex;
   gap: 12px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -1918,7 +1957,7 @@ textarea {
   border-radius: 999px;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   padding: 4px 12px;
   cursor: pointer;
   max-width: 100%;
@@ -1939,7 +1978,7 @@ textarea {
 /* Where the composer would be, on a private conversation's pane (#723). */
 .private-note {
   margin-top: 16px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 /* the Undelivered pane's tab: it only exists while something failed, and it
@@ -1989,7 +2028,7 @@ textarea {
   border-radius: 999px;
   background: var(--surface);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text);
 }
 .attached-file svg {
@@ -2013,7 +2052,7 @@ textarea {
    the message text stays the thing the eye lands on. */
 .reply-quote,
 .correction-quote {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   border-left: 2px solid var(--hairline);
   padding-left: 8px;
@@ -2025,7 +2064,7 @@ textarea {
 }
 .reply-quote .author {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
 }
 /* The thread takes the viewport less the header, the page title and the
    compose box, so the compose box stays in view below it. */
@@ -2034,7 +2073,7 @@ textarea {
 }
 .reached {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -2052,7 +2091,7 @@ textarea {
   gap: 10px;
   align-items: baseline;
   margin-bottom: 6px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   border-left: 2px solid var(--text);
   padding-left: 8px;
@@ -2066,7 +2105,7 @@ textarea {
 }
 .replying .author {
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text);
 }
 .mention-menu {
@@ -2088,7 +2127,7 @@ textarea {
   border-radius: 6px;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
   text-align: left;
   padding: 6px 10px;
   cursor: pointer;
@@ -2103,7 +2142,7 @@ textarea {
    a post that would reach nobody, which is the case Send refuses. */
 .channel-reach {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   margin-top: 6px;
 }
@@ -2120,8 +2159,8 @@ textarea {
 }
 .side-panel h3 {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.12em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: 10px;
@@ -2165,14 +2204,14 @@ textarea {
   justify-content: space-between;
   gap: 8px;
   padding: 3px 0;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .side-panel .row .k {
   color: var(--text-muted);
 }
 .side-panel .row .v {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   text-align: right;
   word-break: break-all;
 }
@@ -2184,7 +2223,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .slack-step ol {
   padding-left: 18px;
@@ -2194,10 +2233,10 @@ textarea {
 }
 .slack-step code {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .slack-step .hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* the token pair under the manifest, or in place of the buttons on a Slack
@@ -2222,12 +2261,12 @@ textarea {
 }
 .side-panel .surface-hint {
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .slack-manifest {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   background: var(--canvas);
   border: 1px solid var(--hairline);
   border-radius: 6px;
@@ -2266,7 +2305,7 @@ textarea {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--text);
 }
 .side-panel .controls {
@@ -2276,8 +2315,8 @@ textarea {
 }
 .countdown {
   font-family: var(--mono);
-  font-size: 1.375rem;
-  font-weight: 300;
+  font-size: var(--fs-figure);
+  font-weight: 400;
   color: var(--text);
 }
 .countdown.due,
@@ -2287,7 +2326,7 @@ textarea {
 /* Why the wake above is what it is: the plan cap holds it (#651). */
 .side-panel .wake-note {
   margin: 6px 0 10px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 
@@ -2301,8 +2340,8 @@ textarea {
 .field label {
   display: block;
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: 5px;
@@ -2313,7 +2352,7 @@ textarea {
   width: 100%;
 }
 .field .hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -2351,14 +2390,14 @@ textarea {
 
 /* the sentence under a page title that says what the page is for */
 .page-lede {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   max-width: 640px;
   margin-bottom: 20px;
 }
 /* the small print in a side panel, explaining the control above it */
 .panel-note {
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 8px;
 }
@@ -2373,9 +2412,9 @@ textarea {
   margin-top: 16px;
   margin-bottom: 6px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  font-weight: normal;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-label);
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -2383,7 +2422,7 @@ textarea {
 .panel-link {
   display: inline-block;
   margin-top: 8px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   text-decoration: underline;
   text-decoration-style: dotted;
@@ -2397,7 +2436,7 @@ button.panel-link {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 /* A setting that is on or off, with what each state means under its name:
@@ -2408,7 +2447,7 @@ button.panel-link {
   gap: 8px;
   align-items: flex-start;
   margin-top: 14px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   cursor: pointer;
 }
 /* An on/off state rather than a form option — a setting is on
@@ -2474,17 +2513,17 @@ button.panel-link {
 .switch-row .hint {
   display: block;
   margin-top: 2px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* a panel with nothing in it yet, saying so */
 .panel-empty {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 /* body text a panel exists to show — the mission, not commentary on it */
 .panel-body {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   white-space: pre-wrap;
 }
 /* Five lines of a mission, with the rest clamped rather than removed: the
@@ -2516,7 +2555,7 @@ button.panel-link {
    for it in the loop's context — which is what that token is for. */
 .mission-warning {
   margin-top: 8px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--active);
 }
@@ -2525,7 +2564,7 @@ button.panel-link {
    decision and this is only the record of one already made. */
 .mission-result {
   margin-top: 8px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   line-height: 1.5;
   color: var(--text-muted);
 }
@@ -2534,7 +2573,7 @@ button.panel-link {
    and below its field rather than above it, so they are not yet one name */
 .token-state {
   margin-bottom: 8px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .token-state.ok {
@@ -2548,7 +2587,7 @@ button.panel-link {
   background: var(--canvas);
   border-radius: 5px;
   padding: 4px 8px;
-  font-size: 0.78125rem;
+  font-size: var(--fs-body);
 }
 /* the minutes field beside the interval row: a number, so it is mono */
 .tick-input {
@@ -2557,7 +2596,7 @@ button.panel-link {
   border-radius: 5px;
   padding: 2px 6px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* the one-off id under the model select's Custom…: the field takes the
    width, Set sits beside it, and the id is mono like the minutes field */
@@ -2574,7 +2613,7 @@ button.panel-link {
   border-radius: 5px;
   padding: 2px 6px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* the daily cap under today's spend (#652): one row of same-size chips,
    the chosen one lit, in the sans the panel's labels use because five mono
@@ -2595,7 +2634,7 @@ button.panel-link {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   white-space: nowrap;
 }
 .cap-chips button {
@@ -2649,7 +2688,7 @@ button.panel-link {
 .field .cap-other {
   padding-top: 6px;
   padding-bottom: 6px;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
 }
 /* the form's label rule is for field names; the other-amount chip is a
    label too, and takes none of it */
@@ -2658,18 +2697,18 @@ button.panel-link {
   margin: 0;
   padding-left: 12px;
   font-family: var(--sans);
-  letter-spacing: normal;
+  letter-spacing: 0;
   text-transform: none;
 }
 
 /* ---- Settings → Egress (#542) ---- */
 .egress-head {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   font-weight: 600;
   margin: 18px 0 8px;
 }
 .egress-status {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   padding: 8px 12px;
   border: 1px solid var(--hairline);
@@ -2699,7 +2738,7 @@ button.panel-link {
 .egress-row code,
 .egress-hosts code {
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 .egress-add {
@@ -2856,12 +2895,12 @@ button.panel-link {
 }
 .egress-hint-connector {
   flex: 1;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .egress-hint-allowed {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--ready);
 }
 .skill-hints {
@@ -2889,20 +2928,20 @@ button.panel-link {
   overflow-wrap: anywhere;
 }
 .skill-hint-name {
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
 }
 .skill-hint-description {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .skill-hint-reason {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .skill-hint-state {
   flex: none;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .skill-hint-state.installed {
@@ -2919,7 +2958,7 @@ button.panel-link {
 }
 .skill-files {
   margin-top: 4px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .skill-files summary,
 .skill-file summary {
@@ -2947,7 +2986,7 @@ button.panel-link {
   border-radius: 6px;
   background: var(--surface);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text);
 }
 .team-loop-skills {
@@ -2955,11 +2994,11 @@ button.panel-link {
 }
 .team-loop-skills-label {
   margin-bottom: 4px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .egress-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 6px;
 }
@@ -2969,7 +3008,7 @@ button.panel-link {
   gap: 12px;
 }
 .egress-reason {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   margin-bottom: 4px;
 }
@@ -2989,7 +3028,7 @@ button.panel-link {
   width: 100%;
   margin-bottom: 6px;
   padding: 4px 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 /* a list a few rows high that scrolls on its own. Unlike the room's other
    scrollers its track shows, faintly, so a list cut off at its sixth row
@@ -3031,7 +3070,7 @@ button.panel-link {
   padding: 0;
 }
 .egress-none {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   padding: 8px 0;
 }
@@ -3067,7 +3106,7 @@ button.panel-link {
   color: var(--text-muted);
 }
 .user-meta {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .user-meta:empty {
   display: none;
@@ -3126,7 +3165,7 @@ button.panel-link {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
@@ -3146,7 +3185,7 @@ button.panel-link {
 .user-role {
   width: auto;
   padding: 3px 8px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .user-confirm {
   margin-top: 10px;
@@ -3172,14 +3211,14 @@ button.panel-link {
   flex: 1;
   min-width: 0;
   font-family: var(--mono);
-  font-size: 1rem;
-  letter-spacing: 0.04em;
+  font-size: var(--fs-card-title);
+  letter-spacing: 0;
   overflow-wrap: anywhere;
   user-select: all;
 }
 .otp-once {
   margin: 10px 0 16px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 
@@ -3218,11 +3257,11 @@ button.panel-link {
 }
 .cloud-step-title {
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
 }
 .cloud-step-value {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .cloud-step-end {
   margin-left: auto;
@@ -3232,7 +3271,7 @@ button.panel-link {
 }
 .cloud-step-state {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .cloud-step.ok .cloud-step-state {
@@ -3257,7 +3296,7 @@ button.panel-link {
   padding: 0;
   margin: 10px 0 0;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -3278,19 +3317,19 @@ button.panel-link {
 }
 .cloud-check-hint {
   margin-top: 8px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .cloud-check-detail {
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 .cloud-warning {
   margin-top: 10px;
   padding: 8px 12px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--active);
   background: var(--active-wash);
   border: 1px solid var(--active-line);
@@ -3298,7 +3337,7 @@ button.panel-link {
 }
 .cloud-small {
   margin-top: 10px;
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 
@@ -3317,7 +3356,7 @@ button.panel-link {
   padding: 0 0 14px;
   margin: 0 0 16px;
   border-bottom: 1px solid var(--hairline);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .cloud-stepper li {
@@ -3339,7 +3378,7 @@ button.panel-link {
   border-radius: 50%;
   border: 1px solid currentColor;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 /* who calls whom: three boxes of one size, two arrows of one length, HTTPS
    centred over the first one's shaft (Enes, on #865) */
@@ -3365,25 +3404,25 @@ button.panel-link {
 }
 .cloud-node-k {
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-label);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-muted);
 }
 .cloud-node-v {
   margin-top: 2px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .cloud-node-v.mono {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .cloud-node-sub {
   margin-top: 2px;
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .cloud-arrow {
@@ -3417,7 +3456,7 @@ button.panel-link {
   bottom: calc(50% + 4px);
   text-align: center;
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 /* the tunnel choice: three cards, the picked one outlined */
@@ -3437,9 +3476,9 @@ button.panel-link {
   border-radius: 8px;
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   text-transform: none;
-  letter-spacing: normal;
+  letter-spacing: 0;
   color: var(--text);
 }
 .form .cloud-tunnel.on {
@@ -3458,7 +3497,7 @@ button.panel-link {
   font-weight: 600;
 }
 .cloud-tunnel-why {
-  font-size: 0.71875rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .cloud-recipe {
@@ -3467,7 +3506,7 @@ button.panel-link {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .cloud-recipe li::marker {
   color: var(--text-muted);
@@ -3533,18 +3572,18 @@ button.panel-link {
 }
 .model-id {
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 .model-label {
   color: var(--text-muted);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .model-label-input {
   flex: 1;
   min-width: 0;
   padding: 2px 6px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .model-row-actions {
   display: flex;
@@ -3553,7 +3592,7 @@ button.panel-link {
   flex-shrink: 0;
 }
 .model-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -3578,7 +3617,7 @@ button.panel-link {
 }
 .management-token-name {
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 .management-token-row .btn {
@@ -3587,14 +3626,14 @@ button.panel-link {
 .management-token-meta {
   order: 1;
   flex-basis: 100%;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .management-token-ended {
   color: var(--danger);
 }
 .management-token-empty {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   margin-bottom: 16px;
 }
@@ -3604,7 +3643,7 @@ button.panel-link {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   padding: 12px 14px;
   margin-bottom: 16px;
   background: var(--active-wash);
@@ -3629,7 +3668,7 @@ button.panel-link {
   gap: 8px;
   margin-bottom: 10px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .activity-filter .panel-select {
@@ -3644,7 +3683,7 @@ button.panel-link {
   padding-bottom: 16px;
   border-bottom: 1px solid var(--hairline);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .figures-head {
@@ -3658,8 +3697,8 @@ button.panel-link {
 }
 .figures-title,
 .figures-label {
-  font-size: 0.65625rem;
-  letter-spacing: 0.12em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 .figures-windows {
@@ -3674,7 +3713,7 @@ button.panel-link {
   background: none;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   cursor: pointer;
 }
 .figures-window:hover {
@@ -3692,7 +3731,7 @@ button.panel-link {
   margin-left: auto;
 }
 .figures-age {
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 .figures-age.stale {
   color: var(--active);
@@ -3700,7 +3739,7 @@ button.panel-link {
 .figures-empty {
   margin-top: 12px;
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .figures-empty a {
   color: var(--text);
@@ -3721,11 +3760,11 @@ button.panel-link {
   min-width: 0;
 }
 .figures-value {
-  font-size: 1.25rem;
+  font-size: var(--fs-figure);
   color: var(--text);
 }
 .figures-sub {
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 .figures-failed {
   color: var(--danger);
@@ -3748,7 +3787,7 @@ button.panel-link {
   background: var(--canvas);
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
 }
@@ -3768,11 +3807,11 @@ button.panel-link {
 }
 .figures-card-name {
   color: var(--text);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .figures-card-line {
   font-family: var(--sans);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .figures-card .figures-turn-bars {
   height: 2rem;
@@ -3780,7 +3819,7 @@ button.panel-link {
 }
 .figures-back {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* Each turn's spend: a bar per turn, the whole column its hover target. */
 .figures-turns {
@@ -3816,7 +3855,7 @@ button.panel-link {
   opacity: 1;
 }
 .figures-turn-line {
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 .figures-lists {
   display: grid;
@@ -3880,11 +3919,11 @@ button.panel-link {
   gap: 12px;
   padding: 9px 0;
   border-bottom: 1px solid var(--hairline);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .feed-item .when {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   flex: none;
   width: 76px;
@@ -3893,7 +3932,7 @@ button.panel-link {
 /* the heading over a group of senders: on Access, the senders from before
    links */
 .sender-group {
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   color: var(--text-muted);
   margin: 18px 0 4px;
 }
@@ -3910,7 +3949,7 @@ button.panel-link {
 .feed-item.change-item .text {
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .feed-item .text {
   color: var(--text);
@@ -3920,7 +3959,7 @@ button.panel-link {
 .feed-item .origin {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   flex: none;
 }
@@ -4056,7 +4095,7 @@ button.panel-link {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--text);
 }
 /* ---- connections (#506) ----
@@ -4097,14 +4136,14 @@ button.panel-link {
 }
 .connection-kind {
   grid-area: kind;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   white-space: nowrap;
 }
 .connection-detail {
   grid-area: detail;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4114,7 +4153,7 @@ button.panel-link {
   grid-area: secret;
   justify-self: end;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 /* The loops it is on, beside what it points at. It and the secret note
    above it are right-aligned: their column is as wide as the longer of the
@@ -4122,7 +4161,7 @@ button.panel-link {
 .connection-loops {
   grid-area: loops;
   justify-self: end;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* "no secret" is a fact, not a fault: an MCP server may need none */
@@ -4162,7 +4201,7 @@ button.panel-link {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .connection-event {
@@ -4178,7 +4217,7 @@ button.panel-link {
 }
 .connection-event time {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   white-space: nowrap;
 }
 .rotate-form {
@@ -4239,7 +4278,7 @@ button.panel-link {
   overflow-wrap: anywhere;
 }
 .loop-connection-kind {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* A connection private to one loop (#600): a quiet word beside its kind,
@@ -4250,7 +4289,7 @@ button.panel-link {
   border: 1px solid var(--hairline);
   border-radius: 4px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text);
 }
 .loop-connection-tools {
@@ -4320,7 +4359,7 @@ button.panel-link {
    one GitHub identity */
 .connection-refusal {
   grid-column: 1 / -1;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* A GitHub App's private key (#887): pasted into a field many lines long,
@@ -4330,7 +4369,7 @@ button.panel-link {
    over a file input, so the form's field-name rule is undone on it, and the
    input is kept reachable by keyboard though unseen. */
 .key-paste {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   resize: vertical;
   -webkit-text-security: disc;
 }
@@ -4339,8 +4378,8 @@ button.panel-link {
   display: inline-flex;
   margin: 8px 0 0;
   font-family: var(--sans);
-  font-size: 0.75rem;
-  letter-spacing: normal;
+  font-size: var(--fs-small);
+  letter-spacing: 0;
   text-transform: none;
   color: var(--text);
   cursor: pointer;
@@ -4359,7 +4398,7 @@ button.panel-link {
   align-items: center;
   gap: 8px;
   padding: 6px 0;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .rotate-form .key-paste {
   flex: 1 1 100%;
@@ -4369,7 +4408,7 @@ button.panel-link {
 }
 
 .rules-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-top: 8px;
   max-width: 68ch;
@@ -4401,7 +4440,7 @@ button.panel-link {
 }
 .rule-title {
   font-weight: 600;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   overflow-wrap: anywhere;
 }
 .rule-actions {
@@ -4411,7 +4450,7 @@ button.panel-link {
 }
 .rule-badge {
   font-family: var(--mono);
-  font-size: 0.65625rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   border: 1px solid var(--hairline);
   border-radius: 4px;
@@ -4424,7 +4463,7 @@ button.panel-link {
   color: var(--text);
 }
 .rule-body {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -4445,12 +4484,12 @@ button.panel-link {
    form that makes one. */
 .channel-name {
   font-family: var(--mono);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .channel-count {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .rule-body.channel-undescribed {
@@ -4473,7 +4512,7 @@ button.panel-link {
   border: 1px solid var(--hairline);
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .channel-loop button {
   background: none;
@@ -4481,7 +4520,7 @@ button.panel-link {
   border-radius: 999px;
   padding: 0 6px;
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   cursor: pointer;
 }
 .channel-loop button:hover {
@@ -4493,7 +4532,7 @@ button.panel-link {
 .channel-add {
   padding: 3px 8px;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* the new-channel form: the name, which keeps a width a name fits in, then
    the description, which takes the rest. It wraps on a narrow screen */
@@ -4515,7 +4554,7 @@ button.panel-link {
 }
 .channel-note {
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .channel-note.bad {
@@ -4530,12 +4569,12 @@ button.panel-link {
    form that makes one. */
 .channel-name {
   font-family: var(--mono);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .channel-count {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* a channel's way into its chat, at the right end of its head (#1443),
@@ -4543,7 +4582,7 @@ button.panel-link {
    than splitting the free space with it */
 .channel-open {
   margin-left: auto;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .channel-open + .rule-actions {
   margin-left: 12px;
@@ -4568,7 +4607,7 @@ button.panel-link {
   border: 1px solid var(--hairline);
   border-radius: 999px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .channel-loop button {
   background: none;
@@ -4576,7 +4615,7 @@ button.panel-link {
   border-radius: 999px;
   padding: 0 6px;
   color: var(--text-muted);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   cursor: pointer;
 }
 .channel-loop button:hover {
@@ -4588,7 +4627,7 @@ button.panel-link {
 .channel-add {
   padding: 3px 8px;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 /* the new-channel form: the name, which keeps a width a name fits in, then
    the description, which takes the rest. It wraps on a narrow screen */
@@ -4610,7 +4649,7 @@ button.panel-link {
 }
 .channel-note {
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .channel-note.bad {
@@ -4632,16 +4671,16 @@ button.panel-link {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-size: 0.6875rem;
+  font-size: var(--fs-label);
   font-family: var(--mono);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: 4px;
 }
 .char-count {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
   letter-spacing: 0;
   text-transform: none;
@@ -4659,7 +4698,7 @@ button.panel-link {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .chan-head .chan-desc {
   color: var(--text-muted);
@@ -4672,7 +4711,7 @@ button.panel-link {
   flex-direction: column;
   gap: 2px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .chan-members a {
   color: var(--text);
@@ -4698,14 +4737,14 @@ button.panel-link {
   gap: 8px;
 }
 .side-panel .chans-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .side-panel .chan-room {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .side-panel .chan-line {
   display: flex;
@@ -4728,7 +4767,7 @@ button.panel-link {
 }
 .side-panel .room-id {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .side-panel .chan-actions {
@@ -4769,7 +4808,7 @@ button.panel-link {
   margin-top: 6px;
 }
 .side-panel .schedule-editor .hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .side-panel .schedule-save {
@@ -4871,14 +4910,14 @@ button.panel-link {
   display: flex;
   justify-content: space-between;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .pace-legend {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .pace-legend > span {
@@ -4900,7 +4939,7 @@ button.panel-link {
   width: 56px;
   padding: 2px 6px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .pace-legend b {
   font-family: var(--mono);
@@ -4938,12 +4977,12 @@ button.panel-link {
   padding: 1px 7px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   cursor: default;
 }
 .reaction-count {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 /* A poll's ballot under its question (#554): one row per option, its bar a
@@ -4956,12 +4995,12 @@ button.panel-link {
   border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .poll-head,
 .poll-foot {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .poll .poll-state {
@@ -5004,7 +5043,7 @@ button.panel-link {
 .poll-count {
   position: relative;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .feed-item .poll {
@@ -5032,7 +5071,7 @@ button.panel-link {
 }
 .first-run-count {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
   margin-bottom: 22px;
 }
@@ -5071,16 +5110,16 @@ button.panel-link {
 }
 .pillar-step {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .page .pillar-title {
-  font-size: 0.9375rem;
+  font-size: var(--fs-card-title);
   font-weight: 600;
 }
 .pillar-how {
   flex: 1;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   line-height: 1.5;
 }
@@ -5089,7 +5128,7 @@ button.panel-link {
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .pillar.done .pillar-state {
@@ -5107,7 +5146,7 @@ button.panel-link {
   align-items: flex-start;
   gap: 6px;
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .pillar-skip p {
@@ -5185,7 +5224,7 @@ button.panel-link {
   display: grid;
   gap: 7px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .pillar-phases li {
@@ -5271,7 +5310,7 @@ button.panel-link {
 }
 .step-dialog-lede {
   margin: 0 0 12px;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   color: var(--text-muted);
   line-height: 1.5;
 }
@@ -5285,7 +5324,7 @@ button.panel-link {
   display: block;
   margin-top: 6px;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   /* a step that did not take is what is wrong (ADR-0027) */
   color: var(--danger);
 }
@@ -5317,15 +5356,15 @@ button.panel-link {
   flex: none;
   width: 76px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .link-who {
   flex: 1;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -5344,7 +5383,7 @@ button.panel-link {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -5368,7 +5407,7 @@ button.panel-link {
   border: 1px solid var(--hairline);
   border-radius: 50%;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 .link-steps li.now .link-step-mark {
   border-color: var(--text);
@@ -5455,7 +5494,7 @@ button.panel-link {
   border-radius: 6px;
   border: 1px solid var(--hairline);
   background: var(--surface);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   line-height: 1.35;
   text-align: left;
   color: var(--text-muted);
@@ -5470,7 +5509,7 @@ button.panel-link {
 /* a control the hub refused, its answer under the buttons (#1118) */
 .control-error {
   margin-top: 14px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 
@@ -5493,7 +5532,7 @@ button.panel-link {
 }
 .copyable code {
   font-family: var(--mono);
-  font-size: 0.92em;
+  font-size: 0.92em; /* off-scale: code set to the prose around it */
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -5544,7 +5583,7 @@ button.panel-link {
 
 /* Settings → Claude logins (#1070): who a login is, beside its name */
 .claude-login-who {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* A cloud loop's setup walk (ADR-0061, #1183): four steps, each with the
@@ -5559,7 +5598,7 @@ button.panel-link {
   align-items: center;
   gap: 4px;
   margin-left: 8px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--ready);
 }
 .cloud-substeps {
@@ -5575,7 +5614,7 @@ button.panel-link {
   gap: 6px;
   margin: 6px 0 0;
   font-family: var(--mono);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .cloud-loop-check.ok {
   color: var(--ready);
@@ -5624,8 +5663,8 @@ button.panel-link {
 }
 .health-row-label {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -5643,12 +5682,12 @@ button.panel-link {
 .health-row-edited {
   display: block;
   margin-top: 2px;
-  letter-spacing: normal;
+  letter-spacing: 0;
   text-transform: none;
   color: var(--active);
 }
 .health-row-hint {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .health-row-edit {
@@ -5656,7 +5695,7 @@ button.panel-link {
   border: none;
   background: none;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -5685,8 +5724,8 @@ button.panel-link {
 }
 .health-limit label {
   font-family: var(--mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -5704,7 +5743,7 @@ button.panel-link {
   border-color: transparent;
   background: none;
   font-family: var(--mono);
-  font-size: 1.5rem;
+  font-size: var(--fs-display);
 }
 .health-limit-value input:hover:not(:disabled) {
   border-color: var(--hairline);
@@ -5715,7 +5754,7 @@ button.panel-link {
 }
 .health-limit-unit,
 .health-limit-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .health-limit-note::before {
@@ -5784,7 +5823,7 @@ button.panel-link {
   height: 14px;
   margin: 0 7px;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--fs-label);
   color: var(--text-muted);
 }
 .health-limit-ticks span {
@@ -5793,7 +5832,7 @@ button.panel-link {
   white-space: nowrap;
 }
 .health-limit .hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* a phone puts the hint under the name and value */
@@ -5824,7 +5863,7 @@ button.panel-link {
 }
 .team-description {
   flex-basis: 100%;
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
 }
 .team-loops {
   list-style: none;
@@ -5848,21 +5887,21 @@ button.panel-link {
 }
 .team-loop-name {
   font-family: var(--mono);
-  font-size: 0.875rem;
+  font-size: var(--fs-input);
   font-weight: 600;
 }
 .team-loop-role {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .team-loop-handoffs {
   margin-top: 4px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   overflow-wrap: anywhere;
 }
 .team-loop-mission {
   margin-top: 6px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .team-loop-mission summary {
   cursor: pointer;
@@ -5874,10 +5913,10 @@ button.panel-link {
   overflow: auto;
   white-space: pre-wrap;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .team-preview .hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .team-actions {
@@ -5905,7 +5944,7 @@ button.panel-link {
 }
 .group-wait .hint {
   flex-basis: 100%;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
 }
 .group-wait-dot {
   width: 8px;
@@ -5972,7 +6011,7 @@ button.panel-link {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .connection-search {
@@ -5981,7 +6020,7 @@ button.panel-link {
   background: var(--canvas);
   border-radius: 5px;
   padding: 4px 8px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .connection-filter-row .panel-select {
   width: auto;
@@ -6000,7 +6039,7 @@ button.panel-link {
   border-radius: 999px;
   background: var(--canvas);
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   cursor: pointer;
 }
 .connection-filter-pill:hover {
@@ -6012,7 +6051,7 @@ button.panel-link {
 }
 .connection-filter-pill .count {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 /* Problems is red throughout, and glows when pressed, as a lit button:
@@ -6042,7 +6081,7 @@ button.panel-link {
 .connection-filter-count {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
 }
 /* The kinds as tabs with counts above the filters, and the rows grouped
    under a heading per kind below them. */
@@ -6059,7 +6098,7 @@ button.panel-link {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   padding: 6px 10px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -6073,12 +6112,12 @@ button.panel-link {
 .connection-kind-tab .count,
 .connection-group-head .count {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .connection-group-head {
   margin: 18px 0 6px;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 
 /* Whether a connection works (#1324): a line under its tools once a check
@@ -6091,12 +6130,12 @@ button.panel-link {
   align-items: baseline;
   gap: 4px 10px;
   margin-top: 6px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .connection-check-word {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   white-space: nowrap;
 }
 .connection-check.ok .connection-check-word {
@@ -6119,7 +6158,7 @@ button.panel-link {
 }
 .connection-check-when {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 
@@ -6130,7 +6169,7 @@ button.panel-link {
   flex-wrap: wrap;
   gap: 6px 18px;
   margin: 0 0 14px;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 /* The line over the cards or rows: the circles' legend, then the counts
@@ -6182,22 +6221,9 @@ button.panel-link {
 }
 .team-cards {
   position: relative;
-  isolation: isolate;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
   gap: 20px;
-}
-.team-cards::before {
-  content: '';
-  position: absolute;
-  inset: -40px -60px;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(40% 50% at 18% 30%, rgba(150, 170, 210, 0.07), transparent 70%),
-    radial-gradient(35% 45% at 82% 65%, rgba(120, 130, 170, 0.08), transparent 70%),
-    radial-gradient(30% 40% at 55% 10%, rgba(220, 225, 235, 0.05), transparent 70%);
-  filter: blur(20px);
 }
 .team-card {
   display: flex;
@@ -6206,17 +6232,14 @@ button.panel-link {
   min-width: 0;
   padding: 18px 20px 16px;
 }
-/* The Fleet page's one material (#1411, #1445): the team cards and the plan
-   strip over them are the same glass, declared once so they can't drift. */
+/* The team cards and the plan strip over them are glass (#1411, #1445). */
 .team-card,
 .plan-strip-frame {
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015) 60%);
-  backdrop-filter: blur(18px) saturate(140%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-radius);
+  background: var(--glass-fill);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
 }
 .team-card.alert {
   border-color: color-mix(in oklab, var(--danger) 50%, transparent);
@@ -6238,12 +6261,12 @@ button.panel-link {
   backdrop-filter: none;
   color: var(--text-muted);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: var(--fs-card-title);
   cursor: pointer;
 }
 .team-card-new span {
-  font-size: 1.25rem;
-  font-weight: 300;
+  font-size: var(--fs-figure);
+  font-weight: 400;
 }
 .team-card-new:hover,
 .team-card-new:focus-visible {
@@ -6259,23 +6282,23 @@ button.panel-link {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 1rem;
+  font-size: var(--fs-card-title);
   font-weight: 500;
 }
 .team-card-kind {
   display: block;
   margin-bottom: 4px;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  font-size: var(--fs-label);
   font-weight: 400;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
 .team-card-pulse {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   white-space: nowrap;
   color: var(--text-muted);
 }
@@ -6302,7 +6325,7 @@ button.panel-link {
 .team-card-desc {
   margin: -4px 0 0;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   line-height: 1.45;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -6311,7 +6334,7 @@ button.panel-link {
 /* the Claude login a team names (ADR-0066); none says nothing */
 .team-card-login {
   margin: -6px 0 0;
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .team-card-loops {
@@ -6328,7 +6351,7 @@ button.panel-link {
   gap: 6px;
 }
 .team-form label {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   color: var(--text-muted);
 }
 .team-form-label {
@@ -6337,7 +6360,7 @@ button.panel-link {
   margin-top: 6px;
 }
 .team-form-note {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text-muted);
 }
 .team-form-note.bad {
@@ -6460,7 +6483,7 @@ button.orb:focus-visible {
 .team-card-drop {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   color: var(--text);
 }
 .orb-slot {
@@ -6518,7 +6541,7 @@ button.orb:focus-visible {
 .move-menu-title {
   padding: 4px 10px 6px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .move-menu button {
@@ -6528,7 +6551,7 @@ button.orb:focus-visible {
   background: none;
   color: var(--text);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   text-align: left;
 }
 .move-menu button:disabled {
@@ -6548,7 +6571,7 @@ button.orb:focus-visible {
 .orb-initial {
   position: relative;
   font-family: var(--mono);
-  font-size: 1.125rem;
+  font-size: var(--fs-page-title);
   font-weight: 600;
   transition: opacity 0.18s;
 }
@@ -6559,7 +6582,7 @@ button.orb:focus-visible {
   margin-top: -2px;
 }
 .row-orb .orb-initial {
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
 }
 .orb.calm .orb-initial {
   color: var(--text-muted);
@@ -6585,11 +6608,11 @@ button.orb:focus-visible {
   white-space: nowrap;
 }
 .orb-peek .orb-name {
-  font-size: 0.42rem;
+  font-size: 0.42rem; /* off-scale: fits inside the 64px loop circle */
   line-height: 1.35;
 }
 .orb-peek .orb-state {
-  font-size: 0.31rem;
+  font-size: 0.31rem; /* off-scale: fits inside the 64px loop circle */
   line-height: 1.4;
   color: var(--text-muted);
 }
@@ -6614,8 +6637,8 @@ button.orb:focus-visible .orb-peek {
   border: 1.5px dashed color-mix(in oklab, var(--text) 22%, transparent);
   border-radius: 50%;
   color: var(--text-muted);
-  font-size: 1.5rem;
-  font-weight: 300;
+  font-size: var(--fs-display);
+  font-weight: 400;
   text-decoration: none;
   cursor: pointer;
 }
@@ -6680,30 +6703,30 @@ button.orb:focus-visible .orb-peek {
 }
 .orb-detail-name {
   font-family: var(--mono);
-  font-size: 1.0625rem;
+  font-size: var(--fs-card-title);
 }
 .orb-detail-state {
   margin-top: -3px;
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .orb-detail-problem {
-  font-size: 0.75rem;
+  font-size: var(--fs-small);
   line-height: 1.3;
   color: var(--danger);
 }
 .orb-detail-doing {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   line-height: 1.3;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 .orb-detail-facts {
   font-family: var(--mono);
-  font-size: 0.6875rem;
+  font-size: var(--fs-meta);
   color: var(--text-muted);
 }
 .orb-detail-open {
@@ -6712,7 +6735,7 @@ button.orb:focus-visible .orb-peek {
   border-radius: 999px;
   background: var(--text);
   color: var(--canvas);
-  font-size: 0.8125rem;
+  font-size: var(--fs-body);
   font-weight: 600;
   text-decoration: none;
 }
