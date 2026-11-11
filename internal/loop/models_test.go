@@ -29,6 +29,23 @@ func TestContextLimit(t *testing.T) {
 		{"claude-opus-4-1-20240805", 0},
 		{"claude-sonnet-4-5-20250929", 0},
 		{"claude-3-7-sonnet-20250219", 0},
+		{"claude-fable-5-3", 0},                     // unlisted point release, not claude-fable-5-2
+		{"claude-opus-5-20260410", 1_000_000},       // dated snapshot of a known id
+		{"claude-opus-5@20260410", 1_000_000},       // Vertex names the snapshot with @
+		{"us.anthropic.claude-opus-5-5", 1_000_000}, // vendor prefix, listed id at the end
+		// Bedrock inference profiles append a revision after the snapshot
+		// date; that is still the same dated model.
+		{"anthropic.claude-opus-5-20260410-v1:0", 1_000_000},
+		// A dated snapshot of a two-part id is that id: with the date off,
+		// claude-opus-5-5 doesn't end in claude-opus-5, so only one listed
+		// id is a suffix here.
+		{"claude-opus-5-5-20260410", 1_000_000},
+		{"claude-fable-5-3-20260410", 0}, // the issue's bug, with a date on it too
+		// The 1M badge comes off before any matching, on a listed id and on
+		// an alias alike.
+		{"claude-opus-5[1m]", 1_000_000},
+		{"claude-opus-5-20260410[1m]", 1_000_000},
+		{"sonnet[1m]", 1_000_000},
 	}
 	for _, testCase := range cases {
 		if got := ContextLimit(testCase.model); got != testCase.want {

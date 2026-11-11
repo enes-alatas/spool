@@ -1,6 +1,9 @@
 package loop
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // Context windows, in tokens, of the models a loop can run on, keyed by the
 // id the CLI reports. A model we don't know returns 0, which callers must
@@ -39,6 +42,11 @@ var aliasLimits = map[string]int{
 	"haiku":  1_000_000,
 }
 
+// datedSuffix is a snapshot date, -YYYYMMDD — Vertex AI names the same
+// snapshot with @ (claude-opus-5@20260410) — optionally followed by a
+// vendor revision such as -v1:0 (<prefix>.claude-<id>-YYYYMMDD-v1:0).
+var datedSuffix = regexp.MustCompile(`[-@]\d{8}(-v\d+(:\d+)?)?$`)
+
 // ContextLimit returns the context window of model in tokens, or 0 when the
 // model is unknown — including the empty string, which means "whatever the
 // CLI resolves to" and is only knowable once a turn has run under it. A
@@ -50,6 +58,12 @@ func ContextLimit(model string) int {
 	if model == "" {
 		return 0
 	}
+	// The 1M-context badge a CLI may append to the id it reports
+	// (claude-opus-5[1m]) rides on a listed id or on an alias (sonnet[1m]).
+	// No recorded init carries one — every probe cmd/fakeclaude/FIDELITY.md
+	// lists reported a bare id — but if one ever arrives it must not blank
+	// the loop's window, so it comes off before any matching.
+	model = strings.TrimSuffix(model, "[1m]")
 	if limit, ok := contextLimits[model]; ok {
 		return limit
 	}
@@ -58,10 +72,14 @@ func ContextLimit(model string) int {
 	}
 	// Dated snapshots and vendor-prefixed ids carry a full id inside them —
 	// claude-opus-5-20260410, anthropic.claude-opus-5. Match the longest
-	// full id contained in the reported string; nothing else counts.
+	// full id that ends the string, once a snapshot date is taken off (a
+	// date optionally followed by a vendor revision such as -v1:0): an
+	// unlisted point release (claude-fable-5-3) is a different model and
+	// must stay unknown.
+	base := datedSuffix.ReplaceAllString(model, "")
 	best, bestLen := 0, 0
 	for id, limit := range contextLimits {
-		if len(id) > bestLen && strings.Contains(model, id) {
+		if len(id) > bestLen && strings.HasSuffix(base, id) {
 			best, bestLen = limit, len(id)
 		}
 	}
