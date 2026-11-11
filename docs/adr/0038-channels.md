@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275; superseded by ADR-0068: item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and, if item 8 is accepted, its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275; superseded by ADR-0068: item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and, if item 8 is accepted, its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424); 2026-11-11 (item 5: a room binds through its channel's chat, ADR-0070, #1500)
 
 ## Context
 
@@ -229,6 +229,24 @@ something it leaves open.
      carries the room isn't in the new channel, the move is refused (409
      `not_in_channel`, naming that loop). A room this loop doesn't carry
      with them is refused as before (`room_in_use`).
+
+   **Amendment (2026-11-11, #1500): a room binds through its channel's
+   chat (ADR-0070).**
+   - **A chat is bound on the channel's page, once.** A channel has at
+     most one chat, the **channel's chat**. Once the operator binds it,
+     a member loop's room for that chat is bound to the channel without
+     a second choice, matched by the id the surface assigns. A loop
+     outside the channel binds nothing this way. The loop page lists
+     its rooms read-only, and stops binding once the channel's page can.
+   - **A bot's removal forgets its room.** A Telegram update that says
+     the bot left or was removed, or Slack's `member_left_channel` for
+     the app's bot user, forgets the loop's room for that chat. This
+     replaces the #1320 amendment's "a removal changes no room".
+   - **A Slack app's add is recorded as a Telegram bot's is.** The app's
+     `member_joined_channel` records the room unbound when an allowed
+     person invited it. An event with no `inviter`, or an inviter who
+     isn't allowed, records nothing, except a join the hub made on the
+     operator's click.
 
 6. **Deleting a channel removes it and its membership, not its history.**
    Messages said in it keep its name. A channel created later under the same
