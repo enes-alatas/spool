@@ -80,6 +80,9 @@ func (stub *turnsStub) CostSince(_ context.Context, loopID string, since int64) 
 	for _, turn := range stub.turns {
 		if turn.LoopID == loopID && turn.StartedAt >= since && turn.CostUSD != nil {
 			spend.USD += *turn.CostUSD
+			if turn.EndedAt > 0 {
+				spend.Turns++
+			}
 		}
 	}
 	return spend, nil
@@ -154,6 +157,9 @@ func TestFiguresSumALoopsTraces(t *testing.T) {
 		{LoopID: "L1", SessionID: "s1", StartedAt: at(now, 2*time.Hour+time.Second).UnixMilli(), EndedAt: at(now, 2*time.Hour-41*time.Second).UnixMilli(), CostUSD: cost(0.05)},
 		{LoopID: "L2", SessionID: "s9", StartedAt: at(now, time.Hour).UnixMilli(), EndedAt: at(now, time.Hour-time.Second).UnixMilli(), CostUSD: cost(9)},
 		{LoopID: "L1", SessionID: "s2", StartedAt: at(now, 30*time.Minute+time.Second).UnixMilli(), EndedAt: at(now, 30*time.Minute-21*time.Second).UnixMilli(), CostUSD: cost(0.02)},
+		// a turn Langfuse has no trace of yet, and one still running
+		{LoopID: "L1", SessionID: "s3", StartedAt: at(now, 10*time.Minute).UnixMilli(), EndedAt: at(now, 9*time.Minute).UnixMilli(), CostUSD: cost(0)},
+		{LoopID: "L1", SessionID: "s4", StartedAt: at(now, time.Minute).UnixMilli()},
 	}}
 	source := &pagedSource{pages: [][]Observation{turnOne, append(turnTwo, others...), turnOne}}
 	reader, _ := newTestReader(t, source, readableLangfuse)
@@ -174,6 +180,9 @@ func TestFiguresSumALoopsTraces(t *testing.T) {
 	}
 	if got.CostUSD < 0.0699 || got.CostUSD > 0.0701 {
 		t.Errorf("cost = %v, want 0.07 (the hub's L1 turns; L2's excluded)", got.CostUSD)
+	}
+	if got.CostTurns != 3 {
+		t.Errorf("cost turns = %d, want 3: the hub's ended L1 turns, the untraced one too, the running one not", got.CostTurns)
 	}
 	if want := (Tokens{Input: 110, Output: 44, CacheRead: 5000, CacheWrite: 200}); got.Tokens != want {
 		t.Errorf("tokens = %+v, want %+v", got.Tokens, want)
@@ -200,8 +209,8 @@ func TestFiguresSumALoopsTraces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hour.Figures.Turns != 1 || hour.Figures.PerTurn[0].StartedAt != at(now, 30*time.Minute).UnixMilli() || hour.Figures.CostUSD != 0.02 {
-		t.Errorf("1h window = %+v, want t2 alone, at 0.02", hour.Figures)
+	if hour.Figures.Turns != 1 || hour.Figures.PerTurn[0].StartedAt != at(now, 30*time.Minute).UnixMilli() || hour.Figures.CostUSD != 0.02 || hour.Figures.CostTurns != 2 {
+		t.Errorf("1h window = %+v, want t2 alone, at 0.02 over the hub's 2 ended turns", hour.Figures)
 	}
 }
 

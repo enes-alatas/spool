@@ -253,15 +253,18 @@ to the read address, with the ingest key in its environment and its own
 can't tell one bare loop from another (#1313). The hub reads each loop's
 figures back from the read address with the read key every five minutes,
 by the `spool.loop.id` stamp alone, prices them from the hub's own
-turns, and serves them at `/api/loops/{name}/figures`. It keeps them in
-memory, so a restart reads the last 30 days again (#1300). Every
-other session runs with telemetry off. A
-bare loop has the host's own network and no wall — one more thing the
-*uncontained* badge means. A bare loop can be moved into a workstation with
-`POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,
-carries the loop's auto-memory and nothing else of the host's, and goes one way
-only (ADR-0018, ADR-0022, #624). The loop view's `rehoming` is true from the
-request until the move lands or fails (#632).
+turns, and serves them at `/api/loops/{name}/figures`. The spend comes
+with `cost_turns`, the count of the hub's turns it sums, which is the
+divisor of the spend a turn: Langfuse's trace count lags (#1515). The
+hub keeps the figures in memory, so a restart reads the last 30 days
+again (#1300). Every other session runs with telemetry off. A bare loop
+has the host's own network and no wall — one more thing the
+*uncontained* badge means. A bare loop can be moved into a workstation
+with `POST /api/loops/{name}/rehome`: the move lands at a `rehome`
+context rotation, carries the loop's auto-memory and nothing else of the
+host's, and goes one way only (ADR-0018, ADR-0022, #624). The loop
+view's `rehoming` is true from the request until the move lands or fails
+(#632).
 The hub's trust model is two credentials on its listeners (ADR-0030). On the
 operator listener every `/api` route requires a credential: the operator
 token as a bearer header, which acts as the owner, or the session cookie

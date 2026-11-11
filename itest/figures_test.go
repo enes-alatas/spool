@@ -22,9 +22,10 @@ type figuresJSON struct {
 	FetchedAt  int64  `json:"fetched_at"`
 	RefreshSec int    `json:"refresh_sec"`
 	Figures    *struct {
-		Turns   int     `json:"turns"`
-		CostUSD float64 `json:"cost_usd"`
-		Tokens  struct {
+		Turns     int     `json:"turns"`
+		CostUSD   float64 `json:"cost_usd"`
+		CostTurns int     `json:"cost_turns"`
+		Tokens    struct {
 			Input  int64 `json:"input"`
 			Output int64 `json:"output"`
 		} `json:"tokens"`
@@ -103,8 +104,12 @@ func TestFiguresReadBackFromLangfuse(t *testing.T) {
 	ran := hub.waitTurn("gauge", firstTurnWait, func(tn turn) bool { return strings.Contains(tn.ResultText, "count this") })
 	hub.waitState("gauge", "asleep", 30*time.Second)
 	var spent float64 // every turn of the loop, which the 24h window holds
+	ended := 0
 	for _, tn := range hub.turns("gauge") {
 		spent += tn.CostUSD
+		if tn.EndedAt > 0 {
+			ended++
+		}
 	}
 	if ran.CostUSD <= 0 || ran.SessionID == "" {
 		t.Fatalf("gauge's turn = %+v, want a priced turn of a session", ran)
@@ -137,6 +142,10 @@ func TestFiguresReadBackFromLangfuse(t *testing.T) {
 	if math.Abs(got.CostUSD-spent) > 1e-9 || len(got.PerTurn) != 1 || got.PerTurn[0].CostUSD != ran.CostUSD {
 		t.Errorf("spend = %v, the turn's row %+v; want the hub's turns, %v, and the traced turn's own %v on its row", got.CostUSD, got.PerTurn, spent, ran.CostUSD)
 	}
+	// the spend a turn divides by the hub's turns, not Langfuse's one trace
+	if got.CostTurns != ended || ended < 2 {
+		t.Errorf("cost turns = %d, want the hub's %d ended turns (more than Langfuse's one)", got.CostTurns, ended)
+	}
 	if got.Tokens.Input != 120 || got.Tokens.Output != 30 {
 		t.Errorf("tokens = %+v, want 120 in and 30 out, read from the span's attributes", got.Tokens)
 	}
@@ -160,5 +169,15 @@ func TestFiguresReadBackFromLangfuse(t *testing.T) {
 	}
 	if view.Langfuse != "stale" || view.Figures == nil || view.Figures.Turns != 1 || view.FetchedAt < fetched {
 		t.Fatalf("figures with Langfuse down = %+v, want the last figures, stale", view)
+	}
+
+	// while Langfuse is down the traces hold, and the spend and its turn
+	// count go on with the hub's turns, together (#1515)
+	hub.message("gauge", "count this too")
+	hub.waitTurn("gauge", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "count this too") })
+	hub.waitState("gauge", "asleep", 30*time.Second)
+	hub.mustJSON("GET", "/api/loops/gauge/figures", nil, &view)
+	if view.Figures == nil || view.Figures.Turns != 1 || view.Figures.CostTurns != ended+1 || view.Figures.CostUSD <= spent {
+		t.Errorf("stale figures after another turn = %+v, want 1 trace and the hub's %d turns, spend past %v", view.Figures, ended+1, spent)
 	}
 }
