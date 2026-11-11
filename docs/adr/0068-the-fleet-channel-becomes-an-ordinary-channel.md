@@ -1,6 +1,6 @@
 # ADR-0068: The fleet channel becomes an ordinary channel, and `group` leaves the wire
 
-Date: 2026-11-10 · Status: accepted (the operator accepted this ADR on 2026-11-10, in a direct message to Terra, recorded on #1449; the operator decided items 1 to 4, 6 and 7 on 2026-11-09, in direct messages to Milo, recorded on #1449; this ADR proposed items 5 and 8, and he decided both as proposed on 2026-11-10, in a direct message to Terra, recorded on #1449) · Relates to: ADR-0024, ADR-0063 · Supersedes: ADR-0032 item 1's fleet channel existing on every hub, and `group` in the tool (the conversation kind on the hub's wire stays), item 2's fleet channel membership (its first paragraph) and its #287 second-loop amendment; ADR-0038 item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments; ADR-0066 item 1's fleet channel bullet and item 4's `default` team · Amended: 2026-11-11 (item 3: a team made from a channel, #1495; accepted by the operator on 2026-11-11, in a direct message to Quinn, recorded on #1497)
+Date: 2026-11-10 · Status: accepted (the operator accepted this ADR on 2026-11-10, in a direct message to Terra, recorded on #1449; the operator decided items 1 to 4, 6 and 7 on 2026-11-09, in direct messages to Milo, recorded on #1449; this ADR proposed items 5 and 8, and he decided both as proposed on 2026-11-10, in a direct message to Terra, recorded on #1449) · Relates to: ADR-0024, ADR-0063 · Supersedes: ADR-0032 item 1's fleet channel existing on every hub, and `group` in the tool (the conversation kind on the hub's wire stays), item 2's fleet channel membership (its first paragraph) and its #287 second-loop amendment; ADR-0038 item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments; ADR-0066 item 1's fleet channel bullet and item 4's `default` team · Amended: 2026-11-11 (item 3: a team made from a channel, #1495; accepted by the operator on 2026-11-11, in a direct message to Quinn, recorded on #1497); 2026-11-11 (item 3: a channel's chat surface, and item 5: the bind is per channel, ADR-0070, #1500; accepted by the operator on 2026-11-11, in a direct message to Quinn, recorded on #1503)
 
 ## Context
 
@@ -108,6 +108,13 @@ stays.
      team. Joining would take that loop out of its team, which is a
      move the operator makes on the loop.
 
+   **Amendment (2026-11-11, #1500): a channel's chat surface
+   (ADR-0070).** Giving a channel that has a chat to a team keeps its
+   chat, as it keeps its bound rooms. A team made from such a channel,
+   by `from_channel`, is also refused with nothing changed when a loop
+   in it has no bot on the chat's surface: 409 `loop_not_on_surface`,
+   naming each such loop.
+
 4. **`group` leaves the prompt and `send_message`.** A loop writes to
    every channel as `channel:<name>`, `fleet` included. There is no
    fleet-wide destination.
@@ -155,6 +162,14 @@ stays.
    The cost is one pick per loop on its page. It also undoes
    ADR-0038's #1320 amendment, under which adding a Telegram bot was
    enough. The alternative is under Alternatives considered.
+
+   **Amendment (2026-11-11, #1500): the bind is per channel
+   (ADR-0070).** A new chat is still recorded unbound. The operator
+   binds it once, on the channel's page, as the channel's chat, and
+   each member loop's room for it then binds without a second choice.
+   A loop outside the channel binds nothing this way, and a chat no
+   channel has bound binds nothing, so the reason above still holds.
+   The pick per loop on its page goes.
 
 6. **Two teams talk in a hub channel.** A channel in no team can already
    hold loops of several teams, and `fleet`, after the upgrade, is one.
