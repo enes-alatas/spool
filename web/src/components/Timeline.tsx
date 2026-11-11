@@ -74,7 +74,7 @@ export function Timeline({
     <div className="timeline">
       {onLoadOlder && entries.length > 0 && (
         <div className="load-older-row">
-          <button className="load-older" onClick={onLoadOlder} disabled={loadingOlder}>
+          <button className="text-button" onClick={onLoadOlder} disabled={loadingOlder}>
             {loadingOlder ? 'loading…' : 'load older'}
           </button>
           {/* Said here rather than logged: a button that re-enables itself with

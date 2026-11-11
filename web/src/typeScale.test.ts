@@ -29,11 +29,13 @@ function declarations(text: string, property: string): string[] {
     .map(({ line, index }) => `${index + 1}: ${line.trim()}`)
 }
 
-// A size is on the scale when it is one of the steps, or says why not.
+// A size is on the scale when it is one of the steps, inherits its
+// parent's step, or says why not.
 function offScale(text: string): string[] {
   return declarations(text, 'font-size').filter((line) => {
     const step = /font-size:\s*var\((--fs-[a-z-]+)\)/.exec(line)?.[1]
-    return !(step && SCALE.includes(step)) && !line.includes('off-scale:')
+    const inherits = /font-size:\s*inherit;/.test(line)
+    return !(step && SCALE.includes(step)) && !inherits && !line.includes('off-scale:')
   })
 }
 
@@ -120,6 +122,7 @@ describe('the checks', () => {
       '.b { font-size: var(--fs-body); font-weight: 500; letter-spacing: 0; }',
       '.c { font: inherit; }',
       '.d { font-family: var(--mono); }',
+      '.e { font-size: inherit; }',
     ].join('\n')
     expect([...offScale(probe), ...shorthands(probe), ...spacings(probe), ...weights(probe)]).toEqual([])
   })

@@ -60,7 +60,7 @@ export function Problems({ loop, openUndelivered }: { loop: LoopView; openUndeli
               (problem.symptom === 'send_failed' && openUndelivered ? (
                 <>
                   {' · '}
-                  <button type="button" className="problem-next link" onClick={openUndelivered}>
+                  <button type="button" className="text-button inline" onClick={openUndelivered}>
                     {problemNext(problem)}
                   </button>
                 </>
@@ -70,7 +70,7 @@ export function Problems({ loop, openUndelivered }: { loop: LoopView; openUndeli
           </span>
           {may('manage') && (
             <button
-              className="btn"
+              className="btn sm"
               onClick={() => void acknowledge(problem.symptom)}
               disabled={busy !== ''}
               title="Clear it: the owner is told you did, and the hub watches for it again"

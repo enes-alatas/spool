@@ -86,7 +86,12 @@ export default function ChangePassword({ name, onChanged }: { name: string; onCh
         <button className="btn primary" type="submit" disabled={busy || !submittable}>
           {busy ? 'Saving…' : 'Set password'}
         </button>
-        <button className="login-alt" type="button" onClick={signOut} disabled={busy || signingOut}>
+        <button
+          className="text-button login-alt"
+          type="button"
+          onClick={signOut}
+          disabled={busy || signingOut}
+        >
           Sign out
         </button>
       </form>

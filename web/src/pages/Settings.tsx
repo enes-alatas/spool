@@ -422,7 +422,7 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
                 <span className="health-row-hint">{f.hint}</span>
                 <button
                   type="button"
-                  className="health-row-edit"
+                  className="text-button"
                   disabled={shown === null || busy}
                   aria-label={`Edit ${f.label}`}
                   onClick={() => setOpen(f.key)}
@@ -435,7 +435,7 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
             <div className={`health-limit${off ? ' off' : ''}`} key={f.key}>
               <div className="health-limit-head">
                 <label htmlFor={f.id}>{f.label}</label>
-                <button type="button" className="health-row-edit" onClick={() => setOpen(null)}>
+                <button type="button" className="text-button" onClick={() => setOpen(null)}>
                   Done
                 </button>
               </div>
