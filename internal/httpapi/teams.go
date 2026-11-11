@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -164,6 +165,11 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		// ClaudeLogin is the team's default Claude login, "" or "default"
 		// for the hub's.
 		ClaudeLogin string `json:"claude_login"`
+		// FromChannel names a hub channel, made already, for the team to
+		// take as its home, with every loop in it (ADR-0068). It is the
+		// explicit ask: a name that only happens to be a channel's is
+		// still refused, so a typo moves no loop.
+		FromChannel *string `json:"from_channel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
@@ -177,6 +183,15 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	if refusal := teamDescriptionRefusal(team.Description); refusal != nil {
 		server.refuse(w, refusal)
+		return
+	}
+	if req.FromChannel != nil {
+		if req.HomeChannel != nil {
+			server.jsonErr(w, 400, "home_channel names a channel to make and from_channel one to take; name one of them")
+			return
+		}
+		team.HomeChannel = *req.FromChannel
+		server.createTeamFromChannel(w, r, team)
 		return
 	}
 	team.HomeChannel = team.Name
@@ -201,13 +216,91 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, store.ErrChannelTaken) {
-			server.jsonErrCode(w, 409, codeChannelExists, "a channel named %q already exists; name the team's home channel with home_channel", team.HomeChannel)
+			server.jsonErrCode(w, 409, codeChannelExists,
+				"a channel named %q already exists; name the team's home channel with home_channel, or to make the team from that channel, name it with from_channel", team.HomeChannel)
 			return
 		}
 		server.teamErr(w, err, team.Name)
 		return
 	}
 	server.writeTeam(w, r, 201, team)
+}
+
+// createTeamFromChannel makes team with the hub channel team.HomeChannel
+// names as its home, and every loop in that channel joins it. Each loop
+// that joins is moved as a loop's own move into a team is: it reads its
+// team at its next wake, and one whose Claude login the team's changes
+// closes its process at its next quiet boundary (ADR-0066).
+func (server *Server) createTeamFromChannel(w http.ResponseWriter, r *http.Request, team *store.Team) {
+	refusal, err := server.putOnLogin(r.Context(), team.ClaudeLogin, func() error {
+		return server.Store.Teams().CreateFromChannel(r.Context(), team)
+	})
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	switch {
+	case errors.Is(err, store.ErrChannelNotFound):
+		server.jsonErrCode(w, 404, codeChannelNotFound, "channel %q not found", team.HomeChannel)
+		return
+	case errors.Is(err, store.ErrChannelInOtherTeam):
+		server.jsonErrCode(w, 409, codeChannelInOtherTeam, "channel %q is another team's, so a team can't be made from it", team.HomeChannel)
+		return
+	case errors.Is(err, store.ErrChannelHasTeamLoops):
+		server.channelLoopsInOtherTeam(w, r, team.HomeChannel)
+		return
+	case err != nil:
+		server.teamErr(w, err, team.Name)
+		return
+	}
+	for _, loopID := range team.LoopIDs {
+		joined, err := server.Store.Loops().Get(r.Context(), loopID)
+		if err != nil {
+			// its row is in the team, but its process keeps the env it had
+			server.Log.Warn("a loop that joined a team was not handed its row", "team", team.Name, "loop", loopID, "err", err)
+			continue
+		}
+		server.Manager.UpdateLoop(joined)
+		server.loopChanged(r.Context(), joined.ID)
+		// it came from no team, so before it had no team's login
+		was := *joined
+		was.TeamClaudeLogin = ""
+		if effectiveLogin(joined) == effectiveLogin(&was) {
+			continue
+		}
+		if actor, ok := server.Manager.Get(joined.ID); ok {
+			actor.RefreshEnv()
+		}
+	}
+	server.writeTeam(w, r, 201, team)
+}
+
+// channelLoopsInOtherTeam refuses making a team from a channel, naming the
+// loops in it that are in a team, and that team.
+func (server *Server) channelLoopsInOtherTeam(w http.ResponseWriter, r *http.Request, name string) {
+	channel, err := server.Store.Channels().Get(r.Context(), name)
+	if err != nil {
+		server.channelErr(w, r, err)
+		return
+	}
+	loops, err := server.Store.Loops().List(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	in := map[string]bool{}
+	for _, id := range channel.LoopIDs {
+		in[id] = true
+	}
+	var teamed []string
+	for _, loopRecord := range loops {
+		if in[loopRecord.ID] && loopRecord.Team != "" {
+			teamed = append(teamed, fmt.Sprintf("%s (%s)", loopRecord.Name, loopRecord.Team))
+		}
+	}
+	sort.Strings(teamed)
+	server.jsonErrCode(w, 409, codeChannelLoopsInOtherTeam,
+		"channel %q holds loops in other teams: %s; move them out of the channel or their team first", name, strings.Join(teamed, ", "))
 }
 
 // handlePatchTeam renames a team, rewrites its description, or names its

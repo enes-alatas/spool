@@ -26,6 +26,8 @@ const (
 	codeChannelInOtherTeam  = "channel_in_other_team"
 	codeChannelHasOutsiders = "channel_has_outsiders"
 	codeChannelIsHome       = "channel_is_home"
+	// A team made from a channel takes no loop out of another team (ADR-0068).
+	codeChannelLoopsInOtherTeam = "channel_loops_in_other_team"
 )
 
 // maxChannelDescription bounds a description in characters: one line the
