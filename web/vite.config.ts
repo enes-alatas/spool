@@ -10,7 +10,10 @@ export default defineConfig({
   // is what a component test looks like — a glob that collected only `.ts`
   // would drop the first such file silently, and a skipped test file reads
   // exactly like a passing one.
-  test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'node' },
+  // The stylesheet is processed rather than stubbed, so a test can read it as
+  // text (`typeScale.test.ts`): vitest otherwise hands a test an empty
+  // string for every .css import, `?raw` included.
+  test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'node', css: { include: [/styles\.css/] } },
   server: {
     proxy: {
       '/api': {
