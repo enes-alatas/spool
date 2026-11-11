@@ -127,6 +127,65 @@ func (table teams) Create(ctx context.Context, team *store.Team) error {
 	return tx.Commit()
 }
 
+// CreateFromChannel adds a team whose home is the hub channel
+// team.HomeChannel names, already made, with every loop in that channel
+// joining the team, in one write (ADR-0068). The channel keeps its
+// history, its members and its bound rooms. A loop that joins comes from
+// no team, so it leaves no channel. It refuses the channel while it holds
+// a loop in another team, or is a team's itself.
+func (table teams) CreateFromChannel(ctx context.Context, team *store.Team) error {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner string
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(team, '') FROM channels WHERE name=?`, team.HomeChannel).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.ErrChannelNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// The team goes in before the channel's owner and loops are judged, so
+	// a taken team name is ErrDuplicate whatever the channel is, which is
+	// the order the route's refusals are documented in (ADR-0068). Every
+	// refusal below returns before the commit, and the rollback undoes it.
+	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login, home_channel) VALUES (?,?,?,NULLIF(?, ''),?)`,
+		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin, team.HomeChannel)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound // no Claude login by that name
+	}
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return store.ErrDuplicate
+	}
+	if err != nil {
+		return err
+	}
+	if owner != "" {
+		return store.ErrChannelInOtherTeam
+	}
+	var teamed int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_loops JOIN loops ON loops.id = channel_loops.loop_id
+		WHERE channel_loops.channel=? AND loops.team IS NOT NULL`, team.HomeChannel).Scan(&teamed); err != nil {
+		return err
+	}
+	if teamed > 0 {
+		return store.ErrChannelHasTeamLoops
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE channels SET team=? WHERE name=?`, team.Name, team.HomeChannel); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE loops SET team=?, updated_at=? WHERE id IN (SELECT loop_id FROM channel_loops WHERE channel=?)`,
+		team.Name, team.CreatedAt, team.HomeChannel); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return table.readMembers(ctx, team)
+}
+
 func (table teams) Edit(ctx context.Context, name string, edit store.TeamEdit) (*store.Team, error) {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {

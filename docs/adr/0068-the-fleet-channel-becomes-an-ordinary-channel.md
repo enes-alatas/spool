@@ -1,6 +1,6 @@
 # ADR-0068: The fleet channel becomes an ordinary channel, and `group` leaves the wire
 
-Date: 2026-11-10 · Status: accepted (the operator accepted this ADR on 2026-11-10, in a direct message to Terra, recorded on #1449; the operator decided items 1 to 4, 6 and 7 on 2026-11-09, in direct messages to Milo, recorded on #1449; this ADR proposed items 5 and 8, and he decided both as proposed on 2026-11-10, in a direct message to Terra, recorded on #1449) · Relates to: ADR-0024, ADR-0063 · Supersedes: ADR-0032 item 1's fleet channel existing on every hub, and `group` in the tool (the conversation kind on the hub's wire stays), item 2's fleet channel membership (its first paragraph) and its #287 second-loop amendment; ADR-0038 item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments; ADR-0066 item 1's fleet channel bullet and item 4's `default` team
+Date: 2026-11-10 · Status: accepted (the operator accepted this ADR on 2026-11-10, in a direct message to Terra, recorded on #1449; the operator decided items 1 to 4, 6 and 7 on 2026-11-09, in direct messages to Milo, recorded on #1449; this ADR proposed items 5 and 8, and he decided both as proposed on 2026-11-10, in a direct message to Terra, recorded on #1449) · Relates to: ADR-0024, ADR-0063 · Supersedes: ADR-0032 item 1's fleet channel existing on every hub, and `group` in the tool (the conversation kind on the hub's wire stays), item 2's fleet channel membership (its first paragraph) and its #287 second-loop amendment; ADR-0038 item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments; ADR-0066 item 1's fleet channel bullet and item 4's `default` team · Amended: 2026-11-11 (item 3: a team made from a channel, #1495; accepted by the operator on 2026-11-11, in a direct message to Quinn, recorded on #1497)
 
 ## Context
 
@@ -86,6 +86,27 @@ stays.
    loop of the team is put in it, as for any home channel. Giving a
    channel to a team as one of its channels, but not the home, works as
    before.
+
+   **Amendment (2026-11-11, #1495): a team can be made from a hub
+   channel.** `POST /api/teams` takes `from_channel`, naming a hub
+   channel for the new team to take as its home. In one write the team
+   is made, the channel becomes its home and only channel, and every
+   loop in the channel joins the team. The channel keeps its history,
+   its members and its bound rooms, as above. Each loop that joins is
+   moved as a loop's own move into a team is (ADR-0066): it reads its
+   team at its next wake, and one whose Claude login the team's changes
+   closes its process at its next quiet boundary.
+   - **It is an explicit ask.** A create without `from_channel`, under a
+     name a channel already has, is still 409 `channel_exists`, so a
+     typo moves no loop. `from_channel` with `home_channel` is 400: one
+     names a channel to make, the other one to take.
+   - **Refused, with nothing changed:** no such channel is 404
+     `channel_not_found`; a team by that name is 409 `team_exists`;
+     another team's channel is 409 `channel_in_other_team`; and a
+     channel holding a loop that is in a team is 409
+     `channel_loops_in_other_team`, naming each such loop and its
+     team. Joining would take that loop out of its team, which is a
+     move the operator makes on the loop.
 
 4. **`group` leaves the prompt and `send_message`.** A loop writes to
    every channel as `channel:<name>`, `fleet` included. There is no

@@ -1878,6 +1878,16 @@ type TeamStore interface {
 	// the team's name is taken, ErrChannelTaken if the channel's is,
 	// ErrNotFound if team.ClaudeLogin names no login the hub holds.
 	Create(ctx context.Context, team *Team) error
+	// CreateFromChannel adds a team whose home is the hub channel
+	// team.HomeChannel names, which exists already, and puts every loop in
+	// that channel in the team, in the same write (ADR-0068). The channel
+	// keeps its history, its members and its bound rooms. ErrDuplicate if
+	// the team's name is taken, ErrChannelNotFound if there is no such
+	// channel, ErrChannelInOtherTeam if it is a team's already,
+	// ErrChannelHasTeamLoops while it holds a loop in a team, ErrNotFound if
+	// team.ClaudeLogin names no login the hub holds. It fills team.LoopIDs
+	// and team.Channels.
+	CreateFromChannel(ctx context.Context, team *Team) error
 	// Edit writes what edit names and returns the team as it stands
 	// afterwards, under its new name if it was renamed; ErrNotFound if
 	// there is none by that name, ErrDuplicate if the new name is taken,
@@ -2140,6 +2150,12 @@ const (
 	// ErrChannelNotInTeam refuses making a channel a team's home when the
 	// channel is not one of that team's.
 	ErrChannelNotInTeam = sentinelError("store: channel not in team")
+	// ErrChannelNotFound refuses making a team from a channel the hub does
+	// not have.
+	ErrChannelNotFound = sentinelError("store: channel not found")
+	// ErrChannelHasTeamLoops refuses making a team from a channel that
+	// holds a loop in a team: joining would move it out of the team it is in.
+	ErrChannelHasTeamLoops = sentinelError("store: channel has loops in a team")
 )
 
 // Connection is an org-level tool credential or config, defined once under
