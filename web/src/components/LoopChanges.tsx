@@ -56,7 +56,7 @@ export function LoopChangesPanel({ name }: { name: string }) {
         ))
       )}
       {more > 0 && (
-        <button className="panel-link" onClick={() => setAll(!all)} aria-expanded={all}>
+        <button className="text-button panel-more" onClick={() => setAll(!all)} aria-expanded={all}>
           {all ? 'Show fewer' : `Show ${more} more`}
         </button>
       )}

@@ -254,13 +254,29 @@ textarea {
   font-size: var(--fs-small);
   color: var(--text-muted);
 }
+/* The control room's buttons are three kinds (ADR-0027, #1520): filled
+   (`.btn.primary`), outlined (`.btn`, `danger` its tone) and text-only
+   (`.text-button`, below). Filled and outlined are 32px or 26px (`sm`) at
+   the default text size. The height is a minimum in rem, so it grows with
+   the reader's text size, and the label is centred in it: two neighbouring
+   buttons line up whatever their text, and padding sets only the width. */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 2rem;
   white-space: nowrap;
   border: 1px solid var(--hairline);
   background: var(--surface);
   color: var(--text);
-  border-radius: 6px;
-  padding: 6px 14px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  line-height: 1;
+  text-decoration: none;
   transition:
     border-color 120ms,
     background 120ms;
@@ -306,9 +322,10 @@ textarea {
   color: var(--text-muted);
 }
 .btn.sm {
-  padding: 3px 10px;
-  font-size: var(--fs-body);
-  border-radius: 5px;
+  min-height: 1.625rem;
+  padding: 0 10px;
+  font-size: var(--fs-small);
+  border-radius: 6px;
 }
 
 /* The header's New loop is always on screen, so it is quiet (#360): white
@@ -507,18 +524,6 @@ textarea {
 }
 .login-alt {
   align-self: center;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--text-muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.login-alt:hover {
-  color: var(--text);
 }
 
 /* ---- build identity (#224) ---- */
@@ -592,8 +597,6 @@ textarea {
 }
 .account-sign-out {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
 }
 /* Narrow enough that a label column would leave the values a few characters
@@ -937,24 +940,6 @@ textarea {
 /* where the way out is a control elsewhere on the page (#1145) */
 .problem-next {
   color: var(--text-muted);
-}
-/* a failed send's pointer opens the Undelivered pane (#1147) */
-.problem-next.link {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  text-decoration: underline;
-  text-align: left;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.problem-next.link:hover {
-  color: inherit;
-}
-.problem-line .btn {
-  padding: 3px 10px;
-  font-size: var(--fs-small);
 }
 /* the Fleet row's health note: a dot and the open problems, in the colour of
    the loop's health */
@@ -1657,23 +1642,13 @@ textarea {
    where the thread runs out, reading as the next thing above the oldest entry
    rather than as a control bolted to the pane. Quiet by default: a reader who
    wants the recent history — most of them, most of the time — should not have
-   to look past it. */
-.load-older {
-  font-family: var(--mono);
-  font-size: var(--fs-small);
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  padding: 0 0 14px 0;
-  text-decoration: underline dotted;
-}
-.load-older:disabled {
-  text-decoration: none;
-}
+   to look past it. The gap under it is the row's, not the button's: a
+   placement rule on the button would lose to `.text-button` later on. */
 .load-older-row {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  padding-bottom: 14px;
 }
 .load-older-failed {
   font-family: var(--mono);
@@ -1839,17 +1814,37 @@ textarea {
   color: var(--text);
 }
 /* A small action written as a word rather than drawn as a button, such as
-   showing a thinking block or the rest of a clamped mission. Named for what
-   it is rather than for the first control that used it, since every such
-   control shares it. */
+   showing a thinking block or the rest of a clamped mission: the third
+   button kind (#1520). Named for what it is rather than for the first
+   control that used it, since every such control shares it. A solid
+   hairline underline says it can be clicked and darkens on hover; a
+   disabled one drops it, as it is then only a word. */
 .text-button {
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  color: var(--text-muted);
-  background: none;
-  border: none;
   padding: 0;
-  text-decoration: underline dotted;
+  border: none;
+  background: none;
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.text-button:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration-color: var(--text-muted);
+}
+.text-button:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+/* inside a sentence, such as the Undelivered pointer in a problem line, it
+   takes the sentence's size, so the same words read the same whether or
+   not they can be clicked */
+.text-button.inline {
+  font-size: inherit;
 }
 .thinking-body {
   color: var(--text-muted);
@@ -1939,41 +1934,47 @@ textarea {
   gap: 10px;
   margin-top: 16px;
 }
+/* A picker's pills keep their labels whole and the row wraps: the pane
+   tabs over the thread run past one line once a loop has channels and
+   private conversations (#723). */
 .dest-picker {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-top: 16px;
 }
-/* the pills shrink and wrap their own labels rather than moving to a line of
-   their own: the tabs read as one row of choices, and keeping that
-   shape is worth more than keeping each label on one line */
-.dest-picker .dest {
-  min-width: 0;
+/* The segment pill (#1520): one choice of several, pressed or not. The
+   channel picker, the figures window, the connection filters and kinds,
+   and the Teams/List toggle all draw their choices at this one height and
+   type; each keeps its own well and border below. A label stays on one
+   line, so the row wraps rather than the pill. */
+.dest-picker .dest,
+.figures-window,
+.connection-filter-pill,
+.connection-kind-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 1.625rem;
+  padding: 0 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
 }
 .dest-picker .dest {
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 999px;
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: var(--fs-small);
-  padding: 4px 12px;
-  cursor: pointer;
   max-width: 100%;
 }
 .dest-picker .dest.on {
   border-color: var(--text);
   color: var(--text);
-}
-/* The pane tabs over the thread are a list, not one choice between two:
-   with the loop's channels and private conversations (#723) they run past
-   one line, so the row wraps and each label stays whole. */
-.dest-picker.pane-tabs {
-  flex-wrap: wrap;
-}
-.dest-picker.pane-tabs .dest {
-  white-space: nowrap;
 }
 /* Where the composer would be, on a private conversation's pane (#723). */
 .private-note {
@@ -2191,7 +2192,7 @@ textarea {
   height: 28px;
   margin: -6px -6px -6px 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--text-muted);
 }
@@ -2431,13 +2432,10 @@ textarea {
 .panel-link:hover {
   color: var(--text);
 }
-button.panel-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--fs-small);
-  cursor: pointer;
+/* the same place for a panel's text button: Changes' show-all */
+.panel-more {
+  display: inline-block;
+  margin-top: 8px;
 }
 /* A setting that is on or off, with what each state means under its name:
    the switch, then the label and the consequence it controls. The whole row
@@ -2760,8 +2758,6 @@ button.panel-link {
   gap: 14px;
 }
 .import-open {
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
   align-self: flex-start;
 }
@@ -3708,13 +3704,9 @@ button.panel-link {
   overflow: hidden;
 }
 .figures-window {
-  padding: 3px 10px;
   border: 0;
   background: none;
   color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  cursor: pointer;
 }
 .figures-window:hover {
   color: var(--text);
@@ -3816,10 +3808,6 @@ button.panel-link {
 .figures-card .figures-turn-bars {
   height: 2rem;
   margin-top: 6px;
-}
-.figures-back {
-  font-family: var(--mono);
-  font-size: var(--fs-small);
 }
 /* Each turn's spend: a bar per turn, the whole column its hover target. */
 .figures-turns {
@@ -4188,6 +4176,11 @@ button.panel-link {
 }
 .text-button.danger {
   color: var(--danger);
+  text-decoration-color: var(--danger-line);
+}
+.text-button.danger:hover:not(:disabled) {
+  color: var(--danger);
+  text-decoration-color: var(--danger);
 }
 .connection-revoked {
   color: var(--danger);
@@ -4763,7 +4756,6 @@ button.panel-link {
 }
 .side-panel .room-forget {
   margin-left: auto;
-  padding: 1px 8px;
 }
 .side-panel .room-id {
   font-family: var(--mono);
@@ -5690,27 +5682,6 @@ button.panel-link {
   font-size: var(--fs-body);
   color: var(--text-muted);
 }
-.health-row-edit {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: var(--fs-body);
-  color: var(--text-muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.health-row-edit:hover:not(:disabled) {
-  color: var(--text);
-}
-/* disabled while the settings load or a save is on its way: still
-   --text-muted, never dimmed by opacity (CONVENTIONS, Web), and without the
-   underline that says it can be clicked, as .load-older does */
-.health-row-edit:disabled {
-  cursor: default;
-  text-decoration: none;
-}
 .health-limit {
   display: flex;
   flex-direction: column;
@@ -6030,17 +6001,10 @@ button.panel-link {
    the kind tabs have it. It keeps its line: the row wraps, not the pill. */
 .connection-filter-pill {
   flex: none;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
   background: var(--canvas);
   color: var(--text-muted);
-  font-size: var(--fs-small);
-  cursor: pointer;
 }
 .connection-filter-pill:hover {
   color: var(--text);
@@ -6097,10 +6061,7 @@ button.panel-link {
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: 6px 10px;
-  font-size: var(--fs-body);
   color: var(--text-muted);
-  cursor: pointer;
 }
 .connection-kind-tab:hover {
   color: var(--text);
@@ -6311,9 +6272,11 @@ button.panel-link {
 .team-card-edit {
   display: grid;
   place-items: center;
-  padding: 4px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -6321,6 +6284,7 @@ button.panel-link {
 .team-card-edit:hover,
 .team-card-edit:focus-visible {
   color: var(--text);
+  background: var(--canvas);
 }
 .team-card-desc {
   margin: -4px 0 0;

@@ -158,7 +158,7 @@ function Detail({
   return (
     <section className="figures" aria-label="Figures">
       <div className="figures-head">
-        <button type="button" className="text-button figures-back" onClick={() => onLoop('')}>
+        <button type="button" className="text-button" onClick={() => onLoop('')}>
           ← All loops
         </button>
         <select

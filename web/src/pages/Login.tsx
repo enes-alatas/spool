@@ -123,7 +123,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
 
         {mode === 'password' && <div className="login-or">or</div>}
         <button
-          className="login-alt"
+          className="text-button login-alt"
           type="button"
           onClick={() => switchTo(mode === 'password' ? 'token' : 'password')}
         >
