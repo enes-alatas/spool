@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column); 2026-11-11 (§1, glass and the glow; §3 and §5, the ring; §6, the type scale; §7, the muted value on glass; §12, buttons; §13, a loop is its ring)
 
 ## Context
 
@@ -27,6 +27,19 @@ need the operator to look.
    for row hover and input wells. There is no second surface colour and no
    outer dashboard shell; structure comes from hairlines, spacing and
    alignment.
+   **Amendment (2026-11-11, #1518):** a second layer, glass, which the Teams
+   view (#1411, #1445) brought in on purpose and #1489 adopts for the whole
+   room. A raised container that holds one thing (a card, a side panel, a
+   strip) is glass: a 1px white edge at 9%, a 12px radius, a 160° white
+   gradient from 5.5% to 1.5%, an 18px backdrop blur, an inset top highlight
+   and a soft drop shadow, declared once as tokens. §7's floor holds on it:
+   see the amendment there. Glass is never nested:
+   rows inside a glass container still divide by hairlines, and the raised
+   value above stays for row hover and input wells. Behind the glass, on
+   every page, the canvas carries a glow: three blurred radial gradients in
+   cool neutrals that never carry a state hue, so it remains decoration in
+   the Consequences' sense below. A list that is rows rather than cards
+   (Connections) stays on hairlines.
 2. **White owns identity, primary text, primary action, and selection.** The
    Spool mark, the `+ New loop` button and the selected destination are all
    `#f2f1ed`. Colour never says "this is us" or "you are here".
@@ -47,6 +60,21 @@ need the operator to look.
    Being chosen is what makes the badge worth drawing, not what excuses it.
 5. **Filling and progress are data, not alarm.** Meters draw in the text
    colour at low opacity, and only take colour as they approach a limit.
+   **Amendment (2026-11-11, #1518):** one recorded exception, to this item
+   and to §3 together: the loop's ring (§13). Its outer arc, the context
+   window's fill, is drawn in three steps: `--ready` (`#3fe39a`) under 40%,
+   `--orb-context-mid` (`#8fe3c8`) from 40%, `--orb-context-high`
+   (`#cfd8ff`) from 70%. So on the ring, green means a window with room
+   rather than §3's healthy and ready, the two pale hues are outside §3's
+   three, and a filling window goes calmer rather than to §3's orange. That
+   is deliberate (#1411): the ring sits beside a loop's red fault halo and
+   orange in-a-turn dash, and an orange arc would read as either. It sorts
+   loops by fill at a glance and does not warn. The warning stays where §3
+   puts it: the loop page's context meter turns orange once rotation is
+   armed and solid orange past the ceiling. The inner arc, the loop's share
+   of the day's spend, stays in the text colour, and the halo and dash keep
+   §3's meanings. Every other meter, the plan strip's and Rules' budget
+   among them, follows this item as written.
 6. **Typography carries the hierarchy.** System sans for titles, prose,
    missions and navigation; system mono for the operational register — loop
    names, states, costs, times, branches, paths. No network fonts.
@@ -67,11 +95,30 @@ need the operator to look.
    falls back to the sans stack if the file fails to load. This supersedes the
    operator's call of 2026-09-24 on #316, which kept the wordmark in the UI
    font.
+   **Amendment (2026-11-11, #1518):** one type scale. Every font size is one
+   of nine steps, as tokens: 0.625rem (labels), 0.6875rem, 0.75rem,
+   0.8125rem (body), 0.875rem, 1rem (card titles), 1.125rem (page titles),
+   1.25rem (figures) and 1.5rem (display); the wordmark keeps its own size.
+   There is one label style, 0.625rem mono caps at 0.14em in the muted
+   colour, and letter-spacing is otherwise 0. Weights are 400, 500 for
+   titles and names, and 600 for emphasis and the primary button. The
+   stylesheet had 23 sizes and 9 spacings, picked one rule at a time; a
+   size outside the scale now needs a reason written beside it.
 7. **Contrast is a floor, not a preference.** Every text token clears 4.5:1
    against every background it can land on. The approved muted grey
    `#77777c` measures 4.58:1 on the canvas but 4.39:1 on the hover fill, so
    the token ships as `#7a7a7f` — 4.77:1 and 4.58:1, visually indistinguishable
    and above the floor on both.
+   **Amendment (2026-11-11, #1518):** glass (§1) and the glow behind it are
+   backgrounds text lands on, and `#7a7a7f` does not clear the floor on
+   them: 4.36:1 on glass's top stop over the bare canvas, and about 4.1:1
+   where that stop sits over the glow, the brightest background the
+   mockups render (about `#191a1d`, sampled from the shots on #1519). The
+   muted token moves to `#86868b`: 4.8:1 there, 5.6:1 on the canvas, and
+   still 3.2:1 below `--text`, so muted text keeps reading as secondary.
+   This is the third palette value moved for a measured reason, recorded
+   here rather than folded in quietly. The Teams view's cards already sit on
+   that background, so the move also covers the Fleet page as it ships.
 8. **Focus is an outline, and information survives without motion.** Keyboard
    focus is a crisp high-contrast outline, never a glow. Anything animated —
    the busy glyph, the streaming cursor — still carries its meaning when
@@ -132,6 +179,28 @@ need the operator to look.
     A future treatment that leans on a fill change owes itself the same
     arithmetic.
 
+12. **One button system** (added 2026-11-11, #1518). A button is filled (the
+    primary action), outlined (everything else, with danger as a tone of it)
+    or text-only (a quiet action inside prose or a list), each at one of two
+    heights, 32px or 26px, with its label centred. Toggles and pickers share
+    one 26px segment pill in the sans face; icon buttons are one 28px square.
+    The heights are what a rem-based minimum height (`2rem`, `1.625rem`)
+    comes to at the default text size, not fixed boxes: a button and a pill
+    hold a label, so by §9 they grow with the reader's text size. The icon
+    square holds a glyph, not text, and stays in px.
+    The loop page's round controls stay as they are, a deliberate exception:
+    they are the loop's power and pace, and read as hardware. A new button
+    takes one of these kinds rather than a style of its own; the room had
+    about twenty.
+
+13. **A loop is its ring wherever it stands for itself** (added 2026-11-11,
+    #1518). The Teams view draws each loop as a ring (#1411): the outer arc
+    its context, the inner its share of the day's spend, a red halo when
+    something is wrong with it, a dashed orange arc while it is in a turn.
+    The same ring stands for the loop on its own page's header, on Activity
+    and in a channel's loops, so a loop looks the same wherever it is named.
+    People are not loops and keep their letter avatars.
+
 ## Consequences
 
 - **The accent stops being decoration.** Orange on screen now always answers
@@ -151,6 +220,10 @@ need the operator to look.
   hairline and the raised fill until #69 and #71 replace the shell and Fleet
   with rows. That interim is deliberate — the alternative was one unreviewable
   change.
+  **Amendment (2026-11-11, #1518):** the cards came back as glass. §1's
+  amendment makes a glass container the room's raised layer for anything
+  that holds one thing, and `--surface` keeps only row hover and input
+  wells; a list of rows stays on hairlines.
 - **A second palette value moved, and for the same kind of reason.**
   `--hairline` went from `#1b1b1e` to `#24242a` (§10). The first move was a
   contrast floor, this one a rasterisation floor; both are cases of a value
