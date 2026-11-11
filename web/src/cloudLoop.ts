@@ -58,9 +58,14 @@ export function unnamedCloudHold(loop: Pick<LoopView, 'problems'>, cloud: CloudS
 }
 
 // Settings → Cloud, read for a cloud loop alone: every member may read it,
-// and one answer serves every cloud loop on the page.
+// and one answer serves every cloud loop on the page. Any other loop gets
+// none: a query turned off only stops fetching, and still answers with what
+// New loop or Settings left under the same key, which would hold a
+// contained loop on a cloud gap it doesn't have (#1492).
 export function useCloudSettings(loop: Pick<LoopView, 'runtime'>): CloudSettings | undefined {
-  return useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings, enabled: loop.runtime === 'cloud' }).data
+  const cloud = loop.runtime === 'cloud'
+  const { data } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings, enabled: cloud })
+  return cloud ? data : undefined
 }
 
 // The cloud loop's session as the Workstation card says it. A hold outranks
