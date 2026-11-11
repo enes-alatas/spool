@@ -1,4 +1,5 @@
-import type { LoopView, Team } from './api'
+import { ApiError, type Channel, type LoopView, type Team } from './api'
+import { validChannelName } from './channels'
 
 // The rules the Fleet page's team cards check before it asks the hub, mirrored from the
 // hub (a team's name follows the loop-name rule, ADR-0066), so a form can
@@ -109,5 +110,61 @@ export function saveFleetLayout(layout: FleetLayout) {
     globalThis.localStorage?.setItem(FLEET_LAYOUT_KEY, layout)
   } catch {
     // the choice holds for this visit only
+  }
+}
+
+// A new team's home channel (#1494): the hub makes one with the team, named
+// after it unless the form names another. A channel name has no underscore,
+// so the team's are read as dashes.
+export function suggestedHomeChannel(team: string): string {
+  return team.replace(/_/g, '-')
+}
+
+// The fleet channel's old name, which the hub never lets a channel take
+// again (ADR-0068, store.RetiredChannel).
+export const RETIRED_CHANNEL = 'group'
+
+// Why the hub would refuse a new team's home channel, in the form's words,
+// or '' when it wouldn't. The name taken by another channel is checked
+// against the channels the room has, so it is said before the create.
+export function homeChannelProblem(home: string, channels: Pick<Channel, 'name'>[] | undefined): string {
+  if (home === '') return ''
+  if (home === RETIRED_CHANNEL)
+    return `No channel can be named ${RETIRED_CHANNEL}. Give this team's home channel another name.`
+  if (!validChannelName(home))
+    return 'A channel name is 1 to 32 lowercase letters, digits and dashes, not starting with a dash.'
+  if (channels?.some((channel) => channel.name === home))
+    return `A channel named ${home} already exists. Give this team's home channel another name.`
+  return ''
+}
+
+// What the New team form says at its home channel: the hub's refusal while
+// the field still holds the name it refused, since the team's name it
+// follows can move it on; that it is needed, once a name is typed and the
+// field emptied by hand; else what the hub would refuse.
+export function newHomeProblem(form: {
+  name: string
+  home: string
+  refused: { home: string; text: string } | undefined
+  channels: Pick<Channel, 'name'>[] | undefined
+}): string {
+  if (form.refused?.home === form.home) return form.refused.text
+  if (form.name !== '' && form.home === '') return "Give this team's home channel a name."
+  return homeChannelProblem(form.home, form.channels)
+}
+
+// The hub's refusal of a new team's home channel, in the form's words, or
+// '' when the refusal is about something else. A channel made since the
+// room last read the list is still caught here.
+export function homeChannelRefusal(err: unknown, home: string): string {
+  if (!(err instanceof ApiError)) return ''
+  switch (err.code) {
+    case 'channel_exists':
+      return `A channel named ${home} already exists. Give this team's home channel another name.`
+    case 'channel_reserved':
+    case 'channel_name_invalid':
+      return homeChannelProblem(home, []) || err.message
+    default:
+      return ''
   }
 }

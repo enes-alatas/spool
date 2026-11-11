@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { LoopView, Team } from './api'
+import { ApiError, type LoopView, type Team } from './api'
 import {
   defaultFleetLayout,
+  homeChannelProblem,
+  homeChannelRefusal,
+  newHomeProblem,
+  suggestedHomeChannel,
   loopsToAdd,
   moveTargets,
   readFleetLayout,
@@ -161,5 +165,46 @@ describe('moveTargets', () => {
       { key: '', label: 'No team', current: false },
     ])
     expect(moveTargets(teams, '').at(-1)).toEqual({ key: '', label: 'No team', current: true })
+  })
+})
+
+describe("a new team's home channel (#1494)", () => {
+  const channels = [{ name: 'docs' }, { name: 'fleet' }]
+  it('is named after the team, its underscores read as dashes', () => {
+    expect(suggestedHomeChannel('evals')).toBe('evals')
+    expect(suggestedHomeChannel('eval_skills')).toBe('eval-skills')
+  })
+  it('says what the hub would refuse, in the form’s words', () => {
+    expect(homeChannelProblem('evals', channels)).toBe('')
+    expect(homeChannelProblem('', channels)).toBe('')
+    expect(homeChannelProblem('docs', channels)).toBe(
+      "A channel named docs already exists. Give this team's home channel another name.",
+    )
+    expect(homeChannelProblem('group', channels)).toMatch(/^No channel can be named group/)
+    expect(homeChannelProblem('eval_skills', channels)).toMatch(/not starting with a dash/)
+    // Until the room has the channel list, a taken name is the hub's to say.
+    expect(homeChannelProblem('docs', undefined)).toBe('')
+  })
+  it("turns the hub's home-channel refusals into the form's words, and leaves the rest", () => {
+    const refused = (code: string) => new ApiError(409, 'raw', code)
+    expect(homeChannelRefusal(refused('channel_exists'), 'docs')).toMatch(
+      /^A channel named docs already exists/,
+    )
+    expect(homeChannelRefusal(refused('channel_reserved'), 'group')).toMatch(/^No channel can be named group/)
+    expect(homeChannelRefusal(refused('team_exists'), 'docs')).toBe('')
+    expect(homeChannelRefusal(new Error('network'), 'docs')).toBe('')
+  })
+  it("says the hub's refusal only while the field holds the name it refused", () => {
+    const refused = { home: 'ops', text: 'A channel named ops already exists.' }
+    const form = { name: 'ops', home: 'ops', refused, channels: [] }
+    expect(newHomeProblem(form)).toBe(refused.text)
+    // The name moves the home on: the refusal was about another name.
+    expect(newHomeProblem({ ...form, name: 'ops2', home: 'ops2' })).toBe('')
+  })
+  it('says the home channel is needed once the field is emptied by hand', () => {
+    expect(newHomeProblem({ name: 'ops', home: '', refused: undefined, channels: [] })).toBe(
+      "Give this team's home channel a name.",
+    )
+    expect(newHomeProblem({ name: '', home: '', refused: undefined, channels: [] })).toBe('')
   })
 })
