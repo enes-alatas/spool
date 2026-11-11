@@ -1083,5 +1083,45 @@ await skillField.screenshot({ path: skillFile })
 taken.push(skillFile)
 await page.unroute('**/api/import/prompts-chat?*')
 
+// Moving a loop between teams (#1485), last as it adds teams to the
+// fixture: a circle dragged over another team's card, and its Move to…
+// menu. The drag is let go on the card it came from, which sends nothing.
+for (const [name, description] of [
+  ['handbook', 'Keeps the handbook true to what ships.'],
+  ['ops', 'Watches the build and the release calendar.'],
+])
+  await page.request.post(base + '/api/teams', { data: { name, description } })
+for (const [loop, team] of [
+  ['gardener', 'handbook'],
+  ['courier', 'handbook'],
+  ['watcher', 'ops'],
+])
+  await page.request.patch(`${base}/api/loops/${loop}`, { data: { team } })
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Teams', exact: true }).click()
+await page.waitForSelector('.team-cards', { timeout: 15000 })
+const teamCard = (team) => page.locator('.team-card', { has: page.locator('h2', { hasText: team }) })
+const courier = page.getByRole('button', { name: /^courier: / })
+const from = await courier.boundingBox()
+const to = await teamCard('ops').boundingBox()
+await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+await page.mouse.down()
+await page.mouse.move(to.x + to.width * 0.6, to.y + to.height / 2, { steps: 12 })
+await page.locator('.team-card.drop-target').waitFor({ timeout: 15000 })
+const dragFile = `${outDir}/fleet-drag.png`
+await page.screenshot({ path: dragFile })
+taken.push(dragFile)
+await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2, { steps: 12 })
+await page.mouse.up()
+await courier.click({ button: 'right' })
+await page.getByRole('menu', { name: 'Move courier to' }).waitFor({ timeout: 15000 })
+// the pointer off the circle, as for the keyboard, so it shows unhovered
+await page.mouse.move(to.x + to.width / 2, to.y + to.height + 200)
+const menuFile = `${outDir}/fleet-move-menu.png`
+await page.screenshot({ path: menuFile })
+taken.push(menuFile)
+await page.keyboard.press('Escape')
+await page.evaluate(() => globalThis.localStorage.removeItem('spool.fleet.layout'))
+
 await browser.close()
 for (const file of taken) console.log(file)

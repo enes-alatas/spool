@@ -3,6 +3,7 @@ import type { LoopView, Team } from './api'
 import {
   defaultFleetLayout,
   loopsToAdd,
+  moveTargets,
   readFleetLayout,
   saveFleetLayout,
   needsYou,
@@ -148,5 +149,17 @@ describe('the Fleet layout choice', () => {
     })
     expect(readFleetLayout()).toBeUndefined()
     expect(() => saveFleetLayout('list')).not.toThrow()
+  })
+})
+
+describe('moveTargets', () => {
+  it("offers every team and no team, in the cards' order, marking the card the loop is on", () => {
+    const teams = [team({ name: 'docs' }), team({ name: 'ops' })]
+    expect(moveTargets(teams, 'docs')).toEqual([
+      { key: 'docs', label: 'docs', current: true },
+      { key: 'ops', label: 'ops', current: false },
+      { key: '', label: 'No team', current: false },
+    ])
+    expect(moveTargets(teams, '').at(-1)).toEqual({ key: '', label: 'No team', current: true })
   })
 })

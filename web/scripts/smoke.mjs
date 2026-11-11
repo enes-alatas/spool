@@ -464,6 +464,41 @@ try {
     await see(page.getByRole('button', { name: new RegExp(`^${name}: `) }), `the ${name} circle`)
   }
 
+  // A loop moves between cards by drag and drop, or from its Move to… menu
+  // (#1485); a move the hub refuses leaves it where it was.
+  const crew = page.locator('.team-card', { has: page.locator('h2', { hasText: 'smoke-crew' }) })
+  const circle = (name) => page.getByRole('button', { name: new RegExp(`^${name}: `) })
+  step = 'drag a loop'
+  await circle('gardener').dragTo(crew)
+  await see(crew.getByRole('button', { name: /^gardener: / }), 'gardener in smoke-crew')
+
+  step = 'Move to… menu'
+  await circle('watcher').click({ button: 'right' })
+  const menu = page.getByRole('menu', { name: 'Move watcher to' })
+  await see(menu, "watcher's Move to… menu")
+  await page.keyboard.press('Enter')
+  await see(crew.getByRole('button', { name: /^watcher: / }), 'watcher in smoke-crew')
+  // The keyboard is left on the moved circle, not at the top of the page.
+  await page.waitForFunction(
+    () => globalThis.document.activeElement?.getAttribute('aria-label')?.startsWith('watcher: '),
+    null,
+    {
+      timeout: 5000,
+    },
+  )
+
+  step = 'refused move'
+  await page.route('**/api/loops/courier', (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 404, json: { error: 'team "smoke-crew" not found', code: 'team_not_found' } })
+      : route.continue(),
+  )
+  await circle('courier').dragTo(crew)
+  await see(crew.getByRole('alert').getByText('courier stays in no team', { exact: false }), 'the refusal')
+  if ((await crew.getByRole('button', { name: /^courier: / }).count()) > 0)
+    throw new Error(`${step}: courier moved though the hub refused`)
+  await page.unroute('**/api/loops/courier')
+
   step = 'the page'
   if (pageErrors.length > 0) throw new Error(`${step} threw: ${pageErrors.join('; ')}`)
 

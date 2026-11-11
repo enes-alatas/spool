@@ -38,11 +38,11 @@ const loops = [
   loop({ name: 'cedar', team: 'release' }),
 ]
 
-function render(manage: boolean) {
+function render(manage: boolean, teams = [docs]) {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <FleetTeams teams={[docs]} loops={loops} spentToday={1} manage={manage} />
+        <FleetTeams teams={teams} loops={loops} spentToday={1} manage={manage} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -76,6 +76,22 @@ describe('FleetTeams', () => {
     expect(html).toContain('>cedar (from release)</option>')
     expect(html).toContain('aria-label="New loop"')
     expect(html).toContain('New team')
+  })
+  it("lets an admin drag a loop's circle, or move it from its menu", () => {
+    const html = render(true)
+    expect(html.match(/draggable="true"/g)).toHaveLength(loops.length)
+    expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(loops.length)
+    expect(html).toContain('aria-keyshortcuts="Shift+F10"')
+  })
+  it('gives a member circles that neither drag nor offer a move', () => {
+    const html = render(false)
+    expect(html).not.toContain('draggable')
+    expect(html).not.toContain('aria-haspopup')
+  })
+  it('offers no move while there is no team to move to', () => {
+    const html = render(true, [])
+    expect(html).not.toContain('draggable')
+    expect(html).not.toContain('aria-haspopup')
   })
   it('shows a member the same cards without them', () => {
     const html = render(false)
