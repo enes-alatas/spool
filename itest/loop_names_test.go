@@ -38,7 +38,7 @@ func TestALoopNameAMentionMeansIsRefused(t *testing.T) {
 	refused("a loop named like the person", "POST", "/api/loops",
 		map[string]any{"name": "planner", "mission": "m"}, "Telegram username of a person the hub allows")
 
-	hub.createLoop("gamma_bot", nil)
+	hub.createLoop("gamma_bot", map[string]any{"fleet": false})
 	telegram.addBot("gamma")
 	refused("a loop created with a bot named like the loop gamma_bot", "POST", "/api/loops",
 		map[string]any{"name": "delta", "mission": "m", "tg_bot_token": "gamma"}, "the loop gamma_bot")

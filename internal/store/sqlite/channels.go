@@ -198,7 +198,20 @@ func (table channels) SetTeam(ctx context.Context, name, team string) (*store.Ch
 // team's loops (ADR-0066), checked in the same statement as the insert,
 // so a loop moving team meanwhile can't slip in.
 func (table channels) addLoop(ctx context.Context, name, loopID string, at int64) error {
-	res, err := table.db.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	joining, err := notMembers(ctx, tx, name, []string{loopID})
+	if err != nil {
+		return err
+	}
+	// a channel with a chat takes only loops on its surface (ADR-0070)
+	if err := requireOnSurface(ctx, tx, name, joining); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO channel_loops (channel, loop_id, added_at)
 		SELECT ?1, loops.id, ?3 FROM loops, channels
 		WHERE loops.id = ?2 AND channels.name = ?1 AND (channels.team IS NULL OR channels.team = loops.team)
 		ON CONFLICT (channel, loop_id) DO NOTHING`, name, loopID, at)
@@ -206,12 +219,15 @@ func (table channels) addLoop(ctx context.Context, name, loopID string, at int64
 		return err
 	}
 	if affected, _ := res.RowsAffected(); affected > 0 {
-		return nil
+		if err := bindJoined(ctx, tx, name, []string{loopID}, at); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 	// nothing inserted: it is already there, the loop or the channel is
 	// gone, or the loop is not the channel's team's
 	var loops, chans, members int
-	if err := table.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM loops WHERE id=?2),
+	if err := tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM loops WHERE id=?2),
 		(SELECT COUNT(*) FROM channels WHERE name=?1),
 		(SELECT COUNT(*) FROM channel_loops WHERE channel=?1 AND loop_id=?2)`, name, loopID).Scan(&loops, &chans, &members); err != nil {
 		return err

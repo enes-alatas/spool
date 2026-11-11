@@ -56,7 +56,15 @@ func (table rooms) get(ctx context.Context, querier interface {
 }
 
 func (table rooms) Sight(ctx context.Context, room *store.Room) (*store.Room, bool, error) {
-	res, err := table.db.ExecContext(ctx, `INSERT INTO rooms (loop_id, surface, room_id, title, first_seen_at)
+	// the record, the title and the chat's bind are one write: a bind that
+	// failed after the insert would leave the room recorded and never bound,
+	// since the next sighting adds nothing
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `INSERT INTO rooms (loop_id, surface, room_id, title, first_seen_at)
 		VALUES (?,?,?,?,?) ON CONFLICT (loop_id, surface, room_id) DO NOTHING`,
 		room.LoopID, room.Surface, room.RoomID, room.Title, room.FirstSeenAt)
 	if err != nil {
@@ -66,13 +74,19 @@ func (table rooms) Sight(ctx context.Context, room *store.Room) (*store.Room, bo
 	if added == 0 && room.Title != "" {
 		// a title is refreshed, never blanked: a message that names no
 		// title says nothing about the one the room has
-		if _, err := table.db.ExecContext(ctx, `UPDATE rooms SET title=? WHERE loop_id=? AND surface=? AND room_id=?`,
+		if _, err := tx.ExecContext(ctx, `UPDATE rooms SET title=? WHERE loop_id=? AND surface=? AND room_id=?`,
 			room.Title, room.LoopID, room.Surface, room.RoomID); err != nil {
 			return nil, false, err
 		}
 	}
-	stored, err := table.get(ctx, table.db, room.LoopID, room.Surface, room.RoomID)
-	return stored, added > 0, err
+	if err := sightChat(ctx, tx, room, added > 0); err != nil {
+		return nil, false, err
+	}
+	stored, err := table.get(ctx, tx, room.LoopID, room.Surface, room.RoomID)
+	if err != nil {
+		return nil, false, err
+	}
+	return stored, added > 0, tx.Commit()
 }
 
 func (table rooms) Bind(ctx context.Context, loopID, surface, roomID, channel string, at int64) (*store.Room, error) {
@@ -183,6 +197,13 @@ func (table rooms) Move(ctx context.Context, surface, fromRoomID, toRoomID strin
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// a channel's chat follows its rooms to the new id, unless the new id
+	// is a channel's chat already
+	if _, err := tx.ExecContext(ctx, `UPDATE channel_chats SET chat_id=?1 WHERE surface=?2 AND chat_id=?3
+		AND NOT EXISTS (SELECT 1 FROM channel_chats AS there WHERE there.surface=?2 AND there.chat_id=?1)`,
+		toRoomID, surface, fromRoomID); err != nil {
 		return nil, err
 	}
 	sort.Strings(moved)

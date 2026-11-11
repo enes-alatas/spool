@@ -239,6 +239,10 @@ func (server *Server) createTeamFromChannel(w http.ResponseWriter, r *http.Reque
 		server.refuse(w, refusal)
 		return
 	}
+	if onSurface := server.loopNotOnSurface(r.Context(), err); onSurface != nil {
+		server.refuse(w, onSurface)
+		return
+	}
 	switch {
 	case errors.Is(err, store.ErrChannelNotFound):
 		server.jsonErrCode(w, 404, codeChannelNotFound, "channel %q not found", team.HomeChannel)
@@ -355,6 +359,10 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 		server.refuse(w, refusal)
 		return
 	}
+	if onSurface := server.loopNotOnSurface(r.Context(), err); onSurface != nil {
+		server.refuse(w, onSurface)
+		return
+	}
 	switch {
 	case errors.Is(err, store.ErrChannelHasOutsiders):
 		server.channelHasOutsiders(w, r, *req.HomeChannel, name)
@@ -375,6 +383,11 @@ func (server *Server) handlePatchTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name != nil || team.ClaudeLogin != wasLogin {
 		server.teamLoopsChanged(r, team, wasLogin)
+	}
+	if req.HomeChannel != nil {
+		// a loop put in the new home channel had its room for the
+		// channel's chat bound (ADR-0070)
+		server.membersRoomsChanged(r, team.LoopIDs)
 	}
 	server.writeTeam(w, r, 200, team)
 }

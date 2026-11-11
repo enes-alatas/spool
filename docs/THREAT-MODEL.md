@@ -96,7 +96,14 @@ Slack connects out over Socket Mode, so no port is opened for either
   operator to bind to one of the loop's channels from its page (ADR-0068).
   A bound room mirrors its channel to everyone in that chat, so only the
   operator chooses who reads a channel. A stranger's message records
-  nothing.
+  nothing. Once the operator binds a chat to a channel, as the channel's
+  chat (ADR-0070), a member loop's bot in that chat carries the channel
+  without a second choice. The chat is matched by the id the surface
+  assigns, and a loop outside the channel binds nothing this way. Any
+  allowed person, not only an admin, who adds a member's bot to the
+  channel's chat therefore causes a bind; the chat and the channel were
+  already the operator's choice. The upgrade to channel chats binds no
+  room that was unbound before it.
 - **An allowed person adding a loop's bot to a Telegram group makes the
   group known to the loop,** as their first message there would: it is
   recorded unbound for the loop page (#1320, ADR-0068). Telegram

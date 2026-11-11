@@ -51,6 +51,10 @@ type fakeTelegram struct {
 	// answer until the bridge hangs up: a Telegram slow to answer a send it
 	// has made, which the hub cannot tell from a dead connection (#800).
 	lateSends int
+	// absent are the bots kept out of a chat (chat id → token): a post
+	// there reaches every bot but these, as a group a loop's bot was never
+	// added to (ADR-0070).
+	absent map[int64]map[string]bool
 	// holdGetMe stands in for a slow api.telegram.org: getMe blocks on it
 	// until the test lets go. Real getMe calls take a round-trip, and the
 	// hub holds a copy of the loop row across one (#164) — a window a test
@@ -215,6 +219,19 @@ func (tg *fakeTelegram) addBot(token string) {
 	defer tg.mu.Unlock()
 	tg.nextID[token] = int64(100 + len(tg.bots)*400)
 	tg.bots = append(tg.bots, token)
+}
+
+// leave keeps a bot out of a chat: it hears none of the chat's later posts.
+func (tg *fakeTelegram) leave(chatID int64, token string) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	if tg.absent == nil {
+		tg.absent = map[int64]map[string]bool{}
+	}
+	if tg.absent[chatID] == nil {
+		tg.absent[chatID] = map[string]bool{}
+	}
+	tg.absent[chatID][token] = true
 }
 
 func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
@@ -486,6 +503,9 @@ func (tg *fakeTelegram) postReply(chatID int64, chatType, text string, from user
 	defer tg.mu.Unlock()
 	post := &fakePost{ids: map[string]int64{}, from: from, text: text, date: time.Now().Unix()}
 	for _, token := range tg.bots {
+		if tg.absent[chatID][token] {
+			continue
+		}
 		tg.nextID[token]++
 		tg.updates++
 		post.ids[token] = tg.nextID[token]

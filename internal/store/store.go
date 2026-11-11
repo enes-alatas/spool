@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -1830,9 +1831,73 @@ type ChannelStore interface {
 	// are no-ops when it already is, or is not, there, and ErrNotFound when
 	// the channel is not. A team's channel takes only that team's loops:
 	// ErrChannelInOtherTeam for any other (ADR-0066). at stamps the write.
-	// Taking a loop out of a channel unbinds its room for it.
+	// Taking a loop out of a channel unbinds its room for it. Putting one
+	// in a channel that has a chat binds its room for the chat, if its bot
+	// has one, and is refused with a *NotOnSurfaceError when the loop has
+	// no bot on the chat's surface (ADR-0070).
 	AddLoop(ctx context.Context, name, loopID string, at int64) error
 	RemoveLoop(ctx context.Context, name, loopID string, at int64) error
+
+	// Chat returns a channel's chat; ErrNotFound when it has none.
+	Chat(ctx context.Context, name string) (*ChannelChat, error)
+	// BindChat makes chat the chat of chat.Channel and binds, at once,
+	// every member's room recorded for it; it returns the chat as stored.
+	// It is refused, with nothing changed: ErrNotFound for no such
+	// channel, ErrChannelHasChat when the channel has one,
+	// ErrRoomInUse when the chat is another channel's or a room for it
+	// carries another channel, and *NotOnSurfaceError naming every member
+	// with no bot on the chat's surface.
+	BindChat(ctx context.Context, chat *ChannelChat) (*ChannelChat, error)
+	// MoveChat takes the chat from channel from, as UnbindChat does, and
+	// binds it to chat.Channel, as BindChat does, in one write: the loops
+	// that carry a chat together move it together (#1424). Refused as
+	// either is, with nothing changed.
+	MoveChat(ctx context.Context, from string, chat *ChannelChat) (*ChannelChat, error)
+	// UnbindChat takes a channel's chat from it, and every room bound to
+	// the channel goes back to unbound, still recorded; ErrNotFound when
+	// the channel has no chat.
+	UnbindChat(ctx context.Context, name string) error
+	// BindMember binds a member's room for the channel's chat, which only
+	// a room the upgrade to channel chats left unbound needs (ADR-0070).
+	// ErrNotFound when the channel has no chat, ErrNotInChannel when the
+	// loop is not in it, and ErrNotInChat when its bot has no room for
+	// the chat.
+	BindMember(ctx context.Context, name, loopID string, at int64) error
+	// FoundChats lists the chats a channel's member loops' bots are in
+	// that are no channel's chat, on a surface every member has a bot on:
+	// what the channel's page offers the operator to confirm.
+	FoundChats(ctx context.Context, name string) ([]*FoundChat, error)
+}
+
+// ChannelChat is the one chat a channel is bound to (ADR-0070): a
+// Telegram group or a Slack channel that each member loop's bot in it
+// carries the channel in, with no choice per loop. A room for it is that
+// chat as one loop's bot knows it.
+type ChannelChat struct {
+	Channel string
+	Surface string
+	// ChatID is the surface's id for the chat, spelled as a room's is.
+	ChatID string
+	// Title is the chat's name as a member's bot last heard it, "" for a
+	// chat no member's bot has been in.
+	Title   string
+	BoundAt int64
+	// BoundBy names who bound it, as the audit names a user.
+	BoundBy string
+	// SeenAt is when a member's bot was first in the chat, 0 for a chat
+	// bound by a pasted id that no member's bot has been in yet.
+	SeenAt int64
+}
+
+// FoundChat is a chat a channel's members' bots are in that no channel
+// has bound, offered to the operator to confirm as the channel's chat.
+type FoundChat struct {
+	Surface     string
+	ChatID      string
+	Title       string
+	FirstSeenAt int64
+	// FoundBy are the member loops whose bots are in it, by id, sorted.
+	FoundBy []string
 }
 
 // Team is a named set of loops on one hub, with channels and settings of
@@ -2160,7 +2225,30 @@ const (
 	// ErrChannelHasTeamLoops refuses making a team from a channel that
 	// holds a loop in a team: joining would move it out of the team it is in.
 	ErrChannelHasTeamLoops = sentinelError("store: channel has loops in a team")
+	// ErrChannelHasChat refuses binding a second chat to a channel: a
+	// channel has one chat at most, unbound before another (ADR-0070).
+	ErrChannelHasChat = sentinelError("store: channel has a chat")
+	// ErrNotInChat refuses binding a member's room for a channel's chat
+	// when its bot has no room for that chat.
+	ErrNotInChat = sentinelError("store: loop has no room for the chat")
+	// ErrNotInChannel refuses binding a loop's room for a channel's chat
+	// when the loop is not in the channel.
+	ErrNotInChannel = sentinelError("store: loop not in the channel")
 )
+
+// NotOnSurfaceError refuses a write that would put a loop with no bot on
+// a channel's chat surface among the channel's members (ADR-0070): putting
+// the loop in the channel, by any write that does, or binding a chat on a
+// surface some member has no bot on. LoopIDs are the loops refused, in no
+// promised order. Nothing changed.
+type NotOnSurfaceError struct {
+	Surface string
+	LoopIDs []string
+}
+
+func (refusal *NotOnSurfaceError) Error() string {
+	return fmt.Sprintf("store: %d loop(s) with no bot on %s", len(refusal.LoopIDs), refusal.Surface)
+}
 
 // Connection is an org-level tool credential or config, defined once under
 // a name and attachable to loops (ADR-0043). Secret is write-only: json:"-"
