@@ -946,6 +946,10 @@ type Spend struct {
 	Estimated bool
 	// UnknownTurns counts the turns USD leaves out.
 	UnknownTurns int
+	// Turns counts the turns USD sums a cost for: the ended ones whose cost
+	// is known. A turn still running has no cost yet and is not counted, so
+	// USD / Turns is the spend a turn (#1515).
+	Turns int
 }
 
 type Turn struct {

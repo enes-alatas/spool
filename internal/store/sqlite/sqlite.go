@@ -1493,12 +1493,14 @@ func (table turns) InterruptDangling(ctx context.Context, endedAt int64) error {
 	return err
 }
 
-// CostSince's sum leaves out an unknown cost, which is stored as 0.
+// CostSince's sum leaves out an unknown cost, which is stored as 0, and
+// its count of turns leaves out those and a turn still running.
 func (table turns) CostSince(ctx context.Context, loopID string, since int64) (store.Spend, error) {
 	var spend store.Spend
 	err := table.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_usd), 0),
-		COALESCE(MAX(cost_estimated AND NOT cost_unknown), 0), COALESCE(SUM(cost_unknown), 0)
-		FROM turns WHERE loop_id=? AND started_at>=?`, loopID, since).Scan(&spend.USD, &spend.Estimated, &spend.UnknownTurns)
+		COALESCE(MAX(cost_estimated AND NOT cost_unknown), 0), COALESCE(SUM(cost_unknown), 0),
+		COALESCE(SUM(ended_at > 0 AND NOT cost_unknown), 0)
+		FROM turns WHERE loop_id=? AND started_at>=?`, loopID, since).Scan(&spend.USD, &spend.Estimated, &spend.UnknownTurns, &spend.Turns)
 	return spend, err
 }
 

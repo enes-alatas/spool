@@ -228,7 +228,8 @@ func nearly(got, want float64) bool {
 
 // An estimated cost is stored as one, an unknown one comes back nil and is
 // left out of a sum that counts it instead, and a turn that ended with no
-// result still costs 0, not unknown (ADR-0059).
+// result still costs 0, not unknown (ADR-0059). The sum's turn count
+// leaves out the unknown turn and one still running (#1515).
 func TestAnEstimatedTurnCostKeepsItsMarks(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -255,6 +256,10 @@ func TestAnEstimatedTurnCostKeepsItsMarks(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	running := &store.Turn{ID: "running", LoopID: "l1", SessionID: "s1", StartedAt: 3}
+	if err := db.Turns().Create(ctx, running); err != nil {
+		t.Fatal(err)
+	}
 	turns, err := db.Turns().ListByLoop(ctx, "l1", 10)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +282,7 @@ func TestAnEstimatedTurnCostKeepsItsMarks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !nearly(spend.USD, 0.75) || !spend.Estimated || spend.UnknownTurns != 1 {
-		t.Errorf("CostSince %+v, want 0.75, estimated, one unknown turn left out", spend)
+	if !nearly(spend.USD, 0.75) || !spend.Estimated || spend.UnknownTurns != 1 || spend.Turns != 3 {
+		t.Errorf("CostSince %+v, want 0.75 over 3 turns, estimated, the unknown turn and the running one left out", spend)
 	}
 }

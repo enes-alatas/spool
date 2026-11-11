@@ -100,11 +100,15 @@ type ObservationSource interface {
 	Observations(ctx context.Context, langfuse store.Langfuse, from time.Time, cursor string) (ObservationPage, error)
 }
 
-// Summary is one loop's numbers over a window.
+// Summary is one loop's numbers over a window. CostTurns is how many of
+// the hub's turns CostUSD sums, the divisor of the spend a turn: Turns
+// counts Langfuse's traces, which lag the hub's turns by up to a refresh
+// and stop while Langfuse is down (#1515).
 type Summary struct {
 	Turns          int       `json:"turns"`
 	FailedTurns    int       `json:"failed_turns"`
 	CostUSD        float64   `json:"cost_usd"`
+	CostTurns      int       `json:"cost_turns"`
 	Tokens         Tokens    `json:"tokens"`
 	TurnDurationMS Durations `json:"turn_duration_ms"`
 	Failures       []Failure `json:"failures"`
@@ -514,14 +518,14 @@ func (reader *Reader) folded(loopID string, langfuse store.Langfuse, window time
 // price puts the hub's own cost on figures. Langfuse holds no cost for
 // Claude Code's spans (#1300's probe), and the hub prices each turn
 // already (ADR-0059): the window's spend is the loop's turns started in
-// it, and a row's is the turn of the same session whose span holds the
-// row's start. A row no turn holds costs 0.
+// it, counted in CostTurns, and a row's is the turn of the same session
+// whose span holds the row's start. A row no turn holds costs 0.
 func (reader *Reader) price(ctx context.Context, loopID string, since time.Time, figures *Summary) error {
 	spend, err := reader.turns.CostSince(ctx, loopID, since.UnixMilli())
 	if err != nil {
 		return err
 	}
-	figures.CostUSD = spend.USD
+	figures.CostUSD, figures.CostTurns = spend.USD, spend.Turns
 	if len(figures.PerTurn) == 0 {
 		return nil
 	}
