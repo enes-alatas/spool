@@ -216,10 +216,13 @@ window regardless of loop count (ADR-0018).
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
   walks it: login, Fleet, a channel's chat, a loop page with no "Loading…"
   left, Rules, Settings, the old Access address landing on Settings → Users
-  and access, the Activity route, the global stream's connection, and last a
-  team made from Fleet's List popup, the walk's one write, which turns the
-  page to its cards (#1484). Each check is a text or role query, never
-  pixels. A failure keeps the Playwright trace as the `smoke-trace` artifact.
+  and access, the Activity route, the global stream's connection, and last
+  the walk's writes: a team made from Fleet's List popup, which turns the
+  page to its cards (#1484), then a loop dragged into it, one moved there
+  from its Move to… menu with the focus left on its circle, and one whose
+  move the hub is made to refuse, which stays put (#1485). Each check is a
+  text or role query, never pixels. A failure keeps the Playwright trace
+  as the `smoke-trace` artifact.
   It runs on a change to `web/`, `cmd/uifixture/` or `scripts/fixture-hub.sh`.
   On its first CI run it took 47s: 6s to build, 35s to install Chromium, 6s to
   walk.

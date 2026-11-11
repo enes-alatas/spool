@@ -6424,6 +6424,9 @@ button.panel-link {
 button.orb {
   z-index: 1;
   cursor: pointer;
+  /* A long press opens the Move to… menu, not Safari's own callout. */
+  -webkit-touch-callout: none;
+  user-select: none;
   transition:
     transform 0.28s cubic-bezier(0.22, 1.25, 0.36, 1),
     opacity 0.25s,
@@ -6444,6 +6447,97 @@ button.orb:focus-visible {
 .team-card-loops:has(button.orb:hover) .orb-add {
   opacity: 0.55;
   filter: blur(0.6px);
+}
+/* Moving a loop between cards (#1485). The card a dragged circle would land
+   on is outlined in the text colour, dashed as the New team card is, since
+   it is a place something is about to go. */
+.team-card.drop-target {
+  /* the card's own 1px width, so taking the outline moves nothing */
+  border-style: dashed;
+  border-color: var(--text);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+}
+.team-card-drop {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+.orb-slot {
+  position: relative;
+}
+/* While a loop is dragged the browser keeps whatever was hovered as the
+   drag began, so a circle the pointer crossed would stay grown and blur its
+   neighbours under the drag: no circle lifts until it ends. */
+.team-cards.dragging button.orb:hover {
+  z-index: 1;
+  transform: none;
+  filter: none;
+}
+.team-cards.dragging .team-card-loops .orb-slot,
+.team-cards.dragging .team-card-loops .orb-add {
+  opacity: 1;
+  filter: none;
+}
+.team-cards.dragging button.orb:hover .orb-initial {
+  opacity: 1;
+}
+.team-cards.dragging button.orb:hover .orb-peek {
+  opacity: 0;
+}
+/* The place a dragged loop left, or one the hub is still moving, held by an
+   empty circle until the cards are redrawn. */
+.orb-slot.moving {
+  outline: 1.5px dashed var(--text-muted);
+  outline-offset: -2px;
+  border-radius: 50%;
+}
+.orb-slot.moving > .orb {
+  visibility: hidden;
+}
+/* A card's glass makes it a stacking context, so the menu's own z-index
+   only orders it within the card: the card is raised over the cards after
+   it, or the one below would cover the menu where it hangs past the edge. */
+.team-card:has(.move-menu) {
+  z-index: 2;
+}
+.move-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+}
+.move-menu-title {
+  padding: 4px 10px 6px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.move-menu button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.move-menu button:disabled {
+  color: var(--text-muted);
+}
+.move-menu button:not(:disabled):hover,
+.move-menu button:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--text) 10%, transparent);
 }
 .orb-slot,
 .orb-add {

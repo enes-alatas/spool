@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView, type Team } from '../api'
@@ -7,6 +7,7 @@ import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
 import {
   loopsToAdd,
+  moveTargets,
   needsYou,
   TEAM_DESCRIPTION_MAX,
   TEAM_NAME_MAX,
@@ -22,8 +23,9 @@ import { StepDialog } from './StepDialog'
 
 // The fleet as its teams (ADR-0066, #1411): a card per team with a circle
 // per loop, and the loops in no team in a full-width card last. An admin
-// adds a loop to a team, edits or deletes a team, and makes a new one from
-// here; a member sees the same cards without those controls.
+// adds a loop to a team, moves a loop between the cards, edits or deletes a
+// team, and makes a new one from here; a member sees the same cards without
+// those controls.
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -71,9 +73,10 @@ export function FleetTeams({
 }) {
   const [focused, setFocused] = useState<{ name: string; from: DOMRect; back: HTMLElement } | null>(null)
   const focusedLoop = focused && loops.find((loop) => loop.name === focused.name)
+  const moves = useLoopMoves(teams)
   return (
     <>
-      <div className="team-cards">
+      <div className={`team-cards${moves.dragging ? ' dragging' : ''}`}>
         {teamGroups(teams, loops).map((group) => (
           <TeamCard
             key={group.key || '-'}
@@ -83,6 +86,7 @@ export function FleetTeams({
             manage={manage}
             hidden={focused?.name}
             onOpen={(name, el) => setFocused({ name, from: el.getBoundingClientRect(), back: el })}
+            moves={moves}
           />
         ))}
         {manage && <NewTeamCard />}
@@ -104,6 +108,153 @@ export function FleetTeams({
   )
 }
 
+// Moving a loop between the cards (#1485), by dragging its circle onto
+// another card or from its Move to… menu: one PATCH of its team, '' for
+// none, as the Add loop pick-list sends (ADR-0066). While the hub has the
+// move, the loop's place on its old card stays held by an empty circle; a
+// refusal leaves it there and is said on the card it was meant for.
+type LoopMoves = ReturnType<typeof useLoopMoves>
+
+function useLoopMoves(teams: Team[]) {
+  const qc = useQueryClient()
+  // The loop being dragged and the card it left, and the card under it. The
+  // ref is what the cards' drag events read: it is set as the drag starts,
+  // where the state that draws it is a frame behind.
+  const [dragging, setDragging] = useState<{ loop: string; from: string }>()
+  const held = useRef<{ loop: string; from: string }>()
+  const [over, setOver] = useState<string>()
+  // The loop whose move the hub has not answered yet.
+  const [pending, setPending] = useState<string>()
+  const [refusal, setRefusal] = useState<{ card: string; text: string }>()
+  // A move from the menu gives the focus back to the loop's circle on the
+  // card it ends on, once that card draws it, or the keyboard is left at
+  // the top of the page.
+  const [focusOn, setFocusOn] = useState<{ loop: string; card: string }>()
+
+  const move = async (loop: string, from: string, to: string, refocus = false) => {
+    // Back onto the card it came from: nothing to ask.
+    if (from === to) return
+    setRefusal(undefined)
+    setFocusOn(undefined)
+    setPending(loop)
+    let card = from
+    try {
+      await api.patchLoop(loop, { team: to })
+      // Held until the cards are redrawn from the hub, so the loop is never
+      // in neither place nor in both.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['teams'] }),
+        qc.invalidateQueries({ queryKey: ['loops'] }),
+      ])
+      void qc.invalidateQueries({ queryKey: ['loop'] })
+      card = to
+    } catch (err) {
+      setRefusal({ card: to, text: `${loop} stays in ${from || 'no team'}: ${errorText(err)}` })
+    } finally {
+      setPending(undefined)
+      if (refocus) setFocusOn({ loop, card })
+    }
+  }
+
+  return {
+    // With no team there is no other card to move to.
+    possible: teams.length > 0,
+    targets: (from: string) => moveTargets(teams, from),
+    dragging,
+    over,
+    pending,
+    refusal,
+    move,
+    focusOn,
+    focused: () => setFocusOn(undefined),
+    held: () => held.current,
+    start: (loop: string, from: string) => {
+      held.current = { loop, from }
+      setRefusal(undefined)
+      // A frame late: the browser takes the drag's picture of the circle as
+      // the drag starts, and a circle already hidden would give it nothing.
+      // A drag that ends within that frame has cleared the ref, so nothing
+      // is drawn.
+      requestAnimationFrame(() => {
+        if (held.current?.loop === loop) setDragging({ loop, from })
+      })
+    },
+    end: () => {
+      held.current = undefined
+      setDragging(undefined)
+      setOver(undefined)
+    },
+    setOver,
+  }
+}
+
+// A loop's Move to… menu (#1485): every card it could go to, and the one it
+// is on, shown and not offered. The arrow keys walk it, Escape or a click
+// elsewhere closes it.
+function MoveMenu({
+  loop,
+  targets,
+  onPick,
+  onClose,
+}: {
+  loop: string
+  targets: { key: string; label: string; current: boolean }[]
+  onPick: (key: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const items = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+  // The latest onClose, read when it fires: the page redraws as the fleet
+  // streams in, and the effect below must run once, or each redraw would
+  // pull the focus back to the first item.
+  const close = useRef(onClose)
+  useEffect(() => {
+    close.current = onClose
+  })
+  useEffect(() => {
+    ref.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close.current()
+    }
+    document.addEventListener('pointerdown', away)
+    return () => document.removeEventListener('pointerdown', away)
+  }, [])
+  const keys = (e: React.KeyboardEvent) => {
+    const all = items()
+    const at = all.indexOf(document.activeElement as HTMLButtonElement)
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      all[(at + step + all.length) % all.length]?.focus()
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault()
+      all[e.key === 'Home' ? 0 : all.length - 1]?.focus()
+    } else if (e.key === 'Escape' || e.key === 'Tab') {
+      e.preventDefault()
+      onClose()
+    }
+  }
+  return (
+    <div ref={ref} className="move-menu" role="menu" aria-label={`Move ${loop} to`} onKeyDown={keys}>
+      <div className="move-menu-title" aria-hidden>
+        Move {loop} to…
+      </div>
+      {targets.map((target) => (
+        <button
+          key={target.key || '-'}
+          type="button"
+          role="menuitem"
+          disabled={target.current}
+          onClick={() => onPick(target.key)}
+        >
+          {target.label}
+          {target.current && ' · now'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function TeamCard({
   group,
   loops,
@@ -111,6 +262,7 @@ function TeamCard({
   manage,
   hidden,
   onOpen,
+  moves,
 }: {
   group: TeamGroup
   loops: LoopView[]
@@ -119,14 +271,57 @@ function TeamCard({
   // The loop open in the middle of the page, whose place stays empty.
   hidden?: string
   onOpen: (name: string, el: HTMLElement) => void
+  moves: LoopMoves
 }) {
   const { team } = group
   const [editing, setEditing] = useState(false)
+  const [menuFor, setMenuFor] = useState<string>()
+  const { dragging } = moves
+  // Whether a loop dragged now would land here: any card but its own.
+  const takes = () => {
+    const drag = moves.held()
+    return !!drag && drag.from !== group.key
+  }
+  const over = !!dragging && dragging.from !== group.key && moves.over === group.key
+  const label = team ? team.name : 'no team'
   const slots = useRef(new Map<string, HTMLElement>())
   const faults = group.loops.filter(needsYou).length
   const working = group.loops.filter((loop) => inTurn(loop.state)).length
+  const orb = (name: string) => {
+    const el = slots.current.get(name)?.firstElementChild
+    return el instanceof HTMLElement ? el : undefined
+  }
+  // The moved loop's circle, once this card is the one drawing it: until the
+  // cards are redrawn from the hub it is still on the card it left.
+  const { focusOn, focused } = moves
+  useEffect(() => {
+    if (focusOn?.card !== group.key) return
+    const el = orb(focusOn.loop)
+    if (!el) return
+    el.focus({ preventScroll: true })
+    focused()
+  })
   return (
-    <section className={`team-card${team ? '' : ' loose'}${faults > 0 ? ' alert' : ''}`}>
+    <section
+      className={`team-card${team ? '' : ' loose'}${faults > 0 ? ' alert' : ''}${over ? ' drop-target' : ''}`}
+      onDragOver={(e) => {
+        if (!takes()) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (!over) moves.setOver(group.key)
+      }}
+      onDragLeave={(e) => {
+        // Leaving for one of its own children is still over the card.
+        if (over && !e.currentTarget.contains(e.relatedTarget as Node | null)) moves.setOver(undefined)
+      }}
+      onDrop={(e) => {
+        const drag = moves.held()
+        if (!drag || drag.from === group.key) return
+        e.preventDefault()
+        moves.end()
+        void moves.move(drag.loop, drag.from, group.key)
+      }}
+    >
       <header className="team-card-head">
         <h2>
           {team && <span className="team-card-kind">team</span>}
@@ -162,7 +357,7 @@ function TeamCard({
             {group.loops.map((loop) => (
               <span
                 key={loop.id}
-                className="orb-slot"
+                className={`orb-slot${dragging?.loop === loop.name || moves.pending === loop.name ? ' moving' : ''}`}
                 style={{ visibility: hidden === loop.name ? 'hidden' : undefined }}
                 ref={(el) => {
                   if (el) slots.current.set(loop.name, el)
@@ -173,14 +368,46 @@ function TeamCard({
                   loop={loop}
                   spentToday={spentToday}
                   onOpen={() => {
-                    const el = slots.current.get(loop.name)?.firstElementChild
-                    if (el instanceof HTMLElement) onOpen(loop.name, el)
+                    const el = orb(loop.name)
+                    if (el) onOpen(loop.name, el)
                   }}
+                  drag={
+                    manage && moves.possible && !moves.pending
+                      ? { onStart: () => moves.start(loop.name, group.key), onEnd: moves.end }
+                      : undefined
+                  }
+                  onMenu={
+                    manage && moves.possible && !moves.pending ? () => setMenuFor(loop.name) : undefined
+                  }
                 />
+                {menuFor === loop.name && (
+                  <MoveMenu
+                    loop={loop.name}
+                    targets={moves.targets(group.key)}
+                    onPick={(to) => {
+                      setMenuFor(undefined)
+                      void moves.move(loop.name, group.key, to, true)
+                    }}
+                    onClose={() => {
+                      setMenuFor(undefined)
+                      orb(loop.name)?.focus({ preventScroll: true })
+                    }}
+                  />
+                )}
               </span>
             ))}
             {manage && (team ? <AddLoop team={team} loops={loops} /> : <NewLoopOrb />)}
           </div>
+          {over && dragging && (
+            <p className="team-card-drop">
+              Drop to move {dragging.loop} to {label}
+            </p>
+          )}
+          {moves.refusal?.card === group.key && (
+            <div className="form-error" role="alert">
+              {moves.refusal.text}
+            </div>
+          )}
         </>
       )}
     </section>

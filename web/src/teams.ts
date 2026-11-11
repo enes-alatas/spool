@@ -35,6 +35,21 @@ export function loopsToAdd(
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+// Where a loop on the card `from` can be moved (#1485), in the cards'
+// order: each team, then no team, with the card it is on marked as such
+// rather than left out, so the list says where the loop is now. A card's key
+// is its team's name, '' for the loops in none.
+export function moveTargets(
+  teams: Pick<Team, 'name'>[],
+  from: string,
+): { key: string; label: string; current: boolean }[] {
+  return [...teams.map((team) => team.name), ''].map((key) => ({
+    key,
+    label: key || 'No team',
+    current: key === from,
+  }))
+}
+
 // A loop's team as the room names it.
 export function teamLabel(team: string): string {
   return team || 'no team'

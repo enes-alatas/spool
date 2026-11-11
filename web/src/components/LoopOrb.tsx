@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router'
 import type { LoopView } from '../api'
 import { formatUsd, inTurn, nextWake, spendShare } from '../format'
@@ -116,19 +116,52 @@ export function LoopOrb({
   loop,
   spentToday,
   onOpen,
+  drag,
+  onMenu,
 }: {
   loop: LoopView
   spentToday: number
   onOpen: () => void
+  // An admin's circle can be dragged to another card (#1485); a click still
+  // opens it, since a drag only starts once the pointer moves.
+  drag?: { onStart: () => void; onEnd: () => void }
+  // Its Move to… menu, from a right click or the keyboard's menu key or
+  // Shift+F10, which the browser reports as a context menu, or from a long
+  // press on a touch screen, timed here: Safari on iOS reports none.
+  onMenu?: () => void
 }) {
   const fault = needsYou(loop)
+  const press = useLongPress(onMenu)
   return (
     <button
       type="button"
       className={`orb${fault ? ' fault' : ''}${!fault && !inTurn(loop.state) ? ' calm' : ''}`}
       style={{ width: ORB, height: ORB }}
       aria-label={`${loop.name}: ${orbLabel(loop)}${loop.undelivered > 0 ? `, ${loop.undelivered} undelivered` : ''}`}
-      onClick={onOpen}
+      aria-haspopup={onMenu ? 'menu' : undefined}
+      aria-keyshortcuts={onMenu ? 'Shift+F10' : undefined}
+      onClick={() => {
+        // The finger lifting after a long press is not a tap.
+        if (!press.fired()) onOpen()
+      }}
+      {...press.handlers}
+      draggable={drag ? true : undefined}
+      onDragStart={
+        drag &&
+        ((e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', loop.name)
+          drag.onStart()
+        })
+      }
+      onDragEnd={drag?.onEnd}
+      onContextMenu={
+        onMenu &&
+        ((e) => {
+          e.preventDefault()
+          onMenu()
+        })
+      }
     >
       <Rings loop={loop} spentToday={spentToday} big={false} />
       <span className="orb-initial" aria-hidden>
@@ -141,6 +174,52 @@ export function LoopOrb({
       </span>
     </button>
   )
+}
+
+const LONG_PRESS_MS = 500
+// A finger that moves further than this is scrolling, not holding.
+const LONG_PRESS_SLOP = 10
+
+// A long press of a finger, as a menu opener. Android also reports one as a
+// context menu, so the menu may be asked to open twice, which it takes as
+// once.
+function useLongPress(onPress: (() => void) | undefined) {
+  const timer = useRef<number>()
+  const at = useRef<{ x: number; y: number }>()
+  const fired = useRef(false)
+  const cancel = () => {
+    window.clearTimeout(timer.current)
+    timer.current = undefined
+  }
+  useEffect(() => cancel, [])
+  if (!onPress) return { fired: () => false, handlers: {} }
+  return {
+    fired: () => {
+      const was = fired.current
+      fired.current = false
+      return was
+    },
+    handlers: {
+      onPointerDown: (e: React.PointerEvent) => {
+        fired.current = false
+        if (e.pointerType !== 'touch') return
+        at.current = { x: e.clientX, y: e.clientY }
+        cancel()
+        timer.current = window.setTimeout(() => {
+          timer.current = undefined
+          fired.current = true
+          onPress()
+        }, LONG_PRESS_MS)
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        const from = at.current
+        if (timer.current === undefined || !from) return
+        if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > LONG_PRESS_SLOP) cancel()
+      },
+      onPointerUp: cancel,
+      onPointerCancel: cancel,
+    },
+  }
 }
 
 const GLIDE = 'cubic-bezier(0.22, 1.15, 0.36, 1)'
