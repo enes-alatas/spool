@@ -1,5 +1,5 @@
 import { ApiError, type Channel, type LoopView, type Team } from './api'
-import { validChannelName } from './channels'
+import { loopList, validChannelName } from './channels'
 
 // The rules the Fleet page's team cards check before it asks the hub, mirrored from the
 // hub (a team's name follows the loop-name rule, ADR-0066), so a form can
@@ -124,46 +124,94 @@ export function suggestedHomeChannel(team: string): string {
 // again (ADR-0068, store.RetiredChannel).
 export const RETIRED_CHANNEL = 'group'
 
-// Why the hub would refuse a new team's home channel, in the form's words,
-// or '' when it wouldn't. The name taken by another channel is checked
-// against the channels the room has, so it is said before the create.
-export function homeChannelProblem(home: string, channels: Pick<Channel, 'name'>[] | undefined): string {
+// Why the hub would refuse a new team's home channel as a name to make, in
+// the form's words, or '' when it wouldn't. A name another channel has is
+// the offer's to say (homeChannelOffer).
+export function homeChannelProblem(home: string): string {
   if (home === '') return ''
   if (home === RETIRED_CHANNEL)
     return `No channel can be named ${RETIRED_CHANNEL}. Give this team's home channel another name.`
   if (!validChannelName(home))
     return 'A channel name is 1 to 32 lowercase letters, digits and dashes, not starting with a dash.'
-  if (channels?.some((channel) => channel.name === home))
-    return `A channel named ${home} already exists. Give this team's home channel another name.`
   return ''
+}
+
+// What a channel that already has the new team's home channel name offers
+// (#1496): a hub channel the team can take as its home, its loops joining
+// the team; one it can't take while some of its loops are in other teams;
+// or another team's channel, which it never can. Read from the channels
+// and loops the room has, so it is said before the create; the hub checks
+// it again (ADR-0068).
+export type HomeOffer =
+  | { kind: 'take'; channel: string; loops: string[] }
+  | { kind: 'blocked'; channel: string; outsiders: { loop: string; team: string }[] }
+  | { kind: 'teams'; channel: string; team: string }
+export function homeChannelOffer(
+  home: string,
+  channels: Pick<Channel, 'name' | 'loops' | 'team'>[] | undefined,
+  loops: Pick<LoopView, 'name' | 'team'>[] | undefined,
+): HomeOffer | undefined {
+  const channel = channels?.find((c) => c.name === home)
+  if (!channel) return undefined
+  if (channel.team) return { kind: 'teams', channel: home, team: channel.team }
+  // Until the loops are read, any of them could be another team's.
+  if (!loops) return undefined
+  const teamOf = new Map(loops.map((loop) => [loop.name, loop.team]))
+  const outsiders = channel.loops
+    .filter((loop) => teamOf.get(loop))
+    .map((loop) => ({ loop, team: teamOf.get(loop) ?? '' }))
+  if (outsiders.length > 0) return { kind: 'blocked', channel: home, outsiders }
+  return { kind: 'take', channel: home, loops: channel.loops }
+}
+
+// Why an offer can't be taken, in the form's words, or '' when it can.
+export function homeOfferProblem(offer: HomeOffer): string {
+  switch (offer.kind) {
+    case 'teams':
+      return `#${offer.channel} is team ${offer.team}'s channel. Give this team's home channel another name.`
+    case 'blocked': {
+      const each = offer.outsiders.map((o) => `@${o.loop} (team ${o.team})`)
+      const named =
+        each.length < 2 ? each.join('') : `${each.slice(0, -1).join(', ')} and ${each[each.length - 1]}`
+      return `#${offer.channel} holds loops in other teams: ${named}. Move them out of the channel or their team first, or give this team's home channel another name.`
+    }
+    case 'take':
+      return ''
+  }
+}
+
+// What taking the channel does, said beside the choice before Create.
+export function homeOfferJoins(offer: Extract<HomeOffer, { kind: 'take' }>): string {
+  if (offer.loops.length === 0) return 'It has no loops yet.'
+  return `${loopList(offer.loops)} ${offer.loops.length === 1 ? 'joins' : 'join'} the team.`
 }
 
 // What the New team form says at its home channel: the hub's refusal while
 // the field still holds the name it refused, since the team's name it
 // follows can move it on; that it is needed, once a name is typed and the
-// field emptied by hand; else what the hub would refuse.
+// field emptied by hand; else what the hub would refuse, a channel of that
+// name it can't take included. One it can take is a choice, not a problem.
 export function newHomeProblem(form: {
   name: string
   home: string
   refused: { home: string; text: string } | undefined
-  channels: Pick<Channel, 'name'>[] | undefined
+  offer: HomeOffer | undefined
 }): string {
   if (form.refused?.home === form.home) return form.refused.text
   if (form.name !== '' && form.home === '') return "Give this team's home channel a name."
-  return homeChannelProblem(form.home, form.channels)
+  return homeChannelProblem(form.home) || (form.offer ? homeOfferProblem(form.offer) : '')
 }
 
-// The hub's refusal of a new team's home channel, in the form's words, or
-// '' when the refusal is about something else. A channel made since the
-// room last read the list is still caught here.
+// The hub's refusal of a new team's home channel as a name to make, in the
+// form's words, or '' when the refusal is about something else. A channel
+// that exists, or changed, since the room read the list is not said here:
+// the form reads the channels and loops again and the offer says it.
 export function homeChannelRefusal(err: unknown, home: string): string {
   if (!(err instanceof ApiError)) return ''
   switch (err.code) {
-    case 'channel_exists':
-      return `A channel named ${home} already exists. Give this team's home channel another name.`
     case 'channel_reserved':
     case 'channel_name_invalid':
-      return homeChannelProblem(home, []) || err.message
+      return homeChannelProblem(home) || err.message
     default:
       return ''
   }

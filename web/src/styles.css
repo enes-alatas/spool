@@ -6743,3 +6743,28 @@ button.orb:focus-visible .orb-peek {
   flex: 1;
   min-width: 0;
 }
+/* What to do with a channel that already has the new team's home channel
+   name (#1496): take it as the team's home, or name another. */
+.team-form-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+}
+.team-form-choice label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+.team-form-choice input {
+  margin-top: 3px;
+  accent-color: var(--text);
+}
+.team-form-choice .team-form-note {
+  display: block;
+  margin-top: 2px;
+}

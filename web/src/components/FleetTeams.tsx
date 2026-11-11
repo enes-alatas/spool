@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type LoopView, type Team } from '../api'
+import { api, ApiError, type LoopView, type Team } from '../api'
 import { channelRefusal, descriptionLength, homeChannelOptions, loopsNotInTeam } from '../channels'
 import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
@@ -14,7 +14,9 @@ import {
   teamDeleteRefusal,
   teamGroups,
   validTeamName,
+  homeChannelOffer,
   homeChannelRefusal,
+  homeOfferJoins,
   newHomeProblem,
   suggestedHomeChannel,
   type TeamGroup,
@@ -574,6 +576,14 @@ function NewTeamCard() {
   )
 }
 
+// The New team form's id, which its fields' ids are made from.
+const NEW_TEAM_FORM = 'team-new'
+// A team form's home channel field.
+const homeFieldId = (form: string) => `${form}-home`
+// Refusals that come from a channel changed since the page read it, which
+// the reloaded offer says in the form's words.
+const OFFER_SAYS = new Set(['channel_exists', 'channel_in_other_team', 'channel_loops_in_other_team'])
+
 // A team made from its name and description, in a popup over the page,
 // from the Teams view's card or the List view's button (#1484). Typed work
 // is kept from a stray backdrop click or Escape; Cancel and the ✕ still
@@ -592,6 +602,15 @@ export function NewTeamDialog({
   const [ownHome, setOwnHome] = useState<string>()
   const home = ownHome ?? suggestedHomeChannel(name)
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels })
+  const loops = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // A channel that already has the name, which the team may take as its
+  // home (#1496), and what the operator chose for it: said only while the
+  // field still holds the name it was chosen for.
+  const offer = homeChannelOffer(home, channels.data, loops.data)
+  const [chose, setChose] = useState<{ home: string; take: boolean }>()
+  const choice = chose?.home === home ? chose : undefined
+  const taking = offer?.kind === 'take' && !!choice?.take
+  const qc = useQueryClient()
   const [error, setError] = useState('')
   // The hub's refusal of a home channel, said only while the field still
   // holds the name it refused: the name it follows can move it on.
@@ -600,20 +619,42 @@ export function NewTeamDialog({
   // Said once a name is typed, not before: an empty field isn't a mistake.
   const badName = name !== '' && !validTeamName(name)
   const tooLong = descriptionLength(description) > TEAM_DESCRIPTION_MAX
-  const homeProblem = newHomeProblem({ name, home, refused: homeRefused, channels: channels.data })
+  const homeProblem = newHomeProblem({ name, home, refused: homeRefused, offer })
 
   const create = async () => {
     setBusy(true)
     setError('')
     try {
-      await api.addTeam({ name, description: description.trim(), home_channel: home })
+      await api.addTeam(
+        taking
+          ? { name, description: description.trim(), from_channel: home }
+          : { name, description: description.trim(), home_channel: home },
+      )
       refresh()
+      void qc.invalidateQueries({ queryKey: ['channels'] })
       onCreated?.(name)
       onClose()
     } catch (err) {
-      const refused = homeChannelRefusal(err, home)
-      if (refused) setHomeRefused({ home, text: refused })
-      else setError(errorText(err))
+      // The channels or their loops changed since the page read them: read
+      // them again, so the offer is the hub's as it is now.
+      if (err instanceof ApiError && err.code.startsWith('channel_')) {
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ['channels'] }),
+          qc.invalidateQueries({ queryKey: ['loops'] }),
+        ])
+      }
+      const code = err instanceof ApiError ? err.code : ''
+      if (OFFER_SAYS.has(code)) {
+        // The channel was made, given to a team, or took another team's
+        // loop since the page read it: read again, the offer says it now.
+      } else if (code === 'channel_not_found') {
+        setChose(undefined)
+        setError(`#${home} no longer exists. Create again to make it new as this team's home channel.`)
+      } else {
+        const refused = homeChannelRefusal(err, home)
+        if (refused) setHomeRefused({ home, text: refused })
+        else setError(errorText(err))
+      }
       setBusy(false)
     }
   }
@@ -627,7 +668,7 @@ export function NewTeamDialog({
       onClose={onClose}
     >
       <TeamForm
-        id="team-new"
+        id={NEW_TEAM_FORM}
         name={name}
         description={description}
         onName={(value) => {
@@ -644,13 +685,58 @@ export function NewTeamDialog({
             setOwnHome(value)
           },
           problem: homeProblem,
+          note: offer?.kind === 'take' && !homeProblem ? `#${home} already exists.` : undefined,
+          choice:
+            offer?.kind === 'take' && !homeProblem ? (
+              <fieldset className="team-form-choice">
+                <legend className="sr-only">What to do with #{home}</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name={`${NEW_TEAM_FORM}-home-choice`}
+                    checked={choice?.take === true}
+                    onChange={() => setChose({ home, take: true })}
+                  />
+                  <span>
+                    Make #{home} this team's home channel
+                    <span className="team-form-note">
+                      It keeps its history, members and rooms. {homeOfferJoins(offer)}
+                    </span>
+                  </span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name={`${NEW_TEAM_FORM}-home-choice`}
+                    checked={choice?.take === false}
+                    onChange={() => {
+                      setChose({ home, take: false })
+                      const field = document.getElementById(homeFieldId(NEW_TEAM_FORM))
+                      if (field instanceof HTMLInputElement) {
+                        field.focus()
+                        field.select()
+                      }
+                    }}
+                  />
+                  <span>Give this team's home channel another name</span>
+                </label>
+              </fieldset>
+            ) : undefined,
         }}
       >
         <button
           type="button"
           className="btn primary sm"
           onClick={create}
-          disabled={busy || !name || badName || tooLong || !home || !!homeProblem}
+          disabled={
+            busy ||
+            !name ||
+            badName ||
+            tooLong ||
+            !home ||
+            !!homeProblem ||
+            (offer?.kind === 'take' && !taking)
+          }
         >
           {busy ? 'Creating…' : 'Create'}
         </button>
@@ -697,7 +783,15 @@ function TeamForm({
   home?: Picker
   // The home channel a new team makes, by name, and why the hub would
   // refuse it, '' for nothing.
-  newHome?: { value: string; onChange: (value: string) => void; problem: string }
+  // A channel that already has the name adds what it says in place of the
+  // field's help, and the choice it offers (#1496).
+  newHome?: {
+    value: string
+    onChange: (value: string) => void
+    problem: string
+    note?: string
+    choice?: React.ReactNode
+  }
   children: React.ReactNode
 }) {
   return (
@@ -731,13 +825,13 @@ function TeamForm({
       />
       {newHome && (
         <>
-          <label htmlFor={`${id}-home`} className="team-form-label">
+          <label htmlFor={homeFieldId(id)} className="team-form-label">
             Home channel
           </label>
           <div className="team-form-home">
             <span aria-hidden>#</span>
             <input
-              id={`${id}-home`}
+              id={homeFieldId(id)}
               className="mono"
               value={newHome.value}
               maxLength={32}
@@ -750,8 +844,10 @@ function TeamForm({
           </div>
           <div id={`${id}-home-note`} className={`team-form-note${newHome.problem ? ' bad' : ''}`}>
             {newHome.problem ||
+              newHome.note ||
               "Made with the team: its loops talk to each other here. It's named after the team unless you change it."}
           </div>
+          {newHome.choice}
         </>
       )}
       {home && (

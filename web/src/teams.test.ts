@@ -3,7 +3,10 @@ import { ApiError, type LoopView, type Team } from './api'
 import {
   defaultFleetLayout,
   homeChannelProblem,
+  homeChannelOffer,
   homeChannelRefusal,
+  homeOfferJoins,
+  homeOfferProblem,
   newHomeProblem,
   suggestedHomeChannel,
   loopsToAdd,
@@ -14,6 +17,7 @@ import {
   teamDeleteRefusal,
   teamGroups,
   teamLabel,
+  type HomeOffer,
   validTeamName,
 } from './teams'
 
@@ -169,42 +173,89 @@ describe('moveTargets', () => {
 })
 
 describe("a new team's home channel (#1494)", () => {
-  const channels = [{ name: 'docs' }, { name: 'fleet' }]
   it('is named after the team, its underscores read as dashes', () => {
     expect(suggestedHomeChannel('evals')).toBe('evals')
     expect(suggestedHomeChannel('eval_skills')).toBe('eval-skills')
   })
-  it('says what the hub would refuse, in the form’s words', () => {
-    expect(homeChannelProblem('evals', channels)).toBe('')
-    expect(homeChannelProblem('', channels)).toBe('')
-    expect(homeChannelProblem('docs', channels)).toBe(
-      "A channel named docs already exists. Give this team's home channel another name.",
-    )
-    expect(homeChannelProblem('group', channels)).toMatch(/^No channel can be named group/)
-    expect(homeChannelProblem('eval_skills', channels)).toMatch(/not starting with a dash/)
-    // Until the room has the channel list, a taken name is the hub's to say.
-    expect(homeChannelProblem('docs', undefined)).toBe('')
+  it('says what the hub would refuse of a name to make, in the form’s words', () => {
+    expect(homeChannelProblem('evals')).toBe('')
+    expect(homeChannelProblem('')).toBe('')
+    expect(homeChannelProblem('group')).toMatch(/^No channel can be named group/)
+    expect(homeChannelProblem('eval_skills')).toMatch(/not starting with a dash/)
   })
   it("turns the hub's home-channel refusals into the form's words, and leaves the rest", () => {
     const refused = (code: string) => new ApiError(409, 'raw', code)
-    expect(homeChannelRefusal(refused('channel_exists'), 'docs')).toMatch(
-      /^A channel named docs already exists/,
-    )
     expect(homeChannelRefusal(refused('channel_reserved'), 'group')).toMatch(/^No channel can be named group/)
+    // Said by the reloaded offer instead (homeChannelOffer).
+    expect(homeChannelRefusal(refused('channel_exists'), 'docs')).toBe('')
+    expect(homeChannelRefusal(refused('channel_loops_in_other_team'), 'docs')).toBe('')
     expect(homeChannelRefusal(refused('team_exists'), 'docs')).toBe('')
     expect(homeChannelRefusal(new Error('network'), 'docs')).toBe('')
   })
   it("says the hub's refusal only while the field holds the name it refused", () => {
     const refused = { home: 'ops', text: 'A channel named ops already exists.' }
-    const form = { name: 'ops', home: 'ops', refused, channels: [] }
+    const form = { name: 'ops', home: 'ops', refused, offer: undefined }
     expect(newHomeProblem(form)).toBe(refused.text)
     // The name moves the home on: the refusal was about another name.
     expect(newHomeProblem({ ...form, name: 'ops2', home: 'ops2' })).toBe('')
   })
   it('says the home channel is needed once the field is emptied by hand', () => {
-    expect(newHomeProblem({ name: 'ops', home: '', refused: undefined, channels: [] })).toBe(
+    expect(newHomeProblem({ name: 'ops', home: '', refused: undefined, offer: undefined })).toBe(
       "Give this team's home channel a name.",
     )
-    expect(newHomeProblem({ name: '', home: '', refused: undefined, channels: [] })).toBe('')
+    expect(newHomeProblem({ name: '', home: '', refused: undefined, offer: undefined })).toBe('')
+  })
+})
+
+describe("an existing channel as a new team's home (#1496)", () => {
+  const channels = [
+    { name: 'docs', loops: ['gardener', 'watcher'], team: '' },
+    { name: 'empty', loops: [], team: '' },
+    { name: 'mixed', loops: ['courier', 'gardener'], team: '' },
+    { name: 'ops-room', loops: ['courier'], team: 'ops' },
+  ]
+  const loops = [
+    { name: 'gardener', team: '' },
+    { name: 'watcher', team: '' },
+    { name: 'courier', team: 'ops' },
+  ]
+  it('is offered for a hub channel whose loops are in no team, naming the loops that join', () => {
+    const offer = homeChannelOffer('docs', channels, loops)
+    expect(offer).toEqual({ kind: 'take', channel: 'docs', loops: ['gardener', 'watcher'] })
+    expect(homeOfferJoins(offer as Extract<HomeOffer, { kind: 'take' }>)).toBe(
+      '@gardener and @watcher join the team.',
+    )
+    const empty = homeChannelOffer('empty', channels, loops) as Extract<HomeOffer, { kind: 'take' }>
+    expect(homeOfferJoins(empty)).toBe('It has no loops yet.')
+    expect(newHomeProblem({ name: 'docs', home: 'docs', refused: undefined, offer })).toBe('')
+  })
+  it('is not offered while the channel holds a loop of another team, which it names with its team', () => {
+    const offer = homeChannelOffer('mixed', channels, loops)
+    expect(offer).toEqual({
+      kind: 'blocked',
+      channel: 'mixed',
+      outsiders: [{ loop: 'courier', team: 'ops' }],
+    })
+    expect(newHomeProblem({ name: 'mixed', home: 'mixed', refused: undefined, offer })).toBe(
+      "#mixed holds loops in other teams: @courier (team ops). Move them out of the channel or their team first, or give this team's home channel another name.",
+    )
+  })
+  it("is never offered for another team's channel", () => {
+    const offer = homeChannelOffer('ops-room', channels, loops)
+    expect(offer).toEqual({ kind: 'teams', channel: 'ops-room', team: 'ops' })
+    expect(homeOfferProblem(offer as HomeOffer)).toBe(
+      "#ops-room is team ops's channel. Give this team's home channel another name.",
+    )
+  })
+  it('is nothing for a name no channel has, or before the channels are read', () => {
+    expect(homeChannelOffer('fresh', channels, loops)).toBeUndefined()
+    expect(homeChannelOffer('docs', undefined, loops)).toBeUndefined()
+    // Until the loops are read, any of them could be another team's.
+    expect(homeChannelOffer('mixed', channels, undefined)).toBeUndefined()
+    expect(homeChannelOffer('ops-room', channels, undefined)).toEqual({
+      kind: 'teams',
+      channel: 'ops-room',
+      team: 'ops',
+    })
   })
 })
