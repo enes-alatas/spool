@@ -6732,3 +6732,14 @@ button.orb:focus-visible .orb-peek {
     transition: none;
   }
 }
+/* a new team's home channel, by name, after its channel mark (#1494) */
+.team-form-home {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.team-form-home input {
+  flex: 1;
+  min-width: 0;
+}

@@ -14,6 +14,9 @@ import {
   teamDeleteRefusal,
   teamGroups,
   validTeamName,
+  homeChannelRefusal,
+  newHomeProblem,
+  suggestedHomeChannel,
   type TeamGroup,
 } from '../teams'
 import { CharCount } from './CharCount'
@@ -585,22 +588,32 @@ export function NewTeamDialog({
   const refresh = useRefresh()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  // The home channel follows the name until it is typed in itself (#1494).
+  const [ownHome, setOwnHome] = useState<string>()
+  const home = ownHome ?? suggestedHomeChannel(name)
+  const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels })
   const [error, setError] = useState('')
+  // The hub's refusal of a home channel, said only while the field still
+  // holds the name it refused: the name it follows can move it on.
+  const [homeRefused, setHomeRefused] = useState<{ home: string; text: string }>()
   const [busy, setBusy] = useState(false)
   // Said once a name is typed, not before: an empty field isn't a mistake.
   const badName = name !== '' && !validTeamName(name)
   const tooLong = descriptionLength(description) > TEAM_DESCRIPTION_MAX
+  const homeProblem = newHomeProblem({ name, home, refused: homeRefused, channels: channels.data })
 
   const create = async () => {
     setBusy(true)
     setError('')
     try {
-      await api.addTeam({ name, description: description.trim() })
+      await api.addTeam({ name, description: description.trim(), home_channel: home })
       refresh()
       onCreated?.(name)
       onClose()
     } catch (err) {
-      setError(errorText(err))
+      const refused = homeChannelRefusal(err, home)
+      if (refused) setHomeRefused({ home, text: refused })
+      else setError(errorText(err))
       setBusy(false)
     }
   }
@@ -625,12 +638,19 @@ export function NewTeamDialog({
         badName={badName}
         tooLong={tooLong}
         error={error}
+        newHome={{
+          value: home,
+          onChange: (value) => {
+            setOwnHome(value)
+          },
+          problem: homeProblem,
+        }}
       >
         <button
           type="button"
           className="btn primary sm"
           onClick={create}
-          disabled={busy || !name || badName || tooLong}
+          disabled={busy || !name || badName || tooLong || !home || !!homeProblem}
         >
           {busy ? 'Creating…' : 'Create'}
         </button>
@@ -660,6 +680,7 @@ function TeamForm({
   error,
   login,
   home,
+  newHome,
   children,
 }: {
   id: string
@@ -674,6 +695,9 @@ function TeamForm({
   login?: Picker
   // The team's home channel picker, on an edit.
   home?: Picker
+  // The home channel a new team makes, by name, and why the hub would
+  // refuse it, '' for nothing.
+  newHome?: { value: string; onChange: (value: string) => void; problem: string }
   children: React.ReactNode
 }) {
   return (
@@ -705,6 +729,31 @@ function TeamForm({
         placeholder="What it is for (optional)"
         aria-invalid={tooLong}
       />
+      {newHome && (
+        <>
+          <label htmlFor={`${id}-home`} className="team-form-label">
+            Home channel
+          </label>
+          <div className="team-form-home">
+            <span aria-hidden>#</span>
+            <input
+              id={`${id}-home`}
+              className="mono"
+              value={newHome.value}
+              maxLength={32}
+              onChange={(e) => newHome.onChange(e.target.value)}
+              aria-invalid={!!newHome.problem}
+              aria-describedby={`${id}-home-note`}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <div id={`${id}-home-note`} className={`team-form-note${newHome.problem ? ' bad' : ''}`}>
+            {newHome.problem ||
+              "Made with the team: its loops talk to each other here. It's named after the team unless you change it."}
+          </div>
+        </>
+      )}
       {home && (
         <>
           <label htmlFor={`${id}-home`}>Home channel</label>

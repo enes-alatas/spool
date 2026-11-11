@@ -1865,7 +1865,9 @@ export const api = {
   }) => req<CreatedTeam>('/api/import/prompts-chat/team', { method: 'POST', body: JSON.stringify(team) }),
   teams: () => req<Team[]>('/api/teams'),
   // Refused 400 `team_name_invalid` or 409 `team_exists`.
-  addTeam: (team: { name: string; description: string }) =>
+  // home_channel names the channel made with the team, the team's name when
+  // absent; one that exists is 409 `channel_exists` (#1494).
+  addTeam: (team: { name: string; description: string; home_channel?: string }) =>
     req<Team>('/api/teams', { method: 'POST', body: JSON.stringify(team) }),
   // A rename answers the team under its new name; refused as addTeam is.
   // claude_login '' or 'default' puts the team back on the hub's default; a
