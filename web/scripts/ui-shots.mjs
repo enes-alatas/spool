@@ -431,8 +431,8 @@ const dayFigures = (seed) => {
     turn_duration_ms: { p50: 52000 + seed * 9000, p95: 171000, max: 214000 },
     failures: failed
       ? [
-          { class: 'rate_limit', count: 1 },
-          { class: 'tool_error', count: 1 },
+          { class: 'tool', count: 3 },
+          { class: 'model_request', count: 1 },
         ]
       : [],
     tools: [

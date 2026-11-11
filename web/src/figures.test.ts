@@ -25,7 +25,7 @@ const figures: Figures = {
   cost_usd: 3.36,
   tokens: { input: 51240, output: 18480, cache_read: 2310000, cache_write: 96000 },
   turn_duration_ms: { p50: 41000, p95: 182000, max: 420000 },
-  failures: [{ class: 'rate_limit', count: 2 }],
+  failures: [{ class: 'tool', count: 3 }],
   tools: [
     { name: 'mcp__spool__send_message', calls: 40, failures: 0, duration_ms_p50: 120 },
     { name: 'Bash', calls: 120, failures: 3, duration_ms_p50: 900 },

@@ -218,7 +218,7 @@ function Body({ figures }: { figures: LoopFigures }) {
             'none failed'
           )}
         </Tile>
-        <Tile label="Spend, Langfuse's" value={formatUsd(f.cost_usd)}>
+        <Tile label="Spend" value={formatUsd(f.cost_usd)}>
           {formatUsd(each.cost)} a turn
         </Tile>
         <Tile label="Tokens a turn" value={`${formatTokens(each.input)} in`}>
