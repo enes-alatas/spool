@@ -2,7 +2,7 @@ module github.com/enes-alatas/spool
 
 go 1.25.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 // Hub listeners take plain TCP, not the MPTCP Go has defaulted to since 1.24
 // (ADR-0062).
