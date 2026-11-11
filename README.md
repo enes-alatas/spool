@@ -70,7 +70,7 @@ A release carries the built binary and the two images, so this replaces step 1. 
 
 ```bash
 v=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/enes-alatas/spool/releases/latest); v=${v##*/}
-p=linux_amd64                                # or linux_arm64, darwin_arm64 (Apple silicon), darwin_amd64
+p=$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')   # this machine's: linux_amd64, linux_arm64, darwin_arm64 or darwin_amd64
 mkdir -p ~/spool/bin && cd ~/spool
 base=https://github.com/enes-alatas/spool/releases/download/$v
 curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
