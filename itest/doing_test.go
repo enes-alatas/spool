@@ -87,3 +87,42 @@ func TestAFreshSessionStartsWithNoDoing(t *testing.T) {
 		t.Errorf("the successor session's row shows doing %q, want none until it sets one", fresh.Doing)
 	}
 }
+
+// Every tick names the doing trailer beside the next-wake one, in the
+// self-paced and the interval wording alike (#1514), and a loop that
+// answers a tick with no doing line keeps the one it had.
+func TestATickRemindsALoopOfItsDoing(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+	for name, pacing := range map[string]string{"selfpaced": "self", "interval": "fixed"} {
+		ws := workspaceWithScript(t, "starting [doing: first task]\n"+
+			"nothing new\n")
+		hub.createLoop(name, map[string]any{"workspace_path": ws, "pacing": pacing})
+		set := hub.waitDoing(name, "first task")
+		hub.waitState(name, "asleep", 30*time.Second)
+
+		hub.mustJSON("POST", "/api/loops/"+name+"/wake", nil, nil)
+		hub.waitTurn(name, 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "nothing new") })
+		if kept := hub.loop(name); kept.Doing != set.Doing || kept.DoingAt != set.DoingAt {
+			t.Errorf("%s after a tick answered with no doing: %q at %d, want %q kept at %d",
+				name, kept.Doing, kept.DoingAt, set.Doing, set.DoingAt)
+		}
+
+		var ticks int
+		for _, tr := range hub.completed(name) {
+			if tr.Trigger != "tick" {
+				continue
+			}
+			ticks++
+			text := strings.Join(hub.turnInputs(name)[tr.ID], "\n")
+			for _, want := range []string{"[next-wake: ", "[doing: ...]", "what you are working on"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s's tick lacks %q:\n%s", name, want, text)
+				}
+			}
+		}
+		if ticks < 2 {
+			t.Errorf("%s ran %d ticks, want the creation tick and the wake", name, ticks)
+		}
+	}
+}

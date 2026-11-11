@@ -1095,3 +1095,22 @@ func TestTheCatalogNamesTheLoopsTeam(t *testing.T) {
 // fleetChannel is a channel every loop of a test hub is in, as an upgraded
 // hub's fleet channel became (ADR-0068).
 var fleetChannel = Channel{Name: "fleet"}
+
+// A tick reminds a loop of both its trailers, in either pacing's wording
+// (#1514): the next wake, and the doing line beside it.
+func TestTickNamesBothTrailers(t *testing.T) {
+	now := time.Date(2026, 11, 11, 17, 0, 0, 0, time.UTC)
+	for _, pacing := range []string{store.PacingSelf, store.PacingFixed} {
+		t.Run(pacing, func(t *testing.T) {
+			env := TickEnvelope(now, &store.Loop{Pacing: pacing, MinWakeSec: 300, MaxWakeSec: 14400, TickIntervalSec: 1800})
+			if env.Trigger != store.TriggerTick {
+				t.Errorf("trigger = %q, want %q", env.Trigger, store.TriggerTick)
+			}
+			for _, want := range []string{"[tick · 2026-11-11 17:00 UTC", "[next-wake: ", "(allowed range: 5m–4h)", "[doing: ...]", "what you are working on"} {
+				if !strings.Contains(env.Text, want) {
+					t.Errorf("tick lacks %q:\n%s", want, env.Text)
+				}
+			}
+		})
+	}
+}
