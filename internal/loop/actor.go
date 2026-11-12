@@ -296,6 +296,17 @@ type Actor struct {
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	killedFor    string       // why the hub killed the current process, for the turn it ends
 	backoff      time.Duration
+	// unwritten is the session id mintSession chose, while nothing says the
+	// CLI has written it: a process killed at its init leaves no session
+	// (FIDELITY.md). So a wake whose spawn failed, or whose process died
+	// before the API answered it once, leaves an id with nothing behind it,
+	// and the next wake ends it and begins another instead of resuming what
+	// the CLI never wrote (#1532). A new id can't be in use, so this rests on
+	// nothing the CLI does with an id it has seen. Once a turn has an answer
+	// the session may be on disk, and it is resumed as any other is. A cloud
+	// session is the cloud runtime's to carry on, so a cloud loop never has
+	// one.
+	unwritten string
 	// rotated says the next fresh session succeeds one rotated by choice,
 	// which a cloud loop carries on in its cloud session (#1278). The spawn
 	// it reaches spends it, and so does any other retirement.
@@ -932,6 +943,12 @@ func (actor *Actor) wake() {
 	ctx := context.Background()
 	// the thresholds this wake will judge its turns by, read once
 	actor.armPct, actor.forcePct = RotationThresholds(ctx, actor.deps.Store.Settings(), actor.log())
+	if actor.loop.CurrentSessionID != "" && actor.loop.CurrentSessionID == actor.unwritten {
+		// nothing to resume: end the id and begin another, as a hold of a
+		// first spawn does (#1163)
+		_ = actor.deps.Store.Sessions().End(ctx, actor.unwritten, store.EndReasonCrash, now())
+		actor.loop.CurrentSessionID = ""
+	}
 	fresh := actor.loop.CurrentSessionID == ""
 	prompt := actor.renderPrompt()
 	if fresh {
@@ -1050,12 +1067,16 @@ func (actor *Actor) wake() {
 
 // mintSession gives the loop a fresh claude session id. The id is ours to
 // choose (claude accepts --session-id), so it is recorded before the process
-// exists and survives a spawn failure. A fresh session starts with no
-// doing: the one standing was the last session's, and the row shows none
-// until this one sets its own (#1284).
+// exists. A spawn failure leaves it standing, and the next wake ends it if
+// it is still unwritten. A fresh session starts with no doing: the one
+// standing was the last session's, and the row shows none until this one
+// sets its own (#1284).
 func (actor *Actor) mintSession(ctx context.Context) {
 	sessionID := newUUID()
 	actor.loop.CurrentSessionID = sessionID
+	if actor.loop.Runtime != store.RuntimeCloud {
+		actor.unwritten = sessionID
+	}
 	_ = actor.deps.Store.Sessions().Create(ctx, &store.Session{
 		ID:        sessionID,
 		LoopID:    actor.loop.ID,
@@ -1677,6 +1698,8 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			actor.publishState()
 		}
 	case ev.Type == "assistant":
+		// the API answered, so the CLI may have written the session
+		actor.unwritten = ""
 		// each API call of the turn reports its own usage here; the latest
 		// one is the context-occupancy measure (the result's is summed)
 		if ev.Assistant != nil && ev.Assistant.Usage != (claude.Usage{}) {
@@ -1723,6 +1746,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.backoff = 0
 	}
 	actor.freshSpawn = false
+	actor.unwritten = ""
 	if claude.IsPromptTooLong(res) {
 		actor.recordOversizedBatch()
 	}
