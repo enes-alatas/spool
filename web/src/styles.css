@@ -4049,39 +4049,44 @@ textarea {
   margin-bottom: 14px;
 }
 /* how much of the injected section is spent — its own meter, deliberately
-   not the context gauge's, so the two can diverge */
+   not the context gauge's, so the two can diverge. It is drawn as the plan
+   strip draws a window (#1523): a caps label, a thin line that takes the
+   row's spare width, and the count, all in the text colour until the
+   section nears its limit (warn at three quarters, danger when full). */
 .rules-meter {
-  position: relative;
-  /* a floor, not a fixed height: the label inside is text and grows */
-  min-height: 1.125rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   max-width: 78ch;
-  border-radius: 4px;
-  background: var(--canvas);
-  border: 1px solid var(--hairline);
-  overflow: hidden;
-}
-.rules-meter-bar {
-  height: 100%;
-  background: var(--fill);
-  opacity: 0.5;
-}
-.rules-meter.near .rules-meter-bar {
-  background: var(--active);
-  opacity: 0.55;
-}
-.rules-meter.full .rules-meter-bar {
-  background: var(--danger);
-  opacity: 1;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  color: var(--text);
 }
 .rules-meter-label {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  color: var(--text);
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.rules-meter-bar {
+  flex: 1 1 8rem;
+  align-self: center;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.rules-meter-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.rules-meter.near {
+  color: var(--active);
+}
+.rules-meter.full {
+  color: var(--danger);
 }
 /* ---- connections (#506) ----
    One row per connection: its name, its kind and whether it has a secret on
@@ -4404,9 +4409,6 @@ textarea {
   max-width: 68ch;
 }
 .rule-item {
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 12px;
 }
@@ -6202,11 +6204,12 @@ textarea {
   padding: 18px 20px 16px;
 }
 /* The team cards, the plan strip over them, the loop page's side panels and
-   the channel cards are glass (#1411, #1445, #1521, #1522). */
+   the rule and channel cards, which share .rule-item, are glass (#1411,
+   #1445, #1521, #1522, #1523). */
 .team-card,
 .plan-strip-frame,
 .side-panel,
-.channel-card {
+.rule-item {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);

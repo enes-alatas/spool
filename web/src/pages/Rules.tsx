@@ -15,9 +15,15 @@ function BudgetBar({ budget, scope, teams }: { budget: RulesBudget; scope: strin
   const full = chars >= budget.section_chars_max
   return (
     <div className="rules-budget">
+      {/* drawn as the plan strip draws a window (#1523): the label, a thin
+          line that stretches, and the count, in the text colour until the
+          section nears its limit */}
       <div className={`rules-meter${full ? ' full' : ratio >= 0.75 ? ' near' : ''}`}>
-        <div className="rules-meter-bar" style={{ width: `${ratio * 100}%` }} />
-        <span className="rules-meter-label">
+        <span className="rules-meter-label">Budget</span>
+        <span className="rules-meter-bar" aria-hidden>
+          <span style={{ width: `${ratio * 100}%` }} />
+        </span>
+        <span className="rules-meter-count">
           {chars} / {budget.section_chars_max} characters{scope && ` for team ${scope}`}
         </span>
       </div>
