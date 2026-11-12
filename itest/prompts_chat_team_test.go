@@ -52,11 +52,13 @@ func startFakePromptsChat(t *testing.T) string {
 
 // An admin imports a prompts.chat team (#1265): the draft names one loop
 // per member, from its role, suffixed where the hub has the name already,
-// and a channel named after the team; created as read, the loops start in
-// that channel with missions that end with their handoffs by the other
-// loops' names. A team naming a bot prompts.chat doesn't have drafts
-// nothing, and a create that fails on its last loop leaves none of them.
-func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
+// and a channel named after the team; created as read, the hub has a team
+// of that name (#1556) whose home is that channel, and the loops start in
+// it, reading their team, with missions that end with their handoffs by
+// the other loops' names. A team naming a bot prompts.chat doesn't have
+// drafts nothing, and a create refused for a taken team, channel or loop
+// name leaves no team, channel or loop.
+func TestATeamImportMakesATeam(t *testing.T) {
 	t.Parallel()
 	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--prompts-chat-base", startFakePromptsChat(t))
 	hub.createLoop("qa", nil)
@@ -95,6 +97,7 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 	}
 
 	var made struct {
+		Team    string     `json:"team"`
 		Channel string     `json:"channel"`
 		Loops   []loopView `json:"loops"`
 	}
@@ -113,6 +116,18 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 	if strings.Join(channel.Loops, " ") != "builder planner qa-2" || channel.Description != "A synthetic team for Spool's tests." {
 		t.Fatalf("the channel holds %q with description %q; want the team's three loops and its description", channel.Loops, channel.Description)
 	}
+	if made.Team != "launch-crew" || made.Channel != "launch-crew" {
+		t.Fatalf("the create answered team %q, channel %q; want launch-crew for both", made.Team, made.Channel)
+	}
+	var team struct {
+		Loops       []string `json:"loops"`
+		HomeChannel string   `json:"home_channel"`
+		Description string   `json:"description"`
+	}
+	hub.mustJSON("GET", "/api/teams/launch-crew", nil, &team)
+	if strings.Join(team.Loops, " ") != "builder planner qa-2" || team.HomeChannel != "launch-crew" || team.Description != "A synthetic team for Spool's tests." {
+		t.Fatalf("the team = %+v; want the three loops, at home in launch-crew, described", team)
+	}
 
 	// the loop runs with the mission the draft wrote
 	hub.scriptLoop("builder", "!sysprompt")
@@ -121,6 +136,7 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 		return strings.Contains(done.ResultText, "Build the pages.")
 	}).ResultText
 	for _, want := range []string{
+		"- You are in the team launch-crew",
 		"You are in the channel launch-crew with @planner and @qa-2.",
 		"- from @planner: Hand the approved plan",
 		"- to @qa-2: Send the build for checks",
@@ -151,6 +167,50 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 	}
 	if resp, _ := hub.do("GET", "/api/channels/second-crew", nil); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("a failed create left its channel: %d", resp.StatusCode)
+	}
+	if resp, _ := hub.do("GET", "/api/teams/second-crew", nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a failed create left its team: %d", resp.StatusCode)
+	}
+
+	// a team or channel of the name asked for is refused by name, and
+	// nothing is made
+	hub.mustJSON("POST", "/api/teams", map[string]any{"name": "taken-team", "home_channel": "taken-home"}, nil)
+	members := []map[string]string{{"name": "lead", "mission": "Lead."}, {"name": "aide", "mission": "Help."}}
+	for _, refused := range []struct {
+		body       map[string]any
+		code, name string
+	}{
+		{map[string]any{"channel": "fresh", "team": "taken-team", "loops": members}, "team_exists", "taken-team"},
+		{map[string]any{"channel": "launch-crew", "team": "fresh", "loops": members}, "channel_exists", "launch-crew"},
+	} {
+		resp, body := hub.do("POST", "/api/import/prompts-chat/team", refused.body)
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), refused.code) || !strings.Contains(string(body), refused.name) {
+			t.Errorf("creating %v: %d %s; want 409 %s naming %s", refused.body, resp.StatusCode, body, refused.code, refused.name)
+		}
+	}
+	if after := hub.loopNames(); strings.Join(after, " ") != strings.Join(before, " ") {
+		t.Fatalf("a refused create left loops %q; had %q", after, before)
+	}
+	for _, path := range []string{"/api/teams/fresh", "/api/channels/fresh"} {
+		if resp, _ := hub.do("GET", path, nil); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("a refused create left %s: %d", path, resp.StatusCode)
+		}
+	}
+}
+
+// A draft names its channel past the names of the hub's teams as well as
+// its channels, so the team its create names after the channel is free
+// (#1556).
+func TestATeamDraftSkipsATeamsName(t *testing.T) {
+	t.Parallel()
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--prompts-chat-base", startFakePromptsChat(t))
+	hub.mustJSON("POST", "/api/teams", map[string]any{"name": "launch-crew", "home_channel": "elsewhere"}, nil)
+	var draft struct {
+		Channel string `json:"channel"`
+	}
+	hub.mustJSON("GET", "/api/import/prompts-chat/team?url="+url.QueryEscape("https://prompts.chat/bots/teams/launch-crew"), nil, &draft)
+	if draft.Channel != "launch-crew-2" {
+		t.Errorf("the draft names channel %q with a team launch-crew on the hub; want launch-crew-2", draft.Channel)
 	}
 }
 

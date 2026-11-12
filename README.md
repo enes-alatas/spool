@@ -112,7 +112,7 @@ https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
 
 ### Start from prompts.chat
 
-New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop takes none. A [team](https://prompts.chat/bots/teams) makes all its loops and the channel they share in one step:
+New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop takes none. A [team](https://prompts.chat/bots/teams) makes a team on the hub in one step: its loops, in a team whose home channel they share:
 
 https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 

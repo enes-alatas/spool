@@ -1,6 +1,6 @@
 # ADR-0063: The hub reads a bot from prompts.chat, on the operator's paste
 
-Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265); 2026-11-06 (item 5: a bot's skills are said to be missing, #1332); 2026-11-07 (items 1, 4 and 5: a skill a bot links on prompts.chat is installed, text only, #1364)
+Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265); 2026-11-06 (item 5: a bot's skills are said to be missing, #1332); 2026-11-07 (items 1, 4 and 5: a skill a bot links on prompts.chat is installed, text only, #1364); 2026-11-12 (item 4: a team import makes a team on the hub, #1556)
 
 ## Context
 
@@ -96,6 +96,24 @@ able to call it point the hub at its own network.
    **Amendment (2026-11-07, #1364):** a create now also takes the skills
    the operator ticked, as the draft carried them (item 5). The mission
    is still taken as read.
+
+   **Amendment (2026-11-12, #1556):** the create makes a team on the
+   hub (ADR-0066), not loose loops in a channel. It takes `team`, the
+   team's name, the channel's when absent, and makes that team with the
+   `channel` as its home channel and its `description`, which the home
+   channel carries too. Every loop is created in the team, so it joins
+   the home channel as a loop put in a team does, and reads its team in
+   its prompt from its first wake. It answers `team` beside `channel`
+   and `loops`. It is still all or nothing: a failure removes the loops
+   it stored, then the team and its home channel. A team or channel of
+   the name is refused by name, 409 `team_exists` or `channel_exists`,
+   and a name the team-name rule refuses is 400 `team_name_invalid`.
+   The draft suffixes its `channel` past the hub's team names as well
+   as its channels', so the default team name is free. Every
+   prompts.chat team import makes a team, whichever dialog posts it.
+   The operator accepted this amendment on 2026-11-13, including team
+   imports from New loop, in a direct message to Quinn, recorded on
+   #1562.
 5. **What the bot's text is.** It is someone else's writing, so it is
    untrusted. The only way it reaches a loop is through the mission the
    operator reads in the draft and chooses to create. From each field it
