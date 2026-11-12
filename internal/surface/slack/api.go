@@ -68,30 +68,37 @@ func (apiErr *APIError) Refused() bool { return !transient[apiErr.Code] }
 // into result, which must carry the envelope's ok and error fields through
 // apiEnvelope.
 func (client *Client) call(ctx context.Context, token, method string, params url.Values, result interface{ envelope() apiEnvelope }) error {
+	_, err := client.callHeader(ctx, token, method, params, result)
+	return err
+}
+
+// callHeader is call that also returns the answer's HTTP header, where
+// Slack names the scopes the token holds.
+func (client *Client) callHeader(ctx context.Context, token, method string, params url.Values, result interface{ envelope() apiEnvelope }) (http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.base+"/"+method, strings.NewReader(params.Encode()))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.http.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return &APIError{Method: method, Code: "ratelimited"}
+		return nil, &APIError{Method: method, Code: "ratelimited"}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("slack %s: HTTP %d", method, resp.StatusCode)
+		return nil, fmt.Errorf("slack %s: HTTP %d", method, resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-		return fmt.Errorf("slack %s: decode: %w", method, err)
+		return nil, fmt.Errorf("slack %s: decode: %w", method, err)
 	}
 	if envelope := result.envelope(); !envelope.OK {
-		return &APIError{Method: method, Code: envelope.Error}
+		return nil, &APIError{Method: method, Code: envelope.Error}
 	}
-	return nil
+	return resp.Header, nil
 }
 
 type apiEnvelope struct {
@@ -276,6 +283,58 @@ func (client *Client) ChannelName(ctx context.Context, botToken, channel string)
 		return "", err
 	}
 	return result.Channel.Name, nil
+}
+
+// joinScope is the scope an app needs to join a public channel by itself.
+// It stays out of the manifest the control room hands out: the operator
+// adds it to opt in to the Join button (ADR-0070).
+const joinScope = "channels:join"
+
+// HoldsScope reports whether the bot token holds scope, by the
+// x-oauth-scopes header Slack answers auth.test with.
+func (client *Client) HoldsScope(ctx context.Context, botToken, scope string) (bool, error) {
+	var result AuthTest
+	header, err := client.callHeader(ctx, botToken, "auth.test", url.Values{}, &result)
+	if err != nil {
+		return false, err
+	}
+	for _, held := range strings.Split(header.Get("X-OAuth-Scopes"), ",") {
+		if strings.TrimSpace(held) == scope {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+type conversationPrivacy struct {
+	apiEnvelope
+	Channel struct {
+		IsPrivate bool `json:"is_private"`
+	} `json:"channel"`
+}
+
+// ChannelPrivate reports whether channel is private. Slack shows an app a
+// private channel only once it is in it, so a channel Slack says it can't
+// find is a private one as far as the app can tell: only an invite brings
+// it in.
+func (client *Client) ChannelPrivate(ctx context.Context, botToken, channel string) (bool, error) {
+	var result conversationPrivacy
+	err := client.call(ctx, botToken, "conversations.info", url.Values{"channel": {channel}}, &result)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == "channel_not_found" {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return result.Channel.IsPrivate, nil
+}
+
+// JoinChannel has the bot token's app join channel by itself. It needs
+// channels:join, and Slack takes it only for a public channel.
+func (client *Client) JoinChannel(ctx context.Context, botToken, channel string) error {
+	var result apiEnvelope
+	return client.call(ctx, botToken, "conversations.join", url.Values{"channel": {channel}}, &result)
 }
 
 // File is a file as Slack describes it on a message event and in

@@ -252,7 +252,7 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 	if sender == nil {
 		return
 	}
-	channel := adapter.roomChannel(ctx, link, loopRecord, event.Channel)
+	channel := adapter.roomChannel(ctx, loopRecord, event.Channel)
 	if channel == "" {
 		link.ignore()
 		return
@@ -277,7 +277,7 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 // one, unbound, under the name Slack gives it; any room still untitled is
 // named the same way. No room binds itself: the operator binds it from the
 // loop page (ADR-0068).
-func (adapter *Adapter) roomChannel(ctx context.Context, link *link, loopRecord *store.Loop, channelID string) string {
+func (adapter *Adapter) roomChannel(ctx context.Context, loopRecord *store.Loop, channelID string) string {
 	now := time.Now().UnixMilli()
 	room, added, err := adapter.store.Rooms().Sight(ctx, &store.Room{LoopID: loopRecord.ID, Surface: store.SurfaceSlack,
 		RoomID: channelID, FirstSeenAt: now})
@@ -331,7 +331,7 @@ func (adapter *Adapter) ingestJoined(ctx context.Context, link *link, event mess
 			"loop", loopRecord.Name, "channel", event.Channel)
 		return
 	}
-	adapter.roomChannel(ctx, link, loopRecord, event.Channel)
+	adapter.roomChannel(ctx, loopRecord, event.Channel)
 }
 
 // ingestLeft forgets this loop's room for a Slack channel its app's bot
