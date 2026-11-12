@@ -12,7 +12,7 @@
 # The base is pinned by its multi-arch index digest, so a release's image is
 # built from a known base rather than whatever the tag points to that day.
 # Dependabot moves the pin (.github/dependabot.yml).
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 # Links the published image to this repository on GitHub's registry (ADR-0052).
 LABEL org.opencontainers.image.source="https://github.com/enes-alatas/spool"
 
