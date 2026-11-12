@@ -68,14 +68,15 @@ describe('FleetTeams', () => {
     expect(html).toContain('aria-label="aster: idle, 1 undelivered"')
     expect(html).toContain('1 working')
   })
-  it('gives an admin the add, edit and new-team controls', () => {
+  it('gives an admin the add and edit controls, and no New team card', () => {
     const html = render(true)
     expect(html).toContain('aria-label="Edit docs"')
     expect(html).toContain('aria-label="Add a loop to docs"')
     expect(html).toContain('>briar</option>')
     expect(html).toContain('>cedar (from release)</option>')
     expect(html).toContain('aria-label="New loop"')
-    expect(html).toContain('New team')
+    // New team is the page's button beside the switch (#1557)
+    expect(html).not.toContain('New team')
   })
   it("lets an admin drag a loop's circle, or move it from its menu", () => {
     const html = render(true)
@@ -195,15 +196,15 @@ describe('Dashboard', () => {
     // a member makes no team
     expect(renderPage([], 'member')).not.toContain('New team')
   })
-  it('opens on the cards with no team when this browser chose them', () => {
+  it('opens on the cards with no team when this browser chose them, New team still beside the switch', () => {
     const stored = new Map([['spool.fleet.layout', 'teams']])
     vi.stubGlobal('localStorage', { getItem: (k: string) => stored.get(k) ?? null, setItem: () => {} })
     try {
       const html = renderPage([])
       expect(html).toContain('team-cards')
       expect(html).not.toContain('fleet-list')
-      // the cards carry their own New team card instead
-      expect(html).not.toContain('>+ New team</button>')
+      expect(html).toContain('>+ New team</button>')
+      expect(html).not.toContain('team-card-new')
     } finally {
       vi.unstubAllGlobals()
     }

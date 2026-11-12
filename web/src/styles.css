@@ -6191,31 +6191,6 @@ textarea {
   grid-column: 1 / -1;
   order: 2;
 }
-.team-card-new {
-  order: 1;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 120px;
-  border-style: dashed;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--fs-card-title);
-  cursor: pointer;
-}
-.team-card-new span {
-  font-size: var(--fs-figure);
-  font-weight: 400;
-}
-.team-card-new:hover,
-.team-card-new:focus-visible {
-  border-color: color-mix(in oklab, var(--text) 40%, transparent);
-  color: var(--text);
-}
 .team-card-head {
   display: flex;
   align-items: center;
@@ -6418,8 +6393,8 @@ button.orb:focus-visible {
   filter: blur(0.6px);
 }
 /* Moving a loop between cards (#1485). The card a dragged circle would land
-   on is outlined in the text colour, dashed as the New team card is, since
-   it is a place something is about to go. */
+   on is outlined in the text colour, dashed as a card's add-a-loop circle
+   is, since it is a place something is about to go. */
 .team-card.drop-target {
   /* the card's own 1px width, so taking the outline moves nothing */
   border-style: dashed;
