@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column); 2026-11-11 (§1, glass and the glow; §3 and §5, the ring; §6, the type scale; §7, the muted value on glass; §12, buttons; §13, a loop is its ring)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column); 2026-11-11 (§1, glass and the glow; §3 and §5, the ring; §6, the type scale; §7, the muted value on glass; §12, buttons; §13, a loop is its ring); 2026-11-12 (§1, the glass edge)
 
 ## Context
 
@@ -40,6 +40,10 @@ need the operator to look.
    cool neutrals that never carry a state hue, so it remains decoration in
    the Consequences' sense below. A list that is rows rather than cards
    (Connections) stays on hairlines.
+   **Amendment (2026-11-12, #1539):** the glass edge is 1px on every side.
+   The inset top highlight above is dropped: under the 1px edge it drew a
+   2px, soft top that read as blurred beside the crisp sides. Glass keeps
+   the edge, radius, gradient, blur and drop shadow.
 2. **White owns identity, primary text, primary action, and selection.** The
    Spool mark, the `+ New loop` button and the selected destination are all
    `#f2f1ed`. Colour never says "this is us" or "you are here".
