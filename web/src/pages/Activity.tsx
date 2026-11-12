@@ -28,7 +28,8 @@ export default function Activity() {
   // open the page on one loop's week. With no loop, every loop's card.
   const [params, setParams] = useSearchParams()
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  const loopNames = (loops ?? []).map((l) => l.name).sort()
+  const byName = [...(loops ?? [])].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const loopNames = byName.map((l) => l.name)
   const figuresLoop = loopNames.find((n) => n === params.get('loop')) ?? ''
   const pick = (key: string, value: string, replace: boolean) =>
     setParams(
@@ -65,7 +66,7 @@ export default function Activity() {
       <h1>Activity</h1>
       {loopNames.length > 0 && (
         <FiguresStrip
-          loops={loopNames}
+          loops={byName}
           loop={figuresLoop}
           window={figuresWindow(params.get('window'))}
           onLoop={(name) => pick('loop', name, false)}

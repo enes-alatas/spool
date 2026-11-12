@@ -3773,9 +3773,6 @@ textarea {
   gap: 4px;
   min-width: 0;
   padding: 12px 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--canvas);
   color: var(--text-muted);
   font-family: var(--mono);
   font-size: var(--fs-small);
@@ -3784,7 +3781,6 @@ textarea {
 }
 .figures-card:hover {
   border-color: var(--text-muted);
-  background: var(--surface);
 }
 .figures-card:focus-visible {
   outline: 2px solid var(--text);
@@ -3793,12 +3789,26 @@ textarea {
 .figures-card-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  /* centred, not on the baseline: the name leads with a ring, which has none */
+  align-items: center;
   gap: 8px;
 }
 .figures-card-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   color: var(--text);
   font-size: var(--fs-body);
+}
+/* the loop's ring before its name, at the channel chip's size (#1525) */
+.figures-card-name .row-orb {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+}
+.figures-card-name .orb-initial {
+  display: none;
 }
 .figures-card-line {
   font-family: var(--sans);
@@ -6203,16 +6213,17 @@ textarea {
   padding: 18px 20px 16px;
 }
 /* The team cards, the plan strip over them, the loop page's side panels,
-   the rule and channel cards, which share .rule-item, and Settings' account,
-   user and chat-account cards are glass (#1411, #1445, #1521, #1522, #1523,
-   #1524). */
+   the rule and channel cards, which share .rule-item, Settings' account,
+   user and chat-account cards, and Activity's figure cards are glass
+   (#1411, #1445, #1521, #1522, #1523, #1524, #1525). */
 .team-card,
 .plan-strip-frame,
 .side-panel,
 .rule-item,
 .account,
 .user-row,
-.link-list {
+.link-list,
+.figures-card {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);
