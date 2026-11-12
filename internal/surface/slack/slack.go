@@ -44,6 +44,10 @@ type Adapter struct {
 	// loginTold holds, for each owner told that a Claude login was
 	// refused, the loop whose app told them.
 	loginTold map[loginOutage]string
+
+	// offers keeps each join offer a while (join.go).
+	offersMu sync.Mutex
+	offers   map[joinKey]keptOffer
 }
 
 // New returns the Slack surface talking to the Web API at apiBase, APIBase
@@ -52,7 +56,7 @@ func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Log
 	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
 		ledger: &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "slack"},
 		timing: defaultLinkTiming, links: map[string]*link{},
-		loginTold: map[loginOutage]string{}}
+		loginTold: map[loginOutage]string{}, offers: map[joinKey]keptOffer{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)
@@ -136,6 +140,7 @@ func refusal(part string, err error) error {
 func (adapter *Adapter) LoopChanged(ctx context.Context, loopID string) {
 	adapter.changing.Lock()
 	defer adapter.changing.Unlock()
+	adapter.forgetOffers(loopID)
 	loopRecord, err := adapter.store.Loops().Get(ctx, loopID)
 	if err != nil {
 		adapter.log.Error("slack: read changed loop", "loop", loopID, "err", err)
@@ -158,6 +163,7 @@ func (adapter *Adapter) LoopChanged(ctx context.Context, loopID string) {
 func (adapter *Adapter) LoopRemoved(loopID string) {
 	adapter.changing.Lock()
 	defer adapter.changing.Unlock()
+	adapter.forgetOffers(loopID)
 	adapter.stopLink(loopID)
 }
 

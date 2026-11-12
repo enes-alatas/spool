@@ -6,11 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // A channel's chat (ADR-0070): the one Telegram group or Slack channel a
@@ -25,6 +28,10 @@ const (
 	codeNotInChat            = "not_in_chat"
 	codeLoopNotOnSurface     = "loop_not_on_surface"
 	codeMembersNotOnSurface  = "members_not_on_surface"
+	codeAlreadyInChat        = "already_in_chat"
+	codeJoinNeedsScope       = "needs_scope"
+	codeChatPrivate          = "chat_private"
+	codeJoinUnsupported      = "join_unsupported"
 	chatStatusCarrying       = "carrying"
 	chatStatusNotInChat      = "not_in_chat"
 	chatStatusNoBot          = "no_bot"
@@ -50,6 +57,10 @@ type chatMemberView struct {
 	Status string `json:"status"`
 	// AddLink adds a not_in_chat member's Telegram bot to a group.
 	AddLink string `json:"add_link,omitempty"`
+	// Join says whether a not_in_chat member's Slack app can join the chat
+	// by itself, on the operator's click: available, needs_scope or
+	// private. It is left out when Slack didn't answer.
+	Join surface.JoinOffer `json:"join,omitempty"`
 }
 
 // botOn reports whether the loop has a bot on surface.
@@ -137,6 +148,7 @@ func (server *Server) channelChat(ctx context.Context, channel *store.Channel) (
 		}
 		view.Members = append(view.Members, place)
 	}
+	server.fillJoinOffers(ctx, view, members, chat)
 	return view, surfaces, nil
 }
 
@@ -346,4 +358,111 @@ func (server *Server) membersRoomsChanged(r *http.Request, loopIDs []string) {
 func (server *Server) channelHasChat(r *http.Request, channel string) bool {
 	_, err := server.Store.Channels().Chat(r.Context(), channel)
 	return !errors.Is(err, store.ErrNotFound)
+}
+
+// joinWait bounds the Slack calls a channel's page waits on to offer its
+// members' Join buttons, all of them together: a slow answer leaves a
+// button out rather than the page waiting.
+var joinWait = 5 * time.Second
+
+// joinOffer is whether member's bot can join chat by itself, "" on a
+// surface with no such call or when the platform didn't answer.
+func (server *Server) joinOffer(ctx context.Context, member *store.Loop, chat *store.ChannelChat) surface.JoinOffer {
+	joiner, ok := server.Surfaces[chat.Surface].(surface.ChatJoiner)
+	if !ok {
+		return ""
+	}
+	offer, err := joiner.JoinOffer(ctx, member.ID, chat.ChatID)
+	if err != nil {
+		server.Log.Warn("ask whether a loop's bot can join a channel's chat", "loop", member.Name, "chat", chat.ChatID, "err", err)
+		return ""
+	}
+	return offer
+}
+
+// handleJoinChat has a member loop's bot join the channel's chat by
+// itself, on the operator's click and only then (ADR-0070). The room it
+// records binds through the channel's chat, as any arrival's does.
+func (server *Server) handleJoinChat(w http.ResponseWriter, r *http.Request) {
+	channel, err := server.Store.Channels().Get(r.Context(), r.PathValue("name"))
+	if err != nil {
+		server.channelErr(w, r, err)
+		return
+	}
+	chat, err := server.Store.Channels().Chat(r.Context(), channel.Name)
+	if errors.Is(err, store.ErrNotFound) {
+		server.jsonErrCode(w, 404, codeChatNotFound, "channel %q has no chat", channel.Name)
+		return
+	}
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	loopRecord, err := server.Store.Loops().GetByName(r.Context(), r.PathValue("loop"))
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if loopRecord == nil || !slices.Contains(channel.LoopIDs, loopRecord.ID) {
+		server.jsonErrCode(w, 404, codeLoopNotInChannel, "loop %q is not in channel %q", r.PathValue("loop"), channel.Name)
+		return
+	}
+	if !botOn(loopRecord, chat.Surface) {
+		server.jsonErrCode(w, 409, codeLoopNotOnSurface, "%s has no bot on %s", loopRecord.Name, chat.Surface)
+		return
+	}
+	joiner, ok := server.Surfaces[chat.Surface].(surface.ChatJoiner)
+	if !ok {
+		server.jsonErrCode(w, 409, codeJoinUnsupported, "a bot can't join a %s chat by itself; add it there instead", chat.Surface)
+		return
+	}
+	rooms, err := server.Store.Rooms().ListByRoom(r.Context(), chat.Surface, chat.ChatID)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	for _, room := range rooms {
+		if room.LoopID == loopRecord.ID {
+			server.jsonErrCode(w, 409, codeAlreadyInChat, "%s's bot is in channel %q's chat already", loopRecord.Name, channel.Name)
+			return
+		}
+	}
+	err = joiner.JoinChat(r.Context(), loopRecord.ID, chat.ChatID)
+	switch {
+	case errors.Is(err, surface.ErrJoinNeedsScope):
+		server.jsonErrCode(w, 409, codeJoinNeedsScope, "%s's Slack app needs the channels:join scope to join by itself; invite it instead, or add the scope", loopRecord.Name)
+		return
+	case errors.Is(err, surface.ErrJoinPrivate):
+		server.jsonErrCode(w, 409, codeChatPrivate, "channel %q's chat is private, so only an invite brings %s's app in", channel.Name, loopRecord.Name)
+		return
+	case err != nil:
+		server.jsonErr(w, http.StatusBadGateway, "%s's bot couldn't join the chat: %v", loopRecord.Name, err)
+		return
+	}
+	server.roomsChanged(r, loopRecord.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// fillJoinOffers sets join on each not_in_chat member of a chat whose
+// surface can join one by itself. The offers are asked at once, under one
+// joinWait, so a slow platform holds a channel's view, and every write
+// that answers with it, joinWait in all whatever the member count.
+func (server *Server) fillJoinOffers(ctx context.Context, view *chatView, members []*store.Loop, chat *store.ChannelChat) {
+	if _, ok := server.Surfaces[chat.Surface].(surface.ChatJoiner); !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, joinWait)
+	defer cancel()
+	var asking sync.WaitGroup
+	for index := range view.Members {
+		if view.Members[index].Status != chatStatusNotInChat {
+			continue
+		}
+		asking.Add(1)
+		go func(place *chatMemberView, member *store.Loop) {
+			defer asking.Done()
+			place.Join = server.joinOffer(ctx, member, chat)
+		}(&view.Members[index], members[index])
+	}
+	asking.Wait()
 }
