@@ -112,6 +112,14 @@ Slack connects out over Socket Mode, so no port is opened for either
   into a group full of strangers, as their message there always could.
   The strangers still reach no loop. A stranger's add records
   nothing.
+- **An allowed person inviting a loop's Slack app to a Slack channel
+  makes the channel known to the loop,** by `member_joined_channel`
+  for the app's bot user, as Telegram's add does (ADR-0070). The check
+  is on the event's `inviter`: an event with none, which Slack sends for
+  a self-join and some admin adds, records nothing, and neither does a
+  stranger's or a blocked person's invite. A missing or unknown inviter
+  is never read as allowed. The room is recorded unbound, or bound
+  through its channel's chat, which was already the operator's choice.
 - **A loop's bot removed from a chat forgets its room there,** on
   Telegram by its `my_chat_member` update, on Slack by `channel_left`
   or `group_left` on the app's own link, or `member_left_channel` for

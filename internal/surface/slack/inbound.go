@@ -17,14 +17,15 @@ import (
 )
 
 // Inbound: what a loop's app hears over Socket Mode becomes a hub message,
-// a correction of one, or a reaction on one, and the app leaving a Slack
-// channel forgets its room there. The app subscribes to message.im,
-// message.channels and message.groups, to reaction_added and
-// reaction_removed, and to channel_left, group_left and member_left_channel
-// (the manifest the control room hands out), so every event that matters
-// is a message, in the owner's DM or in a channel, an edit or deletion of
-// one, a reaction to one, or the app's own leaving. A click on a poll's
-// button is an interactive envelope instead (poll.go).
+// a correction of one, or a reaction on one, and the app joining or
+// leaving a Slack channel records or forgets its room there. The app
+// subscribes to message.im, message.channels and message.groups, to
+// reaction_added and reaction_removed, to member_joined_channel, and to
+// channel_left, group_left and member_left_channel (the manifest the
+// control room hands out), so every event that matters is a message, in
+// the owner's DM or in a channel, an edit or deletion of one, a reaction
+// to one, or the app's own joining or leaving. A click on a poll's button
+// is an interactive envelope instead (poll.go).
 
 // eventCallback is an events_api envelope's payload, reduced to what
 // ingest reads.
@@ -64,6 +65,9 @@ type messageEvent struct {
 	Message         *changedMessage `json:"message"`
 	PreviousMessage *changedMessage `json:"previous_message"`
 	DeletedTS       string          `json:"deleted_ts"`
+	// Inviter is who added User to the channel, on a member_joined_channel
+	// event. Slack leaves it out of a self-join and of some admin adds.
+	Inviter string `json:"inviter"`
 }
 
 // changedMessage is a message as a message_changed or message_deleted
@@ -104,9 +108,9 @@ func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, envelopes <-
 // ingest takes one event: a human's message, from someone Spool allows,
 // in the loop's owner DM or its channel, with the files it shares, a
 // person's edit or deletion of one the hub holds, and the app's bot user
-// leaving a channel. Everything else is dropped here: joins and other
-// subtypes, and every bot's post, the loops' own mirrored ones included,
-// which would otherwise come back in as new.
+// joining or leaving a channel. Everything else is dropped here: the join
+// message subtypes and the others, and every bot's post, the loops' own
+// mirrored ones included, which would otherwise come back in as new.
 func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.RawMessage) {
 	var callback eventCallback
 	if err := json.Unmarshal(payload, &callback); err != nil {
@@ -114,6 +118,10 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		return
 	}
 	event := callback.Event
+	if event.Type == "member_joined_channel" {
+		adapter.ingestJoined(ctx, link, event)
+		return
+	}
 	if event.Type == "member_left_channel" || event.Type == "channel_left" || event.Type == "group_left" {
 		adapter.ingestLeft(ctx, link, event)
 		return
@@ -292,6 +300,38 @@ func (adapter *Adapter) roomChannel(ctx context.Context, link *link, loopRecord 
 		}})
 	}
 	return ""
+}
+
+// ingestJoined records a Slack channel for this loop when an allowed
+// person invites its app there, as that person's first message there
+// would, so the invite is enough (ADR-0070). The room is recorded unbound,
+// or bound through its channel's chat when the loop is in that channel.
+// The check is on the inviter, as Telegram's is on the adder: only an
+// allowed person brings a loop into a Slack channel. An event with no
+// inviter, a self-join or an admin's add Slack names no one for, records
+// nothing, and nor does a stranger's or a blocked person's invite; an
+// allowed person's later message there still records it. Another member
+// joining changes nothing.
+func (adapter *Adapter) ingestJoined(ctx context.Context, link *link, event messageEvent) {
+	loopRecord, err := adapter.store.Loops().Get(ctx, link.loopID)
+	if err != nil {
+		adapter.log.Error("slack: read loop for an event", "loop", link.loopID, "err", err)
+		return
+	}
+	if event.User == "" || event.User != loopRecord.SlackBotUserID || event.Channel == "" {
+		return
+	}
+	if event.Inviter == "" {
+		adapter.log.Info("slack channel not recorded: the app joined with no inviter named",
+			"loop", loopRecord.Name, "channel", event.Channel)
+		return
+	}
+	if adapter.eventSender(ctx, link, event.Inviter) == nil {
+		adapter.log.Info("slack channel not recorded: the app was invited by someone not allowed",
+			"loop", loopRecord.Name, "channel", event.Channel)
+		return
+	}
+	adapter.roomChannel(ctx, link, loopRecord, event.Channel)
 }
 
 // ingestLeft forgets this loop's room for a Slack channel its app's bot
