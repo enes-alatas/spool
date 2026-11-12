@@ -348,15 +348,15 @@ function NoSubagents({
 }
 
 // DailyCap is the loop's own daily spending cap (#652), under today's
-// spend it is measured against. A chip sets it at once, a cap raised past
-// that spend or removed waking a loop it holds; the last chip takes any
-// other amount, set on Enter or on leaving it. Words for a session that may not change it.
+// spend it is measured against. A preset sets it at once, a cap raised past
+// that spend or removed waking a loop it holds; the field beside the presets
+// takes any other amount, set on Enter or on leaving it. Words for a session that may not change it.
 function DailyCap({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const manage = useMay()('manage')
   const stored = loop.daily_cap_usd ?? 0
-  // Whether the other-amount chip is lit: while the operator is in it, and
-  // otherwise whether the cap is an amount no chip names.
+  // Whether the other-amount field is lit: while the operator is in it, and
+  // otherwise whether the cap is an amount no preset names.
   const [typing, setTyping] = useState(false)
   const custom = typing || !isPreset(stored)
   const [draft, setDraft] = useState<string | null>(null)
