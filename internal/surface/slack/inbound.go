@@ -17,11 +17,13 @@ import (
 )
 
 // Inbound: what a loop's app hears over Socket Mode becomes a hub message,
-// a correction of one, or a reaction on one. The app subscribes to
-// message.im, message.channels and message.groups, and to reaction_added
-// and reaction_removed (the manifest the control room hands out), so every
-// event that matters is a message, in the owner's DM or in a channel, an
-// edit or deletion of one, or a reaction to one. A click on a poll's
+// a correction of one, or a reaction on one, and the app leaving a Slack
+// channel forgets its room there. The app subscribes to message.im,
+// message.channels and message.groups, to reaction_added and
+// reaction_removed, and to channel_left, group_left and member_left_channel
+// (the manifest the control room hands out), so every event that matters
+// is a message, in the owner's DM or in a channel, an edit or deletion of
+// one, a reaction to one, or the app's own leaving. A click on a poll's
 // button is an interactive envelope instead (poll.go).
 
 // eventCallback is an events_api envelope's payload, reduced to what
@@ -100,10 +102,11 @@ func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, envelopes <-
 }
 
 // ingest takes one event: a human's message, from someone Spool allows,
-// in the loop's owner DM or its channel, with the files it shares, and a
-// person's edit or deletion of one the hub holds. Everything else is
-// dropped here: joins and other subtypes, and every bot's post, the loops'
-// own mirrored ones included, which would otherwise come back in as new.
+// in the loop's owner DM or its channel, with the files it shares, a
+// person's edit or deletion of one the hub holds, and the app's bot user
+// leaving a channel. Everything else is dropped here: joins and other
+// subtypes, and every bot's post, the loops' own mirrored ones included,
+// which would otherwise come back in as new.
 func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.RawMessage) {
 	var callback eventCallback
 	if err := json.Unmarshal(payload, &callback); err != nil {
@@ -111,6 +114,10 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		return
 	}
 	event := callback.Event
+	if event.Type == "member_left_channel" || event.Type == "channel_left" || event.Type == "group_left" {
+		adapter.ingestLeft(ctx, link, event)
+		return
+	}
 	if event.Type == "reaction_added" || event.Type == "reaction_removed" {
 		adapter.ingestReaction(ctx, link, event)
 		return
@@ -285,6 +292,40 @@ func (adapter *Adapter) roomChannel(ctx context.Context, link *link, loopRecord 
 		}})
 	}
 	return ""
+}
+
+// ingestLeft forgets this loop's room for a Slack channel its app's bot
+// user left or was removed from: a gone app hears nothing there, and a
+// room kept would show its loop carrying a chat it no longer hears. The
+// channel's chat stays, so the loop shows as not in it until its app is
+// back (ADR-0070). Slack tells the leaver by channel_left or group_left,
+// which name no user since the app's link is the leaver's own, and the
+// channel's members by member_left_channel, which counts only when it
+// names the app's bot user: another member leaving changes no room.
+func (adapter *Adapter) ingestLeft(ctx context.Context, link *link, event messageEvent) {
+	loopRecord, err := adapter.store.Loops().Get(ctx, link.loopID)
+	if err != nil {
+		adapter.log.Error("slack: read loop for an event", "loop", link.loopID, "err", err)
+		return
+	}
+	ownLeaving := event.Type != "member_left_channel" ||
+		(event.User != "" && event.User == loopRecord.SlackBotUserID)
+	if !ownLeaving || event.Channel == "" {
+		return
+	}
+	err = adapter.store.Rooms().Forget(ctx, loopRecord.ID, store.SurfaceSlack, event.Channel)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		adapter.log.Info("slack app left a channel it had no room for", "loop", loopRecord.Name, "channel", event.Channel)
+		return
+	case err != nil:
+		adapter.log.Error("slack: forget the room of a channel the app left", "loop", loopRecord.Name, "channel", event.Channel, "err", err)
+		return
+	}
+	adapter.log.Info("slack room forgotten: the app left the channel", "loop", loopRecord.Name, "channel", event.Channel)
+	adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+		"loop_id": loopRecord.ID, "name": loopRecord.Name, "rooms_changed": true,
+	}})
 }
 
 // titleRoom names a room the way the loop page lists it, with the name

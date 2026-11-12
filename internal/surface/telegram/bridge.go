@@ -1179,15 +1179,16 @@ func (br *Bridge) logTurnedAway(bot *poller, message *tgMsgAlias, author, reason
 // person brings a loop into a group. A stranger's or a blocked person's
 // add records nothing and is answered with nothing, as their message is;
 // an allowed person's later message still records the group. The bot
-// leaving or being removed is logged and changes no room: forgetting one
-// stays the operator's act on the loop page.
+// leaving or being removed, by whoever, forgets the loop's room for the
+// group: a bot that is gone hears nothing there, and a room kept would
+// show its loop carrying a chat it no longer hears (ADR-0070).
 func (br *Bridge) handleMyChatMember(ctx context.Context, bot *poller, update *ChatMemberUpdated) {
 	if update.Chat.Type != "group" && update.Chat.Type != "supergroup" {
 		return
 	}
 	switch {
 	case !inChat(update.New):
-		br.log.Info("telegram bot left a group", "loop", bot.name, "chat_id", update.Chat.ID, "status", update.New.Status)
+		br.forgetRoom(ctx, bot, update.Chat, update.New.Status)
 		return
 	case inChat(update.Old):
 		return // a promotion or a restriction: the bot was there already
@@ -1212,6 +1213,26 @@ func inChat(member ChatMember) bool {
 		return member.IsMember
 	}
 	return false
+}
+
+// forgetRoom forgets this loop's room for a group its bot is no longer in.
+// The channel's chat stays, so the loop shows as not in it, and an add of
+// the bot binds the room again (ADR-0070). A group the loop had no room
+// for has nothing to forget.
+func (br *Bridge) forgetRoom(ctx context.Context, bot *poller, chat Chat, status string) {
+	err := br.store.Rooms().Forget(ctx, bot.loopID, store.SurfaceTelegram, strconv.FormatInt(chat.ID, 10))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		br.log.Info("telegram bot left a group it had no room for", "loop", bot.name, "chat_id", chat.ID, "status", status)
+		return
+	case err != nil:
+		br.log.Error("telegram: forget the room of a group the bot left", "loop", bot.name, "chat_id", chat.ID, "err", err)
+		return
+	}
+	br.log.Info("telegram room forgotten: the bot left the group", "loop", bot.name, "chat_id", chat.ID, "status", status)
+	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: bot.loopID, Payload: map[string]any{
+		"loop_id": bot.loopID, "name": bot.name, "rooms_changed": true,
+	}})
 }
 
 // roomChannel is the channel a group chat carries for this loop's bot, ""
