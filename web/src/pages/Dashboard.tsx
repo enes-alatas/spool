@@ -278,8 +278,9 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            {/* The cards have their own New team card; the rows have this. */}
-            {layout === 'list' && may('manage') && (
+            {/* One New team, beside the switch on both views (#1557): it
+                takes no card's room and stays put as teams are added. */}
+            {may('manage') && (
               <button type="button" className="btn sm" onClick={() => setNewTeam(true)} disabled={newTeam}>
                 + New team
               </button>

@@ -94,7 +94,6 @@ export function FleetTeams({
             moves={moves}
           />
         ))}
-        {manage && <NewTeamCard />}
       </div>
       {focused && focusedLoop && (
         <FocusedOrb
@@ -563,19 +562,6 @@ function TeamEditor({ team, onDone }: { team: Team; onDone: () => void }) {
   )
 }
 
-// The dashed card after the teams, which opens the New team dialog.
-function NewTeamCard() {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button type="button" className="team-card team-card-new" onClick={() => setOpen(true)}>
-        <span aria-hidden>+</span> New team
-      </button>
-      {open && <NewTeamDialog onClose={() => setOpen(false)} />}
-    </>
-  )
-}
-
 // The New team form's id, which its fields' ids are made from.
 const NEW_TEAM_FORM = 'team-new'
 // A team form's home channel field.
@@ -585,7 +571,7 @@ const homeFieldId = (form: string) => `${form}-home`
 const OFFER_SAYS = new Set(['channel_exists', 'channel_in_other_team', 'channel_loops_in_other_team'])
 
 // A team made from its name and description, in a popup over the page,
-// from the Teams view's card or the List view's button (#1484). Typed work
+// from the New team button beside the Teams/List switch (#1484, #1557). Typed work
 // is kept from a stray backdrop click or Escape; Cancel and the ✕ still
 // close it. `onCreated` hears the new team's name once the hub has it.
 export function NewTeamDialog({
