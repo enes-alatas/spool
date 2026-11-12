@@ -153,10 +153,7 @@ function ChannelCard({
   }
 
   return (
-    <div
-      className={`rule-item channel-card${landed ? ' channel-landed' : ''}`}
-      id={channelAnchor(channel.name)}
-    >
+    <div className={`rule-item${landed ? ' channel-landed' : ''}`} id={channelAnchor(channel.name)}>
       <div className="rule-head">
         <span className="channel-name">#{channel.name}</span>
         <span className={`rule-badge${channel.team ? ' channel-team' : ''}`}>
