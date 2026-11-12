@@ -4,6 +4,8 @@ import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel, LoopView } from '../api'
 import { CharCount } from '../components/CharCount'
+import { RowOrb } from '../components/LoopOrb'
+import { sumCostToday } from '../format'
 import {
   CHANNEL_DESCRIPTION_MAX,
   CHANNEL_NAME_MAX,
@@ -137,6 +139,8 @@ function ChannelCard({
   // with several channels on screen it would scroll out of sight.
   const [error, setError] = useState('')
   const addable = loopsOutside(channel, loops)
+  const views = new Map(loops.map((loop) => [loop.name, loop]))
+  const spentToday = sumCostToday(loops)
 
   const act = async (run: () => Promise<unknown>, loop?: string) => {
     setError('')
@@ -149,7 +153,10 @@ function ChannelCard({
   }
 
   return (
-    <div className={`rule-item${landed ? ' channel-landed' : ''}`} id={channelAnchor(channel.name)}>
+    <div
+      className={`rule-item channel-card${landed ? ' channel-landed' : ''}`}
+      id={channelAnchor(channel.name)}
+    >
       <div className="rule-head">
         <span className="channel-name">#{channel.name}</span>
         <span className={`rule-badge${channel.team ? ' channel-team' : ''}`}>
@@ -206,20 +213,25 @@ function ChannelCard({
         <div className="rule-body channel-undescribed">No description</div>
       )}
       <div className="channel-loops">
-        {channel.loops.map((loop) => (
-          <span key={loop} className="channel-loop">
-            @{loop}
-            {manage && (
-              <button
-                aria-label={`Take @${loop} out of #${channel.name}`}
-                title={`Take @${loop} out of #${channel.name}`}
-                onClick={() => act(() => api.removeChannelLoop(channel.name, loop))}
-              >
-                ×
-              </button>
-            )}
-          </span>
-        ))}
+        {channel.loops.map((loop) => {
+          const view = views.get(loop)
+          return (
+            <span key={loop} className="channel-loop">
+              {/* the loop as its ring, as on the Fleet page (#1522), once the
+                  loops list has it */}
+              {view && <RowOrb loop={view} spentToday={spentToday} />}@{loop}
+              {manage && (
+                <button
+                  aria-label={`Take @${loop} out of #${channel.name}`}
+                  title={`Take @${loop} out of #${channel.name}`}
+                  onClick={() => act(() => api.removeChannelLoop(channel.name, loop))}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          )
+        })}
         {/* A pick-list whose first option is its label: choosing a loop puts
             it in at once, and the list snaps back to the label. */}
         {manage && addable.length > 0 && (

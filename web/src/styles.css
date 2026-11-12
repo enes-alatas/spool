@@ -4504,6 +4504,17 @@ textarea {
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
+/* A channel's loop leads with its ring, the Fleet row's circle at the
+   chip's height: the rings say what the name can't, and the name says
+   what an initial would, so the initial goes (#1522). */
+.channel-loop .row-orb {
+  width: 22px;
+  height: 22px;
+  margin: 0 6px 0 -6px;
+}
+.channel-loop .orb-initial {
+  display: none;
+}
 .channel-loop button {
   background: none;
   border: 0;
@@ -6190,11 +6201,12 @@ textarea {
   min-width: 0;
   padding: 18px 20px 16px;
 }
-/* The team cards, the plan strip over them and the loop page's side panels
-   are glass (#1411, #1445, #1521). */
+/* The team cards, the plan strip over them, the loop page's side panels and
+   the channel cards are glass (#1411, #1445, #1521, #1522). */
 .team-card,
 .plan-strip-frame,
-.side-panel {
+.side-panel,
+.channel-card {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);
