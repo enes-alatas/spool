@@ -2152,9 +2152,6 @@ textarea {
 }
 
 .side-panel {
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
   padding: 16px;
   margin-bottom: 14px;
 }
@@ -4248,16 +4245,16 @@ textarea {
     justify-content: flex-start;
   }
 }
-/* A loop's attached connections, in its side panel: one box each, the
-   name and its kind on the left, the detach button on the right. */
+/* A loop's attached connections, in its side panel: a row each, the name
+   and its kind on the left, the detach button on the right. The panel is
+   glass, so its rows divide by hairlines rather than sitting in boxes of
+   their own (#1521). */
 .side-panel .loop-connection {
   align-items: center;
-  padding: 8px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+  padding: 8px 0;
 }
 .side-panel .loop-connection + .loop-connection {
-  margin-top: 6px;
+  border-top: 1px solid var(--hairline);
 }
 /* The name with its kind under it: a migrated secret's name runs to 32
    characters, so the name gets the row's width rather than sharing it. */
@@ -6193,9 +6190,11 @@ textarea {
   min-width: 0;
   padding: 18px 20px 16px;
 }
-/* The team cards and the plan strip over them are glass (#1411, #1445). */
+/* The team cards, the plan strip over them and the loop page's side panels
+   are glass (#1411, #1445, #1521). */
 .team-card,
-.plan-strip-frame {
+.plan-strip-frame,
+.side-panel {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);
