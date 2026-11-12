@@ -167,3 +167,65 @@ func TestASlackAppRemovedFromAChannelForgetsItsRoom(t *testing.T) {
 	slack.pushSelfLeft(t, slackAppToken, "group_left", marker)
 	srv.waitNoRoom("terra", marker)
 }
+
+// pushJoined sends app a member_joined_channel event: user joined channel,
+// added by inviter, or by no one Slack names when inviter is "".
+func (slack *fakeSlack) pushJoined(t *testing.T, app, channel, user, inviter string) {
+	t.Helper()
+	event := map[string]any{"type": "member_joined_channel", "user": user, "channel": channel,
+		"channel_type": "C", "team": "T0ACME", "ts": "joined-" + user + "-" + inviter}
+	if inviter != "" {
+		event["inviter"] = inviter
+	}
+	slack.pushEvent(t, app, event)
+}
+
+// waitTitledRoom polls until the loop's room for roomID is recorded with a
+// title, which the app asks Slack for once the room is recorded.
+func (srv *server) waitTitledRoom(loop, roomID string) roomJSON {
+	srv.t.Helper()
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if room, ok := srv.room(loop, roomID); ok && room.Title != "" {
+			return room
+		}
+	}
+	srv.t.Fatalf("%s never recorded room %s with a title: %+v", loop, roomID, srv.rooms(loop))
+	return roomJSON{}
+}
+
+// An allowed person inviting a loop's Slack app to a Slack channel records
+// the room, titled, before anyone speaks there: unbound, or bound through
+// the chat of a channel the loop is in. An invite by a stranger, one that
+// names no inviter, and another member joining record nothing (ADR-0070).
+func TestAnAllowedPersonInvitingTheAppRecordsTheChannel(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	const strangers, selfJoined, othersJoined, invited = "C0STRANGE", "C0SELF", "C0OTHER", "C0INVITED"
+
+	// one app's events are taken in order: once the allowed invite is
+	// recorded, the three before it have been seen and turned away
+	slack.pushJoined(t, slackAppToken, strangers, terraBot.UserID, "U0STRANGER")
+	slack.pushJoined(t, slackAppToken, selfJoined, terraBot.UserID, "")
+	slack.pushJoined(t, slackAppToken, othersJoined, miloBot.UserID, slackOperator)
+	slack.pushJoined(t, slackAppToken, invited, terraBot.UserID, slackOperator)
+	if room := srv.waitTitledRoom("terra", invited); room.Channel != "" || room.Title != "c0invited" {
+		t.Fatalf("the invited channel = %+v, want it recorded unbound and titled", room)
+	}
+	for _, roomID := range []string{strangers, selfJoined, othersJoined} {
+		if room, ok := srv.room("terra", roomID); ok {
+			t.Errorf("an invite that should record nothing recorded %+v", room)
+		}
+	}
+	if got := srv.activityWith("c0invited"); len(got) != 0 {
+		t.Errorf("an invite was ingested as a message: %s", dump(got))
+	}
+
+	// a Slack channel that is the chat of a channel terra is in binds as
+	// it arrives
+	const backendRoom = "C0BACKEND"
+	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "backend"}, nil)
+	srv.wantRefusal("PUT", "/api/channels/backend/loops/terra", nil, 204, "")
+	srv.mustJSON("PUT", "/api/channels/backend/chat", map[string]any{"surface": "slack", "chat_id": backendRoom}, nil)
+	slack.pushJoined(t, slackAppToken, backendRoom, terraBot.UserID, slackOperator)
+	srv.waitRoomChannel("terra", backendRoom, "backend")
+}

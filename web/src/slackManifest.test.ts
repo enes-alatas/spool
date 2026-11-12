@@ -37,6 +37,7 @@ describe('slackManifest', () => {
             'message.groups',
             'reaction_added',
             'reaction_removed',
+            'member_joined_channel',
             'channel_left',
             'group_left',
             'member_left_channel',

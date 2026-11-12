@@ -42,6 +42,8 @@ export const slackBotScopes = [
 // already carry every message in a Slack channel, mentions included, and the
 // router finds mentions in the text, so it would deliver each one twice.
 // The reaction events are a person's reactions in the app's conversations.
+// member_joined_channel tells the app its bot user was invited to a Slack
+// channel, so the hub records the room when an allowed person invited it.
 // channel_left and group_left tell the app it left a Slack channel, and
 // member_left_channel that a member did, its own bot user included, so the
 // hub forgets its room there (ADR-0070).
@@ -51,6 +53,7 @@ export const slackBotEvents = [
   'message.groups',
   'reaction_added',
   'reaction_removed',
+  'member_joined_channel',
   'channel_left',
   'group_left',
   'member_left_channel',
