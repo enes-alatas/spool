@@ -1,9 +1,8 @@
 import { DAILY_CAP_PRESETS, presetLabel } from '../dailyCap'
 
-// The daily cap's choices (#652): no cap, three amounts, and a field for
-// any other amount, one row of same-size chips with the chosen one lit.
-// The field is a chip too, drawn as a well with its $ and an ellipsis
-// so it reads as somewhere to type; it is lit while it holds the cap.
+// The daily cap's choices (#652): no cap and three amounts as the segment
+// pills the Teams/List toggle draws (#1547), the chosen one pressed, and
+// beside them a field for any other amount, lit while it holds the cap.
 export function CapChips({
   cap,
   custom,
@@ -32,28 +31,34 @@ export function CapChips({
   onCustomCancel?: () => void
 }) {
   return (
-    <div className="cap-chips" role="group" aria-labelledby={labelledBy}>
-      {DAILY_CAP_PRESETS.map((usd) => (
-        <button
-          key={usd}
-          type="button"
-          aria-pressed={!custom && cap === usd}
-          disabled={disabled}
-          // Kept from taking focus, so a typed amount in the field is not
-          // sent on its blur and the chips disabled under the click: the
-          // chip clicked is the cap set.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onPreset(usd)}
-        >
-          {presetLabel(usd)}
-        </button>
-      ))}
+    <div className="cap-choice" role="group" aria-labelledby={labelledBy}>
+      <div className="figures-windows">
+        {DAILY_CAP_PRESETS.map((usd) => {
+          const on = !custom && cap === usd
+          return (
+            <button
+              key={usd}
+              type="button"
+              className={`figures-window${on ? ' on' : ''}`}
+              aria-pressed={on}
+              disabled={disabled}
+              // Kept from taking focus, so a typed amount in the field is not
+              // sent on its blur and the pills disabled under the click: the
+              // pill clicked is the cap set.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onPreset(usd)}
+            >
+              {presetLabel(usd)}
+            </button>
+          )
+        })}
+      </div>
       <label className={`cap-other${custom ? ' on' : ''}`}>
         <span aria-hidden="true">$</span>
         <input
           id={inputId}
           inputMode="decimal"
-          placeholder="…"
+          placeholder="other"
           aria-label="Another amount in dollars"
           value={customText}
           disabled={disabled}

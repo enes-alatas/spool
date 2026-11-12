@@ -2638,51 +2638,53 @@ textarea {
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
-/* the daily cap under today's spend (#652): one row of same-size chips,
-   the chosen one lit, in the sans the panel's labels use because five mono
-   labels do not fit its width. The last is a field for any other amount,
-   drawn as a well, the canvas a field sits on and a $ leading it, so it
-   reads as somewhere to type rather than one more choice. */
-.cap-chips {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 3px;
+/* the daily cap under today's spend (#652, #1547): its presets are the
+   segment pills the Teams/List toggle and the figures window draw, and any
+   other amount is a field beside them, as compact as the pills. The field
+   is lit, as a pressed pill is, while it holds the cap. */
+.cap-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 4px 0 10px;
 }
-.cap-chips button,
-.cap-other {
+.field .cap-choice {
+  max-width: 440px;
+  margin: 0;
+}
+/* the presets share what the field leaves, so the row fits a side panel */
+.cap-choice .figures-windows {
+  flex: 1;
   min-width: 0;
-  padding: 3px 0;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-size: var(--fs-meta);
-  white-space: nowrap;
 }
-.cap-chips button {
-  cursor: pointer;
-}
-.cap-chips button:hover:not(:disabled) {
-  color: var(--text);
-}
-.cap-chips button[aria-pressed='true'],
-.cap-other.on {
-  border-color: var(--text);
-  color: var(--text);
+.cap-choice .figures-window {
+  flex: 1;
+  justify-content: center;
+  padding: 0 6px;
 }
 .cap-other {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding-left: 7px;
+  flex: none;
+  width: 5rem;
+  box-sizing: border-box;
+  min-height: 1.625rem;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
   background: var(--canvas);
-  border-style: dashed;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: var(--fs-small);
   cursor: text;
 }
-.cap-other.on,
+.cap-other.on {
+  border-color: var(--text);
+  color: var(--text);
+}
 .cap-other:focus-within {
-  border-style: solid;
+  outline: 1px solid var(--text);
 }
 .cap-other input {
   flex: 1;
@@ -2692,7 +2694,6 @@ textarea {
   border: 0;
   background: none;
   font: inherit;
-  font-family: var(--mono);
   color: var(--text);
   outline: none;
 }
@@ -2703,24 +2704,12 @@ textarea {
 .cap-other:has(input[aria-invalid='true']) {
   border-color: var(--danger);
 }
-.field .cap-chips {
-  max-width: 440px;
-  gap: 6px;
-  margin: 0;
-}
-.field .cap-chips button,
-.field .cap-other {
-  padding-top: 6px;
-  padding-bottom: 6px;
-  font-size: var(--fs-input);
-}
-/* the form's label rule is for field names; the other-amount chip is a
+/* the form's label rule is for field names; the other-amount field is a
    label too, and takes none of it */
 .field .cap-other {
   display: flex;
   margin: 0;
-  padding-left: 12px;
-  font-family: var(--sans);
+  font-size: var(--fs-small);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -3744,8 +3733,11 @@ textarea {
 .figures-windows .figures-window {
   min-height: calc(1.625rem - 2px);
 }
-.figures-window:hover {
+.figures-window:hover:not(:disabled) {
   color: var(--text);
+}
+.figures-window:disabled {
+  cursor: default;
 }
 .figures-window.on {
   background: var(--surface);

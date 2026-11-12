@@ -664,7 +664,7 @@ await page.route(cappedLoop, async (route) => {
   })
 })
 await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
-await wakePanel.locator('.cap-chips').waitFor({ timeout: 15000 })
+await wakePanel.locator('.cap-choice').waitFor({ timeout: 15000 })
 const loopDailyCapFile = `${outDir}/loop-daily-capped.png`
 await wakePanel.screenshot({ path: loopDailyCapFile })
 taken.push(loopDailyCapFile)
