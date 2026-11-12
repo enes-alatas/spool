@@ -4499,6 +4499,16 @@ textarea {
   font-size: var(--fs-small);
   color: var(--text-muted);
 }
+/* a channel's way into its chat, at the right end of its head (#1443),
+   just before an admin's Edit and Delete, which then sit beside it rather
+   than splitting the free space with it */
+.channel-open {
+  margin-left: auto;
+  font-size: var(--fs-body);
+}
+.channel-open + .rule-actions {
+  margin-left: 12px;
+}
 .rule-body.channel-undescribed {
   color: var(--text-muted);
 }
@@ -4531,101 +4541,6 @@ textarea {
 }
 .channel-loop .orb-initial {
   display: none;
-}
-.channel-loop button {
-  background: none;
-  border: 0;
-  border-radius: 999px;
-  padding: 0 6px;
-  color: var(--text-muted);
-  font-size: var(--fs-input);
-  cursor: pointer;
-}
-.channel-loop button:hover {
-  color: var(--text);
-}
-.channel-loop button:focus-visible {
-  outline: 2px solid var(--text);
-}
-.channel-add {
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: var(--fs-small);
-}
-/* the new-channel form: the name, which keeps a width a name fits in, then
-   the description, which takes the rest. It wraps on a narrow screen */
-.channel-new-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.channel-name-input {
-  width: 12rem;
-  font-family: var(--mono);
-}
-.channel-name-input[aria-invalid='true'] {
-  border-color: var(--danger-line);
-}
-.channel-description-input {
-  flex: 1 1 14rem;
-}
-.channel-note {
-  margin-top: 6px;
-  font-size: var(--fs-small);
-  color: var(--text-muted);
-}
-.channel-note.bad {
-  color: var(--danger);
-}
-.rule-editor textarea {
-  width: 100%;
-}
-/* ---- channels (#484) ----
-   A channel is a card on the fleet rules' pattern (`.rule-item`), so these
-   rules only add what a rule has no use for: the name, its loops, and the
-   form that makes one. */
-.channel-name {
-  font-family: var(--mono);
-  font-size: var(--fs-input);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.channel-count {
-  font-size: var(--fs-small);
-  color: var(--text-muted);
-}
-/* a channel's way into its chat, at the right end of its head (#1443),
-   just before an admin's Edit and Delete, which then sit beside it rather
-   than splitting the free space with it */
-.channel-open {
-  margin-left: auto;
-  font-size: var(--fs-body);
-}
-.channel-open + .rule-actions {
-  margin-left: 12px;
-}
-.rule-body.channel-undescribed {
-  color: var(--text-muted);
-}
-/* the loops in a channel, then the pick-list that adds one; it wraps, so a
-   channel with many loops grows downward instead of out of its card */
-.channel-loops {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-.channel-loop {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 2px 2px 10px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: var(--fs-small);
 }
 .channel-loop button {
   background: none;
