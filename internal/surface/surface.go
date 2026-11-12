@@ -132,3 +132,37 @@ func Wait(ctx context.Context, running *sync.WaitGroup) {
 	case <-ctx.Done():
 	}
 }
+
+// ChatJoiner is a surface on which a loop's bot can join a chat by itself,
+// on the operator's click and never on the hub's own (ADR-0070): Slack's,
+// where an app holding channels:join joins a public channel. It is apart
+// from Surface because Telegram has no such call, and the hub asks for it
+// by a type assertion, so a surface without it offers no join.
+type ChatJoiner interface {
+	// JoinOffer says whether loopID's bot can join chatID by itself.
+	JoinOffer(ctx context.Context, loopID, chatID string) (JoinOffer, error)
+
+	// JoinChat has loopID's bot join chatID and records its room there,
+	// as any arrival does, so the room binds through the channel's chat.
+	// It is ErrJoinNeedsScope or ErrJoinPrivate when the platform said
+	// the bot can't, and any other error when the platform didn't answer.
+	JoinChat(ctx context.Context, loopID, chatID string) error
+}
+
+// JoinOffer is what a channel's page shows for a member loop not in its
+// chat: whether the loop's bot can join it by itself.
+type JoinOffer string
+
+const (
+	// JoinAvailable is a public chat the bot holds the scope to join.
+	JoinAvailable JoinOffer = "available"
+	// JoinNeedsScope is a public chat the bot lacks the scope to join.
+	JoinNeedsScope JoinOffer = "needs_scope"
+	// JoinPrivate is a chat only an invite brings the bot into.
+	JoinPrivate JoinOffer = "private"
+)
+
+var (
+	ErrJoinNeedsScope = errors.New("the bot lacks the scope to join a chat by itself")
+	ErrJoinPrivate    = errors.New("the chat is private, so only an invite brings the bot in")
+)
