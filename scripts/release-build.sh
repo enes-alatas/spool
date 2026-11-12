@@ -73,7 +73,7 @@ for platform in $platforms; do
 		-o "$stage/$name/spool-hook" ./cmd/spool-hook
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch "$go" build -trimpath \
 		-o "$stage/$name/spool-github" ./cmd/spool-github
-	cp LICENSE README.md "$stage/$name/"
+	cp LICENSE NOTICE README.md "$stage/$name/"
 	tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime="@$epoch" -cf - "$name" | gzip -n -9 > "$out/$name.tar.gz"
 done
