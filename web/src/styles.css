@@ -474,7 +474,8 @@ textarea {
 /* ---- login (#239) ---- */
 /* The one screen without the room's chrome: no topbar, no destinations,
    nothing to do but the one thing. Centred on the canvas so it reads as a
-   door rather than as a page with its content in the corner. */
+   door rather than as a page with its content in the corner. The card is
+   glass, over the canvas's glow (#1526). */
 .login {
   min-height: 100%;
   display: grid;
@@ -483,10 +484,12 @@ textarea {
 }
 .login-card {
   width: 100%;
-  max-width: 24rem;
+  /* the fields keep their 24rem; the glass pads around them */
+  max-width: calc(24rem + 56px);
   display: flex;
   flex-direction: column;
   gap: 18px;
+  padding: 28px;
 }
 /* The wordmark is the topbar's, minus the bar: it is the only thing on this
    screen that says which product is asking. */
@@ -5069,8 +5072,9 @@ textarea {
   margin: 0 0 0 88px;
 }
 /* The first-run page (#581): a heading and three pillar cards, centred in
-   the room. Cards are outlined, never filled: white marks the next step's
-   button alone (ADR-0027), and green says done on the pillar that is. */
+   the room. The cards are glass (#1526), never filled with a state: white
+   marks the next step's button alone (ADR-0027), and green says done on the
+   pillar that is. */
 .first-run {
   min-height: 100%;
   display: flex;
@@ -5104,8 +5108,6 @@ textarea {
   flex-direction: column;
   gap: 10px;
   padding: 20px;
-  border: 1px solid var(--hairline);
-  border-radius: 7px;
 }
 .pillar.next {
   border-color: var(--text-muted);
@@ -6214,8 +6216,10 @@ textarea {
 }
 /* The team cards, the plan strip over them, the loop page's side panels,
    the rule and channel cards, which share .rule-item, Settings' account,
-   user and chat-account cards, and Activity's figure cards are glass
-   (#1411, #1445, #1521, #1522, #1523, #1524, #1525). */
+   user and chat-account cards, Activity's figure cards, the setup steps and
+   the sign-in card are glass (#1411, #1445, #1521, #1522, #1523, #1524,
+   #1525, #1526). A setup step's state outline (next, working, failed) still
+   recolours the edge. */
 .team-card,
 .plan-strip-frame,
 .side-panel,
@@ -6223,7 +6227,9 @@ textarea {
 .account,
 .user-row,
 .link-list,
-.figures-card {
+.figures-card,
+.pillar,
+.login-card {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);
