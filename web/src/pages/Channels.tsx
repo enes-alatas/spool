@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel, LoopView } from '../api'
 import { CharCount } from '../components/CharCount'
 import { RowOrb } from '../components/LoopOrb'
+import { RemoveIcon } from '../components/Icons'
 import { sumCostToday } from '../format'
 import {
   CHANNEL_DESCRIPTION_MAX,
@@ -223,7 +224,7 @@ function ChannelCard({
                   title={`Take @${loop} out of #${channel.name}`}
                   onClick={() => act(() => api.removeChannelLoop(channel.name, loop))}
                 >
-                  ×
+                  <RemoveIcon />
                 </button>
               )}
             </span>
