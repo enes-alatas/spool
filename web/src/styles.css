@@ -559,9 +559,6 @@ textarea {
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--surface);
 }
 .account-initial {
   flex: none;
@@ -3083,9 +3080,6 @@ textarea {
   margin-bottom: 16px;
 }
 .user-row {
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
   padding: 10px 14px;
 }
 .user-row-head {
@@ -3130,9 +3124,17 @@ textarea {
   color: var(--danger);
 }
 /* a user's links on Access, under their name: indented past the initial
-   so the row still reads as one person */
+   so the row still reads as one person. The user card is glass, and glass
+   is never nested, so the links are rows under a hairline, not a box of
+   their own (#1524). */
 .link-list.user-links {
   margin: 10px 0 2px 42px;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }
 /* On a phone, a blocked user's four actions wrap rather than run off the
    row, and a link's Remove takes a line under the name rather than
@@ -5339,9 +5341,6 @@ textarea {
 .link-list {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--surface);
   margin-bottom: 12px;
 }
 .link-row {
@@ -6203,13 +6202,17 @@ textarea {
   min-width: 0;
   padding: 18px 20px 16px;
 }
-/* The team cards, the plan strip over them, the loop page's side panels and
-   the rule and channel cards, which share .rule-item, are glass (#1411,
-   #1445, #1521, #1522, #1523). */
+/* The team cards, the plan strip over them, the loop page's side panels,
+   the rule and channel cards, which share .rule-item, and Settings' account,
+   user and chat-account cards are glass (#1411, #1445, #1521, #1522, #1523,
+   #1524). */
 .team-card,
 .plan-strip-frame,
 .side-panel,
-.rule-item {
+.rule-item,
+.account,
+.user-row,
+.link-list {
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
   background: var(--glass-fill);
