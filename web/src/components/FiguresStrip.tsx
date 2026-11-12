@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query'
-import { api, type FiguresTurn, type FiguresWindow, type LoopFigures } from '../api'
+import { api, type FiguresTurn, type FiguresWindow, type LoopFigures, type LoopView } from '../api'
 import {
   FIGURES_WINDOWS,
   LANGFUSE_DOCS,
@@ -17,7 +17,8 @@ import {
   toolMix,
   turnShares,
 } from '../figures'
-import { formatAgo, formatTokens, formatUsd } from '../format'
+import { formatAgo, formatTokens, formatUsd, sumCostToday } from '../format'
+import { RowOrb } from './LoopOrb'
 import { messageTime } from './MessageKnot'
 import { useMinuteClock } from './PlanUsage'
 
@@ -36,7 +37,8 @@ export function FiguresStrip({
   onLoop,
   onWindow,
 }: {
-  loops: string[]
+  // by name, as the loop picker lists them
+  loops: LoopView[]
   // '' for the overview
   loop: string
   window: FiguresWindow
@@ -61,7 +63,7 @@ export function FiguresStrip({
   return loop === '' ? (
     <Overview loops={loops} window={window} windows={windows} onLoop={onLoop} />
   ) : (
-    <Detail loops={loops} loop={loop} window={window} windows={windows} onLoop={onLoop} />
+    <Detail loops={loops.map((l) => l.name)} loop={loop} window={window} windows={windows} onLoop={onLoop} />
   )
 }
 
@@ -82,12 +84,14 @@ function Overview({
   windows,
   onLoop,
 }: {
-  loops: string[]
+  loops: LoopView[]
   window: FiguresWindow
   windows: ReactNode
   onLoop: (name: string) => void
 }) {
-  const answers = useQueries({ queries: loops.map((name) => figuresQuery(name, window)) })
+  const answers = useQueries({ queries: loops.map((l) => figuresQuery(l.name, window)) })
+  const views = new Map(loops.map((l) => [l.name, l]))
+  const spentToday = sumCostToday(loops)
   const served = answers.flatMap((a) => (a.data ? [a.data] : []))
   if (served.length === 0) return null
   const off = allOff(served)
@@ -102,7 +106,13 @@ function Overview({
       ) : (
         <div className="figures-cards">
           {served.map((f) => (
-            <Card key={f.loop} figures={f} onOpen={() => onLoop(f.loop)} />
+            <Card
+              key={f.loop}
+              figures={f}
+              view={views.get(f.loop)}
+              spentToday={spentToday}
+              onOpen={() => onLoop(f.loop)}
+            />
           ))}
         </div>
       )}
@@ -110,9 +120,21 @@ function Overview({
   )
 }
 
-// A loop's card: its spend, turns and median turn over its turns' bars,
-// or a short line why there are none. It opens the loop's detail.
-function Card({ figures, onOpen }: { figures: LoopFigures; onOpen: () => void }) {
+// A loop's card: the loop as its ring and name, as on the Fleet page
+// (#1525), then its spend, turns and median turn over its turns' bars, or a
+// short line why there are none. It opens the loop's detail.
+function Card({
+  figures,
+  view,
+  spentToday,
+  onOpen,
+}: {
+  figures: LoopFigures
+  // the loop as the loops list has it, for its ring; absent until it does
+  view?: LoopView
+  spentToday: number
+  onOpen: () => void
+}) {
   const now = useMinuteClock()
   const line = cardLine(figures)
   const f = figures.figures
@@ -120,7 +142,9 @@ function Card({ figures, onOpen }: { figures: LoopFigures; onOpen: () => void })
   return (
     <button type="button" className="figures-card" onClick={onOpen} title={`Open @${figures.loop}'s figures`}>
       <span className="figures-card-head">
-        <span className="figures-card-name">@{figures.loop}</span>
+        <span className="figures-card-name">
+          {view && <RowOrb loop={view} spentToday={spentToday} />}@{figures.loop}
+        </span>
         {age?.stale && <span className="figures-age stale">{formatAgo(figures.fetched_at, now)}</span>}
       </span>
       {line || !f ? (
