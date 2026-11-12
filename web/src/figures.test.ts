@@ -23,6 +23,7 @@ const figures: Figures = {
   turns: 42,
   failed_turns: 2,
   cost_usd: 3.36,
+  cost_turns: 42,
   tokens: { input: 51240, output: 18480, cache_read: 2310000, cache_write: 96000 },
   turn_duration_ms: { p50: 41000, p95: 182000, max: 420000 },
   failures: [{ class: 'tool', count: 3 }],
@@ -57,7 +58,11 @@ describe('the figures window', () => {
 describe('a loop with figures', () => {
   it('reads its spend and tokens per turn', () => {
     expect(perTurn(figures)).toEqual({ cost: 0.08, input: 1220, output: 440, cacheRead: 55000 })
-    expect(perTurn({ ...figures, turns: 0, cost_usd: 0 }).cost).toBe(0)
+    expect(perTurn({ ...figures, cost_turns: 0, cost_usd: 0 }).cost).toBe(0)
+  })
+  it("divides its spend by the hub's turns, not Langfuse's traces", () => {
+    // Langfuse stale: the hub has priced 60 turns, the traces stopped at 42
+    expect(perTurn({ ...figures, cost_usd: 4.2, cost_turns: 60 }).cost).toBeCloseTo(0.07)
   })
   it('reads its turn durations at a glance', () => {
     expect(formatDuration(900)).toBe('900ms')
