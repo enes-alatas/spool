@@ -565,8 +565,12 @@ textarea {
 }
 .account-initial {
   flex: none;
-  display: grid;
-  place-items: center;
+  /* centred on the letter's own height, not its line box, whose room for
+     descenders sat the capital above the circle's middle (#1546) */
+  display: block;
+  align-content: center;
+  text-align: center;
+  text-box: trim-both cap alphabetic;
   width: 36px;
   height: 36px;
   border: 1px solid var(--hairline);
@@ -4543,6 +4547,12 @@ textarea {
   display: none;
 }
 .channel-loop button {
+  /* the × is drawn, not typed: a glyph sat high in the chip, as the
+     initials did in their circles (#1546) */
+  display: grid;
+  place-items: center;
+  /* the line the typed × gave it, so the chip keeps its height */
+  height: calc(var(--fs-input) * 1.5);
   background: none;
   border: 0;
   border-radius: 999px;
@@ -6483,6 +6493,8 @@ button.orb:focus-visible {
 }
 .orb-initial {
   position: relative;
+  /* the capital's own height is what the circle centres (#1546) */
+  text-box: trim-both cap alphabetic;
   font-family: var(--mono);
   font-size: var(--fs-page-title);
   font-weight: 600;

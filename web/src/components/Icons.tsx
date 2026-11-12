@@ -107,6 +107,16 @@ export function PlusIcon() {
   )
 }
 
+// Remove: a cross, for the × that takes a loop out of a chip list. Drawn
+// rather than typed, so it sits on the chip's middle (#1546).
+export function RemoveIcon() {
+  return (
+    <Icon size={12}>
+      <path d="M5 5l10 10M15 5L5 15" />
+    </Icon>
+  )
+}
+
 // Attach: a paperclip, for the composer's file picker.
 export function AttachIcon() {
   return (

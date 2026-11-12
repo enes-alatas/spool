@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { api, ApiError } from '../api'
 import { attachErrorText } from '../connections'
 import type { LoopOption } from '../connectionLoops'
+import { RemoveIcon } from './Icons'
 
 // Choosing a shared connection's loops on the Connections page (#1321), as
 // a channel's loops are chosen on Channels: a chip per loop holding it, each
@@ -37,7 +38,7 @@ export function LoopChips({
             disabled={disabled}
             onClick={() => onRemove(loop)}
           >
-            ×
+            <RemoveIcon />
           </button>
         </span>
       ))}
