@@ -422,6 +422,7 @@ const dayFigures = (seed) => {
     turns: n,
     failed_turns: failed,
     cost_usd: Math.round(sum('cost_usd') * 100) / 100,
+    cost_turns: n,
     tokens: {
       input: sum('input_tokens'),
       output: sum('output_tokens'),

@@ -53,7 +53,9 @@ export function formatDuration(ms: number): string {
   return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 60)}h`
 }
 
-// The window's tokens and spend over its turns; zero turns read as zero.
+// The window's spend over the hub's turns it sums, and its tokens over
+// Langfuse's traces they come from (#1516): the two counts drift apart
+// while Langfuse is stale. Zero turns read as zero.
 export function perTurn(f: Figures): {
   cost: number
   input: number
@@ -62,7 +64,7 @@ export function perTurn(f: Figures): {
 } {
   const n = f.turns || 1
   return {
-    cost: f.cost_usd / n,
+    cost: f.cost_usd / (f.cost_turns || 1),
     input: Math.round(f.tokens.input / n),
     output: Math.round(f.tokens.output / n),
     cacheRead: Math.round(f.tokens.cache_read / n),

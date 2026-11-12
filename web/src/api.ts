@@ -1421,10 +1421,11 @@ export interface Figures {
   failed_turns: number
   // the hub's own spend: the loop's turns started in the window, the same
   // figures as its turns table, since Langfuse holds no cost for these spans.
-  // It is priced live, while turns counts Langfuse's cached traces; the
-  // strip's spend a turn still divides one by the other until the route
-  // sends the hub's own turn count (#1515).
+  // It is priced live, while turns counts Langfuse's cached traces.
   cost_usd: number
+  // how many of the hub's turns cost_usd sums, the ended ones with a known
+  // cost: the divisor of the spend a turn, since turns lags them (#1515)
+  cost_turns: number
   tokens: { input: number; output: number; cache_read: number; cache_write: number }
   turn_duration_ms: { p50: number; p95: number; max: number }
   // by class: 'tool', 'model_request' or 'error' (a failed turn nothing
