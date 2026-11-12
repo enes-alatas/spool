@@ -25,7 +25,16 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatSpend, formatUsd, inTurn, nextWake } from '../format'
+import {
+  formatTokens,
+  fillTone,
+  hasFillPct,
+  formatSpend,
+  formatUsd,
+  inTurn,
+  nextWake,
+  sumCostToday,
+} from '../format'
 import { cappedNote, dailyCapField, dailyCapValue, isPreset, thenCappedNote } from '../dailyCap'
 import { loopPlanCapped } from '../planCap'
 import { CapChips } from '../components/CapChips'
@@ -59,7 +68,7 @@ import { CloudWorkstation, SETUP_PARAM } from '../components/CloudWorkstation'
 import { useMinuteClock } from '../components/PlanUsage'
 import { cutOffTurn, turnUntil, unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
-import { SpoolGlyph } from '../components/Spool'
+import { RowOrb } from '../components/LoopOrb'
 import { EditIcon } from '../components/Icons'
 import { StepDialog } from '../components/StepDialog'
 import { SideColumn } from '../components/SideColumn'
@@ -1555,6 +1564,10 @@ export default function LoopDetail() {
   // (#1075) sleeps at the end of it, so the pane says so where a wake would
   // be expected.
   const { data: planUsage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  // The header's ring draws the loop's share of the fleet's spend today, as
+  // its circle on the Fleet page does, so it reads the same list (#1521).
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const spentToday = sumCostToday(loops ?? [])
   const loginCapped = !!loop && loopPlanCapped(planUsage, loop)
   const thenCapped = thenCappedNote(loop?.daily_cap_reached, loginCapped)
   const { data: events, error: eventsError } = useQuery({
@@ -1902,7 +1915,7 @@ export default function LoopDetail() {
       <div className="detail">
         <section>
           <h1 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-            <SpoolGlyph spinning={loop.state === 'busy'} size={28} />
+            <RowOrb loop={loop} spentToday={spentToday} />
             <span style={{ fontFamily: 'var(--mono)' }}>@{loop.name}</span>
             <span className="state-name">{loop.state}</span>
             <RuntimeBadge runtime={loop.runtime} />
