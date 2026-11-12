@@ -121,3 +121,49 @@ func TestASlackRoomCarriesItsChannel(t *testing.T) {
 		t.Errorf("the pasted room after its first message = %+v, want it named and still bound", room)
 	}
 }
+
+// pushLeft sends app a member_left_channel event: user left channel.
+func (slack *fakeSlack) pushLeft(t *testing.T, app, channel, user string) {
+	t.Helper()
+	slack.pushEvent(t, app, map[string]any{"type": "member_left_channel", "user": user,
+		"channel": channel, "channel_type": "C", "team": "T0ACME", "ts": "left-" + user})
+}
+
+// pushSelfLeft sends app the event Slack sends the leaver itself, kind
+// channel_left or group_left: it names no user, since the app is the one
+// that left.
+func (slack *fakeSlack) pushSelfLeft(t *testing.T, app, kind, channel string) {
+	t.Helper()
+	slack.pushEvent(t, app, map[string]any{"type": kind, "channel": channel,
+		"actor_id": slackOperator, "event_ts": "1727600000.000040", "ts": kind})
+}
+
+// A loop's Slack app removed from a Slack channel forgets its room there,
+// whichever event Slack tells it by: channel_left or group_left, sent to
+// the app that left, or member_left_channel naming its bot user. Another
+// member leaving changes no room (ADR-0070).
+func TestASlackAppRemovedFromAChannelForgetsItsRoom(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+
+	// one app's events are taken in order: once the marker channel is
+	// recorded, the person's leaving before it has been seen
+	slack.pushLeft(t, slackAppToken, slackChannel, slackOperator)
+	const marker = "C0MARKER"
+	slack.pushMessage(t, slackAppToken, "channel", marker, slackOperator, "marker", "1727600000.000030")
+	srv.waitRoom("terra", marker)
+	if room, ok := srv.room("terra", slackChannel); !ok || room.Channel != fleetChannel {
+		t.Fatalf("a person leaving changed terra's room: %+v", srv.rooms("terra"))
+	}
+
+	slack.pushLeft(t, slackAppToken, slackChannel, terraBot.UserID)
+	srv.waitNoRoom("terra", slackChannel)
+	if room, ok := srv.room("milo", slackChannel); !ok || room.Channel != fleetChannel {
+		t.Errorf("terra's app leaving changed milo's room: %+v", srv.rooms("milo"))
+	}
+
+	slack.pushSelfLeft(t, slackMiloAppToken, "channel_left", slackChannel)
+	srv.waitNoRoom("milo", slackChannel)
+	slack.pushSelfLeft(t, slackAppToken, "group_left", marker)
+	srv.waitNoRoom("terra", marker)
+}

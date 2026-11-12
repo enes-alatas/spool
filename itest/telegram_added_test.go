@@ -29,8 +29,9 @@ func (tg *fakeTelegram) botMembership(token string, chatID int64, title string, 
 // An allowed person adding a loop's bot to a group is enough to make the
 // group known to the loop, as their first message there would be: it is
 // recorded unbound, the first group included (ADR-0068). A stranger's add records nothing, and an allowed
-// person's message still records that group later. A promotion and a
-// removal change no room (#1320, ADR-0038, ADR-0051).
+// person's message still records that group later. A promotion changes no
+// room, and a removal forgets the group's (#1320, ADR-0038, ADR-0051,
+// ADR-0070).
 func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8181, First: "Operator", Username: "operator"}
@@ -82,8 +83,8 @@ func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
 	if _, ok := srv.room("alpha", strangersID); ok {
 		t.Fatalf("a promotion recorded a room: %+v", srv.rooms("alpha"))
 	}
-	if _, ok := srv.room("alpha", laterID); !ok {
-		t.Errorf("removing the bot forgot its room: %+v", srv.rooms("alpha"))
+	if _, ok := srv.room("alpha", laterID); ok {
+		t.Errorf("removing the bot kept its room: %+v", srv.rooms("alpha"))
 	}
 
 	// The message path is unchanged: the operator's message records the
@@ -94,5 +95,49 @@ func TestAnAllowedPersonAddingTheBotRecordsTheGroup(t *testing.T) {
 	}
 	if first, _ := srv.room("alpha", fleetID); first.Channel != "" {
 		t.Errorf("the first group = %+v, want it still unbound", first)
+	}
+}
+
+// waitNoRoom polls until the loop has no room for roomID.
+func (srv *server) waitNoRoom(loop, roomID string) {
+	srv.t.Helper()
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if _, ok := srv.room(loop, roomID); !ok {
+			return
+		}
+	}
+	srv.t.Fatalf("%s's room %s was never forgotten: %+v", loop, roomID, srv.rooms(loop))
+}
+
+// A loop's bot removed from its channel's chat forgets its room there, so
+// the channel's page shows it as not in the chat, and the chat stays the
+// channel's; added back, it carries the channel again with no bind
+// (ADR-0070). The other member's room is untouched.
+func TestABotRemovedFromTheChatForgetsItsRoom(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8383, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+	group := strconv.FormatInt(groupChatID, 10)
+	if got := srv.channelChat(fleetChannel).memberStatus("alpha"); got.Status != "carrying" {
+		t.Fatalf("alpha's status before the removal = %+v, want carrying", got)
+	}
+
+	tg.botMembership("alpha", groupChatID, "Fleet", operator, "member", "kicked")
+	srv.waitNoRoom("alpha", group)
+	view := srv.channelChat(fleetChannel)
+	if view.Chat == nil || view.Chat.ChatID != group {
+		t.Fatalf("fleet after alpha's removal = %+v, want its chat kept", view)
+	}
+	if got := view.memberStatus("alpha"); got.Status != "not_in_chat" {
+		t.Errorf("alpha's status after its removal = %+v, want not_in_chat", got)
+	}
+	if got := view.memberStatus("beta"); got.Status != "carrying" {
+		t.Errorf("beta's status after alpha's removal = %+v, want carrying", got)
+	}
+
+	tg.botMembership("alpha", groupChatID, "Fleet", operator, "left", "member")
+	srv.waitRoomChannel("alpha", group, fleetChannel)
+	if got := srv.channelChat(fleetChannel).memberStatus("alpha"); got.Status != "carrying" {
+		t.Errorf("alpha's status once added back = %+v, want carrying", got)
 	}
 }

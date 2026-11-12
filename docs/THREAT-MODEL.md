@@ -111,7 +111,16 @@ Slack connects out over Socket Mode, so no port is opened for either
   check is on the adder. An allowed person can therefore bring a loop
   into a group full of strangers, as their message there always could.
   The strangers still reach no loop. A stranger's add records
-  nothing, and the bot's removal changes no room.
+  nothing.
+- **A loop's bot removed from a chat forgets its room there,** on
+  Telegram by its `my_chat_member` update, on Slack by `channel_left`
+  or `group_left` on the app's own link, or `member_left_channel` for
+  the app's bot user (ADR-0070). Whoever
+  removed it, the bot hears nothing there any more, so the removal
+  takes no allowlist check, and a group's admin can take a loop out of
+  the group, as they always could. The channel's chat stays, and the
+  loop carries the channel there again once its bot is added back.
+  Only the surface reports the removal: a message can't fake it.
 - **Restoring an older backup restores the links it held** (ADR-0051).
 - **A Slack deletion names the message's author**, because Slack doesn't
   say who deleted it. An admin's deletion reaches the loops as the
