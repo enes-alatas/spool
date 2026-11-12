@@ -3,6 +3,8 @@
 package itest
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +49,56 @@ func TestCrashedTurnIsRecordedAndTheLoopIsNotWedged(t *testing.T) {
 	}
 }
 
+// TestAFirstSpawnThatDiesUnansweredBeginsAnotherSession: a session's first
+// process that dies before the API answered it leaves no session on disk,
+// so the retry begins another session rather than resume one the CLI never
+// wrote, which would fail as unknown and cost the loop an error turn and a
+// rotation (#1532). Every wake after a failed one takes this path, whatever
+// woke it: the crash retry here, an edit or a tick in the same backoff.
+func TestAFirstSpawnThatDiesUnansweredBeginsAnotherSession(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+	workspace := workspaceWithScript(t, "!crash\n")
+	hub.createLoop("phoenix", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+	})
+
+	hub.message("phoenix", "first")
+	crashed := hub.waitTurn("phoenix", 30*time.Second, func(tr turn) bool {
+		return tr.IsError
+	})
+	// the retry finds a session that answers, which a resume of the
+	// crashed one could not reach: the fake keeps no state for it
+	if err := os.WriteFile(filepath.Join(workspace, ".fakeclaude"), []byte("risen\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	risen := hub.waitTurn("phoenix", 60*time.Second, func(tr turn) bool {
+		return tr.StartedAt > crashed.StartedAt && tr.EndedAt != 0
+	})
+	if risen.IsError || !strings.Contains(risen.ResultText, "risen") {
+		t.Fatalf("the retry's turn is %+v, want the new session's answer", risen)
+	}
+	if risen.SessionID == crashed.SessionID {
+		t.Errorf("the retry ran in session %s, the unwritten one, want another", risen.SessionID)
+	}
+	spawns := 0
+	for _, event := range hub.eventsQuery("phoenix", "limit=500") {
+		switch event.Subtype {
+		case "proc_spawn":
+			spawns++
+			if !strings.Contains(event.Payload, `"resume":false`) {
+				t.Errorf("a spawn resumed the session its first process never wrote: %s", event.Payload)
+			}
+		case "session_lost", "resume_failed", "session_unusable":
+			t.Errorf("the unwritten session was taken for lost: %s %s", event.Subtype, event.Payload)
+		}
+	}
+	if spawns < 2 {
+		t.Errorf("saw %d spawns, want the crashed one and its retry", spawns)
+	}
+}
+
 // TestHugeReplyCrossesTheStreamReader: claude's stream-json is one JSON
 // object per line, and a reply can be far larger than any single read. The
 // runner reads 256KB at a time (internal/claude/stream.go), so a 512KB reply
@@ -77,8 +129,8 @@ func TestHugeReplyCrossesTheStreamReader(t *testing.T) {
 }
 
 // TestKillEndsATurnInFlight: an operator who kills a working loop must get
-// the turn closed as errored rather than left hanging, and the loop must
-// settle asleep instead of waiting on a process that is gone.
+// the turn closed as errored rather than left hanging, and the loop must go
+// on to its queued work instead of waiting on a process that is gone.
 func TestKillEndsATurnInFlight(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -102,7 +154,12 @@ func TestKillEndsATurnInFlight(t *testing.T) {
 	if killed.ResultText != "killed by the operator" {
 		t.Errorf("the killed turn says %q, want the hub's reason, not the process's exit (#1096)", killed.ResultText)
 	}
-	s.waitState("stuck", "asleep", 30*time.Second)
+	// The loop is not left waiting on the process that is gone: the other
+	// of the two turns, queued behind the killed one, wakes it as soon as
+	// the kill lets it (#1302). The session the killed process began was
+	// never answered, so that wake begins another rather than failing to
+	// resume it, a failure this test used to settle asleep on (#1532).
+	s.waitRunningTurn("stuck", 30*time.Second, func(tr turn) bool { return tr.ID != running.ID })
 }
 
 // A session lost mid-turn errors the turn, saying so (#1096), and the fresh
