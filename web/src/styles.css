@@ -159,6 +159,30 @@ select {
   color: var(--text);
   padding: 8px 11px;
 }
+/* A field is a button's height (#1547): 2rem, as a regular `.btn`, and
+   1.625rem in the compact fields below, as a `.btn.sm`. So a field and the
+   button beside it are one height and their labels share a line. The height
+   is a minimum in rem, as a button's is, so it grows with the reader's text
+   size; the text is centred in it and padding sets only the width. A
+   textarea, or a select drawn as a list, holds many lines and keeps its
+   padding. A checkbox, radio, range or file input has no well, so it has no
+   height to share. */
+input:where(:not([type='checkbox'], [type='radio'], [type='range'], [type='file'])),
+select:where(:not([multiple], [size])) {
+  box-sizing: border-box;
+  min-height: 2rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.panel-select,
+.panel-input,
+.tick-input,
+.model-label-input,
+.user-role,
+.connection-search,
+.channel-add {
+  min-height: 1.625rem;
+}
 input:focus,
 textarea:focus,
 select:focus {
@@ -2585,7 +2609,7 @@ textarea {
   width: 100%;
   background: var(--canvas);
   border-radius: 5px;
-  padding: 4px 8px;
+  padding: 0 8px;
   font-size: var(--fs-body);
 }
 /* the minutes field beside the interval row: a number, so it is mono */
@@ -2593,7 +2617,7 @@ textarea {
   width: 56px;
   background: var(--canvas);
   border-radius: 5px;
-  padding: 2px 6px;
+  padding: 0 6px;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -2610,7 +2634,7 @@ textarea {
   min-width: 0;
   background: var(--canvas);
   border-radius: 5px;
-  padding: 2px 6px;
+  padding: 0 6px;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -2663,6 +2687,7 @@ textarea {
 .cap-other input {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 0;
   border: 0;
   background: none;
@@ -3186,7 +3211,7 @@ textarea {
 }
 .user-role {
   width: auto;
-  padding: 3px 8px;
+  padding: 0 8px;
   font-size: var(--fs-body);
 }
 .user-confirm {
@@ -3584,7 +3609,7 @@ textarea {
 .model-label-input {
   flex: 1;
   min-width: 0;
-  padding: 2px 6px;
+  padding: 0 6px;
   font-size: var(--fs-body);
 }
 .model-row-actions {
@@ -3713,6 +3738,11 @@ textarea {
   border: 0;
   background: none;
   color: var(--text-muted);
+}
+/* inside the group's hairline, so the group, not each pill, is the
+   compact height a `.btn.sm` beside it has (#1547) */
+.figures-windows .figures-window {
+  min-height: calc(1.625rem - 2px);
 }
 .figures-window:hover {
   color: var(--text);
@@ -4568,7 +4598,7 @@ textarea {
   outline: 2px solid var(--text);
 }
 .channel-add {
-  padding: 3px 8px;
+  padding: 0 8px;
   border-radius: 999px;
   font-size: var(--fs-small);
 }
@@ -4879,7 +4909,7 @@ textarea {
 }
 .pace-tick-box .tick-input {
   width: 56px;
-  padding: 2px 6px;
+  padding: 0 6px;
   font-family: var(--mono);
   font-size: var(--fs-small);
 }
@@ -5656,6 +5686,7 @@ textarea {
    that it takes typing */
 .health-limit-value input {
   min-width: 0;
+  min-height: 0;
   padding: 0 2px;
   border-color: transparent;
   background: none;
@@ -5936,7 +5967,7 @@ textarea {
   min-width: 0;
   background: var(--canvas);
   border-radius: 5px;
-  padding: 4px 8px;
+  padding: 0 8px;
   font-size: var(--fs-body);
 }
 .connection-filter-row .panel-select {

@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column); 2026-11-11 (§1, glass and the glow; §3 and §5, the ring; §6, the type scale; §7, the muted value on glass; §12, buttons; §13, a loop is its ring); 2026-11-12 (§1, the glass edge)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column); 2026-11-11 (§1, glass and the glow; §3 and §5, the ring; §6, the type scale; §7, the muted value on glass; §12, buttons; §13, a loop is its ring); 2026-11-12 (§1, the glass edge; §14, a field's height)
 
 ## Context
 
@@ -204,6 +204,12 @@ need the operator to look.
     The same ring stands for the loop on its own page's header, on Activity
     and in a channel's loops, so a loop looks the same wherever it is named.
     People are not loops and keep their letter avatars.
+
+14. **A field is the height of a button** (added 2026-11-12, #1547). A text
+    field or dropdown takes §12's two heights, `2rem` beside a regular button
+    and `1.625rem` beside a compact one, so controls in one row share a
+    height and their labels a line. Padding sets only its width. A textarea
+    and a select drawn as a list hold many lines and keep their padding.
 
 ## Consequences
 
