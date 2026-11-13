@@ -489,6 +489,52 @@ for (const [name, query, answer] of [
   await page.unroute('**/api/loops/*/figures*')
 }
 
+// The same overview on a hub with two teams (#1563): a heading a team with
+// its loops' figures summed, and the loops in none last. The fixture has no
+// team, so the teams and the loops' places in them are served here rather
+// than made on the hub, whose later shots are of a hub with none.
+const fixtureTeams = { handbook: fixtureLoops.slice(0, 2), ops: fixtureLoops.slice(2, 3) }
+const teamOf = (loop) =>
+  Object.entries(fixtureTeams).find(([, loops]) => loops.some((l) => l.name === loop))?.[0] ?? ''
+await page.route('**/api/teams', (route) =>
+  route.fulfill({
+    json: Object.entries(fixtureTeams).map(([name, loops]) => ({
+      name,
+      description: '',
+      created_at: figuresNow,
+      loops: loops.map((l) => l.name),
+      home_channel: '',
+      channels: [],
+    })),
+  }),
+)
+await page.route('**/api/loops', async (route) => {
+  const loops = await (await route.fetch()).json()
+  route.fulfill({ json: loops.map((l) => ({ ...l, team: teamOf(l.name) })) })
+})
+await page.route('**/api/loops/*/figures*', (route) => {
+  const url = new URL(route.request().url())
+  const loop = url.pathname.split('/')[3]
+  route.fulfill({
+    json: { loop, window: url.searchParams.get('window'), refresh_sec: 300, ...overview(loop) },
+  })
+})
+// Taller, as three groups of cards run past the room's frame.
+await page.setViewportSize({ width: 1180, height: 1400 })
+await page.goto(base + '/activity', { waitUntil: 'networkidle' })
+await page.locator('.figures-team').first().waitFor({ timeout: 15000 })
+const teamsStrip = await page.locator('.figures').boundingBox()
+const figuresTeamsFile = `${outDir}/activity-figures-teams.png`
+await page.screenshot({
+  path: figuresTeamsFile,
+  clip: { x: 0, y: 0, width: 1180, height: teamsStrip.y + teamsStrip.height + 24 },
+})
+taken.push(figuresTeamsFile)
+await page.unroute('**/api/loops/*/figures*')
+await page.unroute('**/api/loops')
+await page.unroute('**/api/teams')
+await page.setViewportSize({ width: 1180, height: 900 })
+
 // The Fleet page's plan strip (#648) in the states the fixture cannot hold
 // at once: near both limits, a hub no loop has reported the plan's usage
 // to yet, and a hub with three Claude logins, one of them not reported
