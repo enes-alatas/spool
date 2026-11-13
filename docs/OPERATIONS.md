@@ -73,7 +73,7 @@ Restart=on-failure
 RestartSec=5
 # The hub drains HTTP for up to 10s, then stops each loop's claude.
 TimeoutStopSec=30
-# On `spool serve`, stdout carries only the operator token and the admin's
+# The hub's stdout carries only the operator token and the admin's
 # one-time password, printed once at the first start. The log is on stderr.
 # Under systemd, stdout is the journal, which members of `adm` and
 # `systemd-journal` can read, so it goes nowhere instead. stderr follows
