@@ -27,7 +27,7 @@ https://github.com/user-attachments/assets/8721b0cb-fcfd-415a-b766-52c930d62b18
 
 Less switching between sessions and carrying messages between loops. More time deciding what they should work on and reviewing what they produce.
 
-Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and their operator. The four loops in this repo's issues and PRs run on Spool, building Spool. Commits are co-authored by the model that wrote them; every change lands through a pull request that CI gates and a reviewer reads, and the operator is the one who merges it. Found a problem? [CONTRIBUTING.md](CONTRIBUTING.md) says how to report it and who answers.
+Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and their operator. The five loops in this repo's issues and PRs run on Spool, building Spool. Commits are co-authored by the model that wrote them; every change lands through a pull request that CI gates and a reviewer reads, and the operator is the one who merges it. Found a problem? [CONTRIBUTING.md](CONTRIBUTING.md) says how to report it and who answers.
 
 ## Quick start
 
@@ -54,7 +54,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
    - **Telegram:** send **@BotFather** `/newbot` in Telegram, and paste the token it gives you.
    - **Slack:** follow the dialog's **Create app from manifest**, then paste the app's two tokens. [docs/SLACK.md](docs/SLACK.md) has the steps.
 
-   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account and makes you the loop's owner. Message the bot once more: the card is done when the loop answers you there.
+   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account. On Telegram it also makes you the owner of every loop that has none; a Slack link makes nobody an owner, so choose yourself as the loop's **owner** on its page ([docs/SLACK.md](docs/SLACK.md) step 6). Message the bot once more: the card is done when the loop answers you there.
 
    No chat app? You can talk to a loop on its page in the control room instead. Once the Harness and Loops cards are done, choose **Skip for now** on the Chat surface card to finish the setup page without one, and attach a bot later on the loop's page.
 
@@ -85,11 +85,11 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 
 ## How it works
 
-- **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
+- **Plain `claude` CLI underneath.** Contained and bare loops are `claude` subprocesses speaking stream-json over stdin/stdout; a cloud loop's turn is read back from a Stop hook. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
 - **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
-- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
 - **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
 - **Traces, if you want them.** With [Langfuse beside the hub](docs/OPERATIONS.md#langfuse-beside-the-hub), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
 - **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [OPERATIONS.md](docs/OPERATIONS.md#management-tokens) has the setup.
@@ -98,7 +98,7 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 
 A hub can hold *teams*. A team is a named set of loops with channels and settings of its own (ADR-0066). A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
 
-- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet`, which you can make a team's home channel (ADR-0068). A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
+- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet` (`fleet-2` and on if that name is taken, and none at all if it held no member, message or room), which you can make a team's home channel (ADR-0068). A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
 - **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](docs/OPERATIONS.md#claude-logins) its contained loops run on.
 - **A loop knows its team.** A loop in a team sees the team's name in its prompt.
 
@@ -112,26 +112,26 @@ https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
 
 ### Start from prompts.chat
 
-New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop takes none. A [team](https://prompts.chat/bots/teams) makes a team on the hub in one step: its loops, in a team whose home channel they share:
+New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop, or a bare loop working in a directory of yours, takes none. A [team](https://prompts.chat/bots/teams) makes a team on the hub in one step: its loops, in a team whose home channel they share:
 
 https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 
 ## Security in brief
 
-- **Contained by default.** Each loop runs in its own container with an egress allowlist (**Settings → Egress**) and no route to your machine but one hub port, which serves the loops' MCP endpoint and nothing else.
+- **Contained by default.** Each loop runs in its own container with an egress allowlist (**Settings → Egress**) and no route to your machine but one hub port, which serves only what loops use and never the control room or its API.
 - **Uncontained only when you ask.** Loops run with permission prompts bypassed. Without Docker, Spool refuses to start rather than run them on your host; `--runtime bare` runs each one as a subprocess under your own account, with your network and your files, badged *uncontained*.
 - **Signed in.** The control room asks for a username and password, and scripts use the operator token (`spool token`). Binding to localhost is not a boundary on its own.
-- **Secrets sealed.** Bot tokens, connection secrets and the setup-token are sealed under `hub.key` in the data directory. Back it up apart from `spool.db`.
+- **Secrets sealed.** Claude logins, bot tokens and connection secrets, and the setup-token if you still use one, are sealed under `hub.key` in the data directory. Back it up apart from `spool.db`.
 
 [docs/CONTAINMENT.md](docs/CONTAINMENT.md) has the whole picture, including what containment does not do. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Chat surfaces
 
-A loop starts with the control room only. Attach a bot to reach it from Telegram or Slack too: each loop is its own bot or app, and step 5 of the quick start attaches the first one. To put a loop's Telegram bot in a group, follow **Add to a group** on the loop's page: the hub records the group when someone on your allowlist adds the bot, and the page shows the group as soon as it does. No group or Slack channel binds itself: it waits on the loop's page, unread, until you pick which of the loop's channels it carries and choose **Bind**. Everyone in that chat then reads what the loop says in that channel, and what they write there reaches it (ADR-0068). [docs/TELEGRAM.md](docs/TELEGRAM.md) covers BotFather, groups and reactions; [docs/SLACK.md](docs/SLACK.md) covers the app manifest, the two tokens, reactions and polls.
+A loop starts with the control room only. Attach a bot to reach it from Telegram or Slack too: each loop is its own bot or app, and step 5 of the quick start attaches the first one. To put a loop's Telegram bot in a group, follow **Add to a group** on the loop's page: the hub records the group when someone on your allowlist adds the bot, and the page shows the group as soon as it does. No group or Slack channel binds itself: it waits on the loop's page, unread, until you pick which of the loop's channels it carries and choose **Bind**. Everyone in that chat then reads what the loop says in that channel, and what someone on your sender allowlist writes there reaches it (ADR-0068). [docs/TELEGRAM.md](docs/TELEGRAM.md) covers BotFather, groups and reactions; [docs/SLACK.md](docs/SLACK.md) covers the app manifest, the two tokens, reactions and polls.
 
 ### Who can talk to your loops
 
-Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyone else who messages one of your bots is ignored: their message never reaches a loop or makes a group known to it, and `/spool_status` won't answer them. Linking your account in step 5 put you on it. To let someone else in, add them as a user (`spool user add`, or **Settings → Users and access**) and have them link theirs under **Settings → Link Telegram** or **Link Slack**. **Settings → Users and access** lists each user's links and can block a user on every bot, along with anyone an old pairing code allowed without a user; a blocked sender gets no reply at all. A Slack app is already private to the workspace you install it in, and the allowlist applies there too. Loop-to-loop traffic is internal and unaffected.
+Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyone else who messages one of your bots is ignored: their message never reaches a loop or makes a group known to it, and `/spool_status` won't answer them. Linking your account in step 5 put you on it. To let someone else in, add them as a user (`spool user add`, or **Settings → Users and access**) and have them link theirs under **Settings → Account**, with **Link Telegram** or **Link Slack**. **Settings → Users and access** lists each user's links and can block a user on every bot, along with anyone an old pairing code allowed without a user; a blocked sender gets no reply at all. A Slack app is already private to the workspace you install it in, and the allowlist applies there too. Loop-to-loop traffic is internal and unaffected.
 
 ## Flags
 
@@ -154,13 +154,13 @@ make dev            # run backend on :8080
 make ui-dev         # vite dev server with /api proxy
 make test           # tier 1: unit + architecture tests
 make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~10min
-                    #         (~7min without a docker daemon; two files skip)
+                    #         (~7min without a docker daemon; four files skip)
 make image          # build the spool-workstation and spool-egress images locally
-make lint           # gofmt + vet (as Linux and as macOS) + golangci-lint
+make lint           # gofmt + vet (as this machine's OS, then as macOS) + golangci-lint
 make e2e-m1         # tier 3: real claude sessions (spends plan tokens)
 ```
 
-Testing is three-tiered (see `docs/QUALITY.md`): unit and fakeclaude-backed
+Testing is three-tiered (see `docs/CONVENTIONS.md`): unit and fakeclaude-backed
 integration tests gate every PR in CI; the real-claude e2e suites
 (`scripts/e2e/`) run locally per milestone: session resume across process
 death and orchestrator restarts (m1), tick scheduling and trailer clamping
