@@ -15,23 +15,27 @@ type Control = {
   act: () => void
 }
 
-// The loop page's Controls card (#858): a round button per action, its name
-// and what it does shown on hover and on keyboard focus alike, since keyboard
-// readers never hover. The name is the button's accessible name and the line
-// its description, so a screen reader hears both. The two that end something
-// sit apart from the rest, in the danger tone.
-export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean }) {
+type Failure = { label: string; message: string }
+
+// A loop's actions, as the loop page's Controls card and its focused circle
+// on the Fleet page (#1558) both draw them, each only for a role that may
+// take it. `failed` is the last action the hub refused, and its answer
+// (#1118): a pause or kill of a cloud loop whose token could not be revoked
+// says so in a 500 the operator has to read. A pause or resume refreshes the
+// loop either way, since a pause can take effect and still answer an error;
+// the fleet's list is refreshed with it, which the focused circle reads.
+export function useLoopControls(loop: LoopView): { controls: Control[]; failed: Failure | null } {
   const { name } = loop
+  const paused = loop.status === 'paused'
   const qc = useQueryClient()
   const nav = useNavigate()
   const may = useMay()
-  const id = useId()
-  const refresh = () => qc.invalidateQueries({ queryKey: ['loop', name] })
-  // The last control the hub refused, and its answer (#1118): a pause or
-  // kill of a cloud loop whose token could not be revoked says so in a 500
-  // the operator has to read. A pause or resume refreshes the loop either
-  // way, since a pause can take effect and still answer an error.
-  const [failed, setFailed] = useState<{ label: string; message: string } | null>(null)
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['loop', name] }),
+      qc.invalidateQueries({ queryKey: ['loops'] }),
+    ])
+  const [failed, setFailed] = useState<Failure | null>(null)
   const run = (label: string, call: () => Promise<unknown>, after?: () => unknown) => {
     setFailed(null)
     call()
@@ -111,41 +115,85 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
       },
     )
   }
-  if (controls.length === 0) return null
+  return { controls, failed }
+}
 
-  const button = (control: Control, i: number) => (
+// A control as a round button, its name and what it does shown on hover and
+// on keyboard focus alike, since keyboard readers never hover. The name is
+// the button's accessible name and the line its description, so a screen
+// reader hears both. The line shows above the whole row, which is its anchor,
+// rather than over this button: centred on a button near the edge, it was
+// clipped by the loop page's column, which scrolls and so clips what
+// overflows it.
+function RoundControl({ control, describedBy }: { control: Control; describedBy: string }) {
+  return (
     <button
-      key={control.label}
       className={`round-ctl${control.danger ? ' danger' : ''}`}
       aria-label={control.label}
-      aria-describedby={`${id}-${i}`}
+      aria-describedby={describedBy}
       onClick={control.act}
     >
       {control.icon}
-      {/* the label shows above the whole row rather than over this button:
-          centred on a button near the edge, it was clipped by the column,
-          which scrolls and so clips what overflows it */}
       <span className="ctl-tip">
         <strong>{control.label}</strong>
-        <span id={`${id}-${i}`}>{control.hint}</span>
+        <span id={describedBy}>{control.hint}</span>
       </span>
     </button>
   )
+}
+
+function FailedControl({ failed }: { failed: Failure }) {
+  return (
+    <div className="form-error control-error" role="alert">
+      <strong>{failed.label}:</strong> {failed.message}
+    </div>
+  )
+}
+
+// The loop page's Controls card (#858). The two that end something sit apart
+// from the rest, in the danger tone.
+export function LoopControls({ loop }: { loop: LoopView }) {
+  const id = useId()
+  const { controls, failed } = useLoopControls(loop)
+  if (controls.length === 0) return null
   const safe = controls.filter((c) => !c.danger)
   const ending = controls.filter((c) => c.danger)
-
   return (
     <div className="side-panel">
       <h3>Controls</h3>
       <div className="round-ctls">
-        <div className="round-ctl-group">{safe.map((c, i) => button(c, i))}</div>
-        <div className="round-ctl-group">{ending.map((c, i) => button(c, safe.length + i))}</div>
-      </div>
-      {failed && (
-        <div className="form-error control-error" role="alert">
-          <strong>{failed.label}:</strong> {failed.message}
+        <div className="round-ctl-group">
+          {safe.map((c, i) => (
+            <RoundControl key={c.label} control={c} describedBy={`${id}-${i}`} />
+          ))}
         </div>
-      )}
+        <div className="round-ctl-group">
+          {ending.map((c, i) => (
+            <RoundControl key={c.label} control={c} describedBy={`${id}-${safe.length + i}`} />
+          ))}
+        </div>
+      </div>
+      {failed && <FailedControl failed={failed} />}
     </div>
+  )
+}
+
+// The everyday controls on a loop's focused circle (#1558): Pause or Resume,
+// Wake now and Rotate session, acting in place. The two that end something
+// stay on the loop's page.
+export function OrbControls({ loop }: { loop: LoopView }) {
+  const id = useId()
+  const { controls, failed } = useLoopControls(loop)
+  const everyday = controls.filter((c) => !c.danger)
+  if (everyday.length === 0) return null
+  return (
+    <>
+      <div className="round-ctls orb-ctls">
+        {everyday.map((c, i) => (
+          <RoundControl key={c.label} control={c} describedBy={`${id}-${i}`} />
+        ))}
+      </div>
+      {failed && <FailedControl failed={failed} />}
+    </>
   )
 }

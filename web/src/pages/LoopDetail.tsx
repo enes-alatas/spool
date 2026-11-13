@@ -1908,8 +1908,6 @@ export default function LoopDetail() {
     )
   }
 
-  const paused = loop.status === 'paused'
-
   return (
     <div className="page">
       <div className="detail">
@@ -2136,7 +2134,7 @@ export default function LoopDetail() {
             )}
           </div>
 
-          <LoopControls loop={loop} paused={paused} />
+          <LoopControls loop={loop} />
 
           <LoopTeam loop={loop} />
 
