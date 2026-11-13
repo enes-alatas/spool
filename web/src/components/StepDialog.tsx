@@ -34,9 +34,16 @@ export function StepDialog({
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
+  // A body's field that should open focused is marked data-autofocus, not
+  // autoFocus: React focuses an autoFocus field on mount, while the dialog
+  // is still closed and so unfocusable, and showModal() then puts the
+  // focus on the first control, the ✕. The marked field is focused once
+  // the dialog is open (#1572).
   useEffect(() => {
     const dialog = ref.current
-    if (dialog && !dialog.open) dialog.showModal()
+    if (!dialog || dialog.open) return
+    dialog.showModal()
+    dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
   }, [])
 
   const close = () => ref.current?.close(CLOSED)

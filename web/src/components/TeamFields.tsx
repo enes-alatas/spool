@@ -41,6 +41,8 @@ export function TeamFields({
         autoComplete="off"
         spellCheck={false}
         autoFocus={autoFocus}
+        // New team opens in a StepDialog, which focuses this once it is open
+        data-autofocus={autoFocus || undefined}
       />
       <div id={`${id}-rule`} className={`team-form-note${badName ? ' bad' : ''}`}>
         Lowercase letters, digits, dashes and underscores, 2 to 32, as a loop's name.
