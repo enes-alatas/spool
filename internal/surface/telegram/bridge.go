@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -277,6 +278,12 @@ type sendReq struct {
 	// stopPollAt makes the send a stopPoll instead of a post: this bot's
 	// own id for the poll's message. 0 for a post.
 	stopPollAt int64
+	// atMostOnce marks a notice of the hub's own: it is not sent again
+	// after an answer that may mean it landed, because a copy reads to its
+	// reader as the thing happening again (#1584). A loop's words are
+	// retried all the same, since a lost message costs more than a
+	// duplicate (#800).
+	atMostOnce bool
 }
 
 func (br *Bridge) startPoller(loopRecord *store.Loop) {
@@ -1451,12 +1458,12 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 			br.unsent(ctx, bot, req, partOf(errors.New(br.stopReason()), i, len(parts)))
 			return
 		}
-		sent, attempts, unanswered, err := br.sendWithRetries(ctx, bot, send)
-		if err == nil && unanswered {
-			// Telegram had an earlier attempt whole and never answered it:
-			// it may have posted that one too, and the Bot API cannot be
-			// asked (#800).
-			br.log.Warn("telegram send landed on a retry after an unanswered attempt; it may have arrived twice",
+		sent, attempts, mayHaveLanded, err := br.sendWithRetries(ctx, bot, send, req.atMostOnce)
+		if err == nil && mayHaveLanded {
+			// Telegram had an earlier attempt whole and never answered it,
+			// or answered from a gateway that gave up on it: it may have
+			// posted that one too, and the Bot API cannot be asked (#800).
+			br.log.Warn("telegram send landed on a retry after an attempt that may have landed; it may have arrived twice",
 				"loop", bot.name, "chat", req.chatID, "attempts", attempts)
 		}
 		if err != nil {
@@ -1484,7 +1491,7 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq) {
 	_, attempts, _, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
 		return nil, bot.client.SetMessageReaction(ctx, req.chatID, req.reactTo, req.emoji)
-	})
+	}, false)
 	if err != nil && ctx.Err() == nil {
 		br.log.Warn("telegram reaction failed; giving up", "loop", bot.name, "chat", req.chatID,
 			"emoji", req.emoji, "attempts", attempts, "err", err)
@@ -1498,7 +1505,7 @@ func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq)
 func (br *Bridge) deliverStopPoll(ctx context.Context, bot *poller, req sendReq) {
 	_, attempts, _, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
 		return nil, bot.client.StopPoll(ctx, req.chatID, req.stopPollAt)
-	})
+	}, false)
 	if err != nil && ctx.Err() == nil && !strings.Contains(err.Error(), "already been closed") {
 		br.log.Warn("telegram poll stop failed; giving up", "loop", bot.name, "chat", req.chatID,
 			"attempts", attempts, "err", err)
@@ -1573,23 +1580,28 @@ func partOf(err error, i, n int) error {
 // Telegram means (a 4xx that is not 429) is not retried: sending it again
 // would fail the same way, slower. It returns the error the last attempt
 // ended on, how many attempts it made, and whether an attempt before the one
-// that landed went unanswered after Telegram had it whole, which can leave
-// the send made twice (#800); a cancelled context ends it early.
-func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPart) (*Message, int, bool, error) {
+// that landed may have landed too, which can leave the send made twice
+// (#800); a cancelled context ends it early. An atMostOnce send ends at the
+// first attempt that may have landed.
+func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPart, atMostOnce bool) (*Message, int, bool, error) {
 	var lastErr error
-	unanswered := false
+	mayHaveLanded := false
 	for attempt := 0; attempt < sendAttempts; attempt++ {
 		sent, err := send(ctx)
 		if err == nil {
-			return sent, attempt + 1, unanswered, nil
+			return sent, attempt + 1, mayHaveLanded, nil
 		}
 		if ctx.Err() != nil {
-			return nil, attempt + 1, unanswered, ctx.Err()
+			return nil, attempt + 1, mayHaveLanded, ctx.Err()
 		}
 		lastErr = err
 		var apiErr *APIError
-		var unansweredErr *unansweredError
-		unanswered = unanswered || errors.As(err, &unansweredErr)
+		if attemptMayHaveLanded(err) {
+			mayHaveLanded = true
+			if atMostOnce {
+				return nil, attempt + 1, mayHaveLanded, err
+			}
+		}
 		switch {
 		case errors.As(err, &apiErr) && apiErr.Code == 429:
 			// Telegram says how long to wait, and means it — but only when
@@ -1598,22 +1610,34 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPar
 			// after the last attempt holds the whole queue for nothing.
 			if attempt < sendAttempts-1 {
 				if !sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second) {
-					return nil, attempt + 1, unanswered, ctx.Err()
+					return nil, attempt + 1, mayHaveLanded, ctx.Err()
 				}
 			}
 		case errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500:
-			return nil, attempt + 1, unanswered, err
+			return nil, attempt + 1, mayHaveLanded, err
 		default:
 			if attempt < sendAttempts-1 {
 				br.log.Warn("telegram send failed; retrying",
 					"loop", bot.name, "attempt", attempt+1, "err", err)
 				if !sleepCtx(ctx, sendBackoff<<attempt) {
-					return nil, attempt + 1, unanswered, ctx.Err()
+					return nil, attempt + 1, mayHaveLanded, ctx.Err()
 				}
 			}
 		}
 	}
-	return nil, sendAttempts, unanswered, lastErr
+	return nil, sendAttempts, mayHaveLanded, lastErr
+}
+
+// attemptMayHaveLanded reports whether a failed attempt may still have been
+// made: a call Telegram had whole and never answered (#800), or one its
+// front proxy answered 502 or 504, giving up on a Bot API that may still
+// make it. In #1584 a 502 came back about 15s into each attempt at a notice
+// that arrived every time.
+func attemptMayHaveLanded(err error) bool {
+	var unanswered *unansweredError
+	var apiErr *APIError
+	return errors.As(err, &unanswered) ||
+		errors.As(err, &apiErr) && (apiErr.Code == http.StatusBadGateway || apiErr.Code == http.StatusGatewayTimeout)
 }
 
 // failSend gives up on a send and leaves the evidence in the two places
@@ -1898,7 +1922,7 @@ func (br *Bridge) sendLoginNotice(ctx context.Context, loopID string, chatID int
 		br.ledger.LoginNoticeEvent(ctx, loopID, notice, "the loop's bot is not running")
 		return false
 	}
-	if unsent := bot.enqueue(sendReq{chatID: chatID, text: notice.Text()}); unsent != "" {
+	if unsent := bot.enqueue(sendReq{chatID: chatID, text: notice.Text(), atMostOnce: true}); unsent != "" {
 		br.ledger.LoginNoticeEvent(ctx, loopID, notice, unsent)
 		return false
 	}
@@ -1929,7 +1953,7 @@ func (br *Bridge) noticeProblem(ctx context.Context, notice *surface.ProblemNoti
 		br.ledger.ProblemNoticeEvent(ctx, notice, "the loop's bot is not running")
 		return
 	}
-	br.ledger.ProblemNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: loopRecord.OwnerDMChatID, text: notice.Text()}))
+	br.ledger.ProblemNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: loopRecord.OwnerDMChatID, text: notice.Text(), atMostOnce: true}))
 }
 
 // noticeDrop tells the person whose message a loop dropped, as a reply to
@@ -1960,7 +1984,7 @@ func (br *Bridge) noticeDrop(ctx context.Context, notice *surface.DropNotice) {
 		br.ledger.DropNoticeEvent(ctx, notice, "the loop's bot is not running")
 		return
 	}
-	br.ledger.DropNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: ref.TGChatID, text: notice.Text(), replyTo: ref.TGMessageID}))
+	br.ledger.DropNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: ref.TGChatID, text: notice.Text(), replyTo: ref.TGMessageID, atMostOnce: true}))
 }
 
 func (br *Bridge) poller(loopID string) *poller {

@@ -51,6 +51,10 @@ type fakeTelegram struct {
 	// answer until the bridge hangs up: a Telegram slow to answer a send it
 	// has made, which the hub cannot tell from a dead connection (#800).
 	lateSends int
+	// gatewayChats are the chats whose every sendMessage call is posted
+	// and then answered 502: Telegram's front proxy giving up on a Bot API
+	// that went on to make the call (#1584).
+	gatewayChats map[int64]bool
 	// absent are the bots kept out of a chat (chat id → token): a post
 	// there reaches every bot but these, as a group a loop's bot was never
 	// added to (ADR-0070).
@@ -134,6 +138,17 @@ func (tg *fakeTelegram) lateNextSends(n int) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.lateSends = n
+}
+
+// landThenFailSendsTo makes the stand-in post every send to chat and answer
+// it 502 all the same, or, with on false, answer that chat's sends again.
+func (tg *fakeTelegram) landThenFailSendsTo(chat int64, on bool) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	if tg.gatewayChats == nil {
+		tg.gatewayChats = map[int64]bool{}
+	}
+	tg.gatewayChats[chat] = on
 }
 
 // stallNextSends makes the stand-in leave the next n sends unanswered.
@@ -336,6 +351,11 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 			tg.lateSends--
 			tg.mu.Unlock()
 			<-r.Context().Done()
+			return
+		}
+		if tg.gatewayChats[req.ChatID] {
+			tg.mu.Unlock()
+			http.Error(w, `{"ok":false,"error_code":502,"description":"Bad Gateway"}`, 502)
 			return
 		}
 		tg.mu.Unlock()

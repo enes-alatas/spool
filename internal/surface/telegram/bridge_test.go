@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -425,6 +427,31 @@ func TestInChat(t *testing.T) {
 	} {
 		if got := inChat(member); got != want {
 			t.Errorf("inChat(%+v) = %v, want %v", member, got, want)
+		}
+	}
+}
+
+// A gateway's 502 or 504 and a call left unanswered may each have been
+// made; any other refusal, or a call that never reached Telegram, was not
+// (#1584, #800).
+func TestAttemptMayHaveLanded(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"unanswered", &unansweredError{err: errors.New("read: connection reset")}, true},
+		{"bad gateway", &APIError{Code: http.StatusBadGateway, Desc: "Bad Gateway"}, true},
+		{"gateway timeout", &APIError{Code: http.StatusGatewayTimeout, Desc: "Gateway Timeout"}, true},
+		{"wrapped bad gateway", fmt.Errorf("part 2 of 3: %w", &APIError{Code: http.StatusBadGateway}), true},
+		{"internal error", &APIError{Code: http.StatusInternalServerError}, false},
+		{"rate limited", &APIError{Code: http.StatusTooManyRequests, RetryAfter: 3}, false},
+		{"refused", &APIError{Code: http.StatusBadRequest, Desc: "Bad Request: chat not found"}, false},
+		{"never sent", errors.New("dial tcp: connection refused"), false},
+	}
+	for _, tc := range cases {
+		if got := attemptMayHaveLanded(tc.err); got != tc.want {
+			t.Errorf("%s: attemptMayHaveLanded = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
