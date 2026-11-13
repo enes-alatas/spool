@@ -11,7 +11,7 @@ import {
 } from '../connections'
 import { ConnectionForm } from './ConnectionForm'
 import { ConnectionEvents, RotateForm } from './ConnectionRecord'
-import { PlusIcon } from './Icons'
+import { PlusIcon, RemoveIcon } from './Icons'
 import { useMay } from './Session'
 
 // The connections attached to one loop (#506): the list, and a + that opens
@@ -174,7 +174,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   title={`Remove ${c.config?.env ?? a.name}`}
                   aria-label={`Remove ${c.config?.env ?? a.name}`}
                 >
-                  ✕
+                  <RemoveIcon />
                 </button>
               ) : (
                 <button
@@ -186,7 +186,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   title={`Detach ${a.name}`}
                   aria-label={`Detach ${a.name}`}
                 >
-                  ✕
+                  <RemoveIcon />
                 </button>
               )}
             </div>
@@ -375,7 +375,7 @@ function AddConnectionDialog({
           aria-label="Close"
           title="Close"
         >
-          ✕
+          <RemoveIcon size={14} />
         </button>
       </div>
       <div className="dest-picker connection-dialog-tabs" role="tablist">

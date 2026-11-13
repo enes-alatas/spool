@@ -15,7 +15,7 @@ import {
   type Tone,
 } from '../cloud'
 import { formatAgo } from '../format'
-import { CheckIcon } from './Icons'
+import { CheckIcon, RemoveIcon, WarnIcon } from './Icons'
 import { Copyable } from './Copyable'
 import { StepDialog } from './StepDialog'
 import { useMinuteClock } from './PlanUsage'
@@ -209,7 +209,15 @@ function CheckLine({ row }: { row: CheckRow }) {
   return (
     <li className={row.tone}>
       <span className="cloud-mark" aria-hidden>
-        {row.tone === 'ok' ? '✓' : row.tone === 'bad' ? '✕' : row.tone === 'warn' ? '!' : '·'}
+        {row.tone === 'ok' ? (
+          <CheckIcon size={12} />
+        ) : row.tone === 'bad' ? (
+          <RemoveIcon />
+        ) : row.tone === 'warn' ? (
+          <WarnIcon size={12} />
+        ) : (
+          '·'
+        )}
       </span>
       {row.text}
       <span className="sr-only">
