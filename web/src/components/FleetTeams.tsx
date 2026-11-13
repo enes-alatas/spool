@@ -20,7 +20,7 @@ import {
   suggestedHomeChannel,
   type TeamGroup,
 } from '../teams'
-import { EditIcon } from './Icons'
+import { EditIcon, PlusIcon } from './Icons'
 import { FocusedOrb, LoopOrb } from './LoopOrb'
 import { StepDialog } from './StepDialog'
 import { TeamFields } from './TeamFields'
@@ -419,6 +419,10 @@ function TeamCard({
   )
 }
 
+// The dashed circle's plus, drawn rather than typed so its ink sits on the
+// circle's centre: a font's + sits on its line, low in the circle (#1568).
+const ORB_ADD_PLUS = 22
+
 // The dashed circle at the end of a team's loops: a pick-list of the loops
 // it could take, each with the team it would leave, since a loop is in one
 // team at most. Choosing one moves it at once.
@@ -439,7 +443,7 @@ function AddLoop({ team, loops }: { team: Team; loops: LoopView[] }) {
   return (
     <>
       <label className="orb-add" title={`Add a loop to ${team.name}`}>
-        <span aria-hidden>+</span>
+        <PlusIcon size={ORB_ADD_PLUS} />
         <select value="" aria-label={`Add a loop to ${team.name}`} onChange={(e) => void add(e.target.value)}>
           <option value="" disabled>
             Add a loop to {team.name}
@@ -465,7 +469,7 @@ function AddLoop({ team, loops }: { team: Team; loops: LoopView[] }) {
 function NewLoopOrb() {
   return (
     <Link to="/new" className="orb-add" title="New loop" aria-label="New loop">
-      <span aria-hidden>+</span>
+      <PlusIcon size={ORB_ADD_PLUS} />
     </Link>
   )
 }

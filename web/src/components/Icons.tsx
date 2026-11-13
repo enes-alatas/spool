@@ -98,10 +98,11 @@ export function SignOutIcon() {
   )
 }
 
-// Add: a plus, for a panel that adds to its list (a loop's connections).
-export function PlusIcon() {
+// Add: a plus, for a panel that adds to its list (a loop's connections),
+// and larger in the dashed circle that adds a loop (#1568).
+export function PlusIcon({ size }: { size?: number }) {
   return (
-    <Icon>
+    <Icon size={size}>
       <path d="M10 4v12M4 10h12" />
     </Icon>
   )
