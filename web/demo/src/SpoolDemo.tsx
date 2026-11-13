@@ -563,7 +563,7 @@ function ChatPane({
   )
 }
 
-// Beats 3 and 5 to 7 pair a window with a chat pane, side by side as one
+// Beats 3, 5 and 6 pair a window with a chat pane, side by side as one
 // centred group.
 const PAIR = { width: 1100, height: 750, gap: 56 }
 const PAIR_LEFT = (W - PAIR.width - PAIR.gap - CHAT.w) / 2
@@ -676,124 +676,76 @@ function Link() {
   )
 }
 
-// Beat 4: the fleet, scout among it.
-function Fleet() {
-  const frame = useCurrentFrame()
-  const rise = interpolate(frame, [0, 28], [24, 0], { ...clamp, easing: Easing.out(Easing.cubic) })
+// Beat 4: team up. Fleet opens on its Teams view; + New team makes release
+// and its home channel, and scout and watcher are dragged into its card. It
+// plays as one unbroken take at a little above real pace, ending on the
+// cards with every loop in a team.
+const TU = marks['team-up']
+const TEAM_RATE = 1.25
+const TEAM_UP_LEN = (TU.end - TU.ready) / TEAM_RATE
+function TeamUp() {
   return (
     <Stage>
       <Screen
         width={MAIN.width}
-        style={{ ...mainScreen, top: MAIN.top + rise }}
-        src="fleet.mp4"
-        from={marks.fleet.ready}
+        url="localhost:8080/"
+        style={mainScreen}
+        src="team-up.mp4"
         camera={{ x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1 }}
+        from={TU.ready}
+        rate={TEAM_RATE}
       />
-      <Caption step="03 · Fleet">Every loop, its state and its spend, in one place.</Caption>
+      <Caption step="03 · Team up">
+        Group loops into a team. Fleet shows every loop, its state and its spend, by team.
+      </Caption>
     </Stage>
   )
 }
 
-// Beat 5: a person asks in the Telegram group that carries the fleet
-// channel, and the loop answers there. The fleet channel, beside it, shows
-// each message as it lands: record.mjs reveals them on the same cues.
-const TK = marks.talk
-// record.mjs takes the talk and report clips at the window's own size
+// Beat 5: the team's home channel, beside the Telegram group that carries
+// it. The operator asks scout, scout asks watcher, watcher answers scout,
+// and scout answers the operator: each line lands in the room and the pane
+// on the same cue.
+const RL = marks.release
+// record.mjs takes the release and report clips at the window's own size
 // (PAIR's content box), so they play at 1:1 with nothing cropped.
 export const TALK_PAGE = { w: 1098, h: 750 }
-function Talk() {
+const RELEASE_LEN = RL.end - RL.ready
+const atRelease = (cue: number) => s(cue - RL.ready)
+function TeamChannel() {
+  const line = (i: number, who: string, text: string, me = false): Line => ({
+    at: atRelease(RL[`line${i}` as keyof typeof RL]),
+    who,
+    me,
+    text,
+    time: times.release[`line${i}` as keyof typeof times.release],
+  })
   return (
     <Pair
-      step="04 · Talk"
-      caption="Talk to loops in Telegram or Slack. The room shows it as it happens."
-      url="localhost:8080/?view=channel"
-      src="talk.mp4"
-      from={TK.ready}
+      step="04 · Team channel"
+      caption="A team gets a home channel. You ask once; the loops hand the work between them."
+      url="localhost:8080/channels/release"
+      src="release.mp4"
+      from={RL.ready}
       page={TALK_PAGE}
       camera={{ x: TALK_PAGE.w / 2, y: TALK_PAGE.h / 2, zoom: 1 }}
       chat={{
-        title: 'Handbook crew',
-        subtitle: 'Telegram group · the fleet channel',
-        avatar: 'T',
+        title: 'Release crew',
+        subtitle: 'Telegram group · #release',
+        avatar: 'R',
         tint: '#3a6e5a',
-        typing: { who: 'gardener', from: s(TK.ask - TK.ready + 1), to: s(TK.answer - TK.ready), before: 1 },
         lines: [
-          {
-            at: s(TK.ask - TK.ready),
-            who: 'rana',
-            image: 'install-page.png',
-            time: times.talk.ask,
-            text: '@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?',
-          },
-          {
-            at: s(TK.answer - TK.ready),
-            who: 'gardener',
-            time: times.talk.answer,
-            text: 'Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.',
-            reactions: {
-              at: s(TK.reactions - TK.ready),
-              chips: [
-                { emoji: '👍', count: 2 },
-                { emoji: '🎉', count: 1 },
-              ],
-            },
-          },
+          line(0, 'you', "@scout is Friday's release still on?", true),
+          line(1, 'scout', "@watcher is the nightly green? Friday's cut needs it."),
+          line(2, 'watcher', '@scout green since 9d0e77c, three nights running.'),
+          line(3, 'scout', '@rana yes, Friday is on: the calendar holds and the nightly is green.'),
         ],
       }}
     />
   )
 }
 
-// Beat 6: a channel of its own for two loops and their owner, carried by a
-// Telegram group of its own, beside its pane on one loop's page.
-const DK = marks.docs
-function Channels() {
-  return (
-    <Pair
-      step="05 · Channels"
-      caption="Give a few loops a channel of their own."
-      url="localhost:8080/loops/gardener?channel=docs"
-      src="docs.mp4"
-      from={DK.ready}
-      camera={{ x: 445, y: 380, zoom: 1.45 }}
-      chat={{
-        title: 'Docs reviewers',
-        subtitle: 'Telegram group · 3 members',
-        avatar: 'D',
-        tint: '#4f6e9e',
-        typing: {
-          who: 'gardener',
-          from: s(DK.line0 - DK.ready + 0.8),
-          to: s(DK.line1 - DK.ready),
-          before: 1,
-        },
-        lines: [
-          {
-            at: s(DK.line0 - DK.ready),
-            who: 'archivist',
-            time: times.docs.line0,
-            text: '@gardener the incident write-up template links the old runbook. Yours or mine?',
-          },
-          {
-            at: s(DK.line1 - DK.ready),
-            who: 'gardener',
-            time: times.docs.line1,
-            text: 'Mine, it moved with the handbook. Fixed in the same PR as the install page.',
-          },
-          {
-            at: s(DK.line2 - DK.ready),
-            who: 'you',
-            me: true,
-            time: times.docs.line2,
-            text: '@archivist once that lands, close the stale-runbook issue too.',
-          },
-        ],
-      }}
-    />
-  )
-}
-
-// Beat 7: a call that is the owner's reaches them privately, and the loop
+// Beat 6: a call that is the owner's reaches them privately, and the loop
 // acknowledges the answer. Beside the DM, watcher's own timeline: the room
 // does not draw a DM's text, so it shows the loop's side of the exchange,
 // each step on the cue record.mjs revealed it.
@@ -801,8 +753,8 @@ const RK = marks.report
 function Report() {
   return (
     <Pair
-      step="06 · Report"
-      caption="When a call is yours, the loop brings it to you."
+      step="05 · Report"
+      caption="Loops report back, and ask when they need you."
       url="localhost:8080/loops/watcher"
       src="report.mp4"
       from={RK.ready}
@@ -835,7 +787,7 @@ function Report() {
   )
 }
 
-// Beat 8: the end card, on a clean canvas.
+// Beat 7: the end card, on a clean canvas.
 function EndCard() {
   const frame = useCurrentFrame()
   const lines = ['Keep work going.', 'Stay involved.', 'Coordinate the fleet.']
@@ -876,7 +828,7 @@ function EndCard() {
 }
 
 // Beat boundaries, in seconds: each beat's length, laid end to end.
-const LENGTHS = [3, CREATE_LEN, LINK_LEN, 5, 9, 8, 8, 5]
+const LENGTHS = [3, CREATE_LEN, LINK_LEN, TEAM_UP_LEN, RELEASE_LEN, 8, 5]
 const SPANS = LENGTHS.map((len, i) => {
   const from = LENGTHS.slice(0, i).reduce((a, b) => a + b, 0)
   return [from, from + len]
@@ -897,7 +849,7 @@ function FadeWrap({ len, children }: { len: number; children: ReactNode }) {
   return <AbsoluteFill style={{ opacity: fade(frame, len, 8, 8) }}>{children}</AbsoluteFill>
 }
 
-const BEATS = [Pitch, Create, Link, Fleet, Talk, Channels, Report, EndCard]
+const BEATS = [Pitch, Create, Link, TeamUp, TeamChannel, Report, EndCard]
 
 export const SpoolDemo = () => (
   <AbsoluteFill style={{ background: T.canvas }}>

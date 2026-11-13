@@ -18,7 +18,9 @@ const password = readFileSync(process.env.SPOOL_DATA_DIR + '/fixture-user-passwo
 const out = new URL('./public/', import.meta.url).pathname
 mkdirSync(out, { recursive: true })
 const size = { width: 1280, height: 720 }
-const DPR = 2
+// DEMO_DPR=1 records a quick draft: each screenshot costs a quarter of the
+// pixels, so the clip gets several times the frames a second.
+const DPR = Number(process.env.DEMO_DPR ?? 2)
 const FPS = 30
 
 // Remotion installs the compositors for the host's platform (on Linux both
@@ -130,11 +132,57 @@ const injectCursor = () => {
       showModal.call(this)
       raise()
     }
+    // Nor does it paint a drag image, so a dragged loop would stay put while
+    // the pointer left empty-handed. Carry a copy of it under the pointer
+    // instead, lifted from where it was grabbed.
+    let ghost = null
+    let grab = { x: 0, y: 0 }
     addEventListener(
-      'mousemove',
-      (e) => Object.assign(c.style, { left: e.clientX - 2 + 'px', top: e.clientY - 2 + 'px' }),
+      'dragstart',
+      (e) => {
+        const box = e.target.getBoundingClientRect()
+        grab = { x: e.clientX - box.left, y: e.clientY - box.top }
+        ghost = e.target.cloneNode(true)
+        ghost.popover = 'manual'
+        Object.assign(ghost.style, {
+          position: 'fixed',
+          margin: 0,
+          padding: 0,
+          border: 'none',
+          background: 'transparent',
+          overflow: 'visible',
+          width: box.width + 'px',
+          height: box.height + 'px',
+          left: box.left + 'px',
+          top: box.top + 'px',
+          right: 'auto',
+          bottom: 'auto',
+          opacity: 0.85,
+          pointerEvents: 'none',
+        })
+        document.documentElement.append(ghost)
+        ghost.showPopover()
+        raise()
+      },
       true,
     )
+    const drop = () => {
+      ghost?.remove()
+      ghost = null
+    }
+    addEventListener('dragend', drop, true)
+    addEventListener('drop', drop, true)
+    // a drag fires dragover, not mousemove, while the button is down
+    for (const type of ['mousemove', 'dragover'])
+      addEventListener(
+        type,
+        (e) => {
+          Object.assign(c.style, { left: e.clientX - 2 + 'px', top: e.clientY - 2 + 'px' })
+          if (ghost)
+            Object.assign(ghost.style, { left: e.clientX - grab.x + 'px', top: e.clientY - grab.y + 'px' })
+        },
+        true,
+      )
     addEventListener(
       'mousedown',
       (e) => {
@@ -170,14 +218,59 @@ const showNewest = () => {
   }
 }
 
-// Move the pointer to an element at a human pace, settle, then click it.
-async function pointAt(page, locator) {
-  const box = await locator.boundingBox()
-  await page.mouse.move(box.x + Math.min(box.width / 2, 60), box.y + box.height / 2, { steps: 28 })
-  await page.waitForTimeout(350)
+// Where each page's mouse is, so a move can start from it.
+const mouseAt = new WeakMap()
+// Where the pointer rests when a clip starts, with no travel to get there.
+async function park(page, x, y) {
+  mouseAt.set(page, { x, y })
+  await page.mouse.move(x, y)
+}
+// Carry the pointer to (x, y) over `travel` seconds, as a hand does: eased
+// in and out, on a slight arc. The page draws the pointer where its mouse
+// is, so the pointer, a hover and a drag all share the same frames.
+const TRAVEL = 0.45
+const STEPS = 16
+async function moveTo(page, x, y, travel = TRAVEL) {
+  const from = mouseAt.get(page)
+  if (!from) return park(page, x, y)
+  const dx = x - from.x
+  const dy = y - from.y
+  const len = Math.hypot(dx, dy) || 1
+  const arc = Math.min(len * 0.08, 40)
+  const ease = (u) => (u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2)
+  for (let i = 1; i <= STEPS; i++) {
+    const u = ease(i / STEPS)
+    const bow = Math.sin(Math.PI * u) * arc
+    // the bow bends the run to its left, as a wrist swings
+    const at = { x: from.x + dx * u - (dy / len) * bow, y: from.y + dy * u + (dx / len) * bow }
+    mouseAt.set(page, at)
+    await page.mouse.move(at.x, at.y)
+    await sleep((travel * 1000) / STEPS)
+  }
+}
+// Press and let go where the pointer is.
+async function press(page) {
   await page.mouse.down()
   await page.mouse.up()
+}
+// Carry the pointer to an element, settle, then click it.
+async function pointAt(page, locator) {
+  const box = await locator.boundingBox()
+  await moveTo(page, box.x + Math.min(box.width / 2, 60), box.y + box.height / 2)
+  await page.waitForTimeout(200)
+  await press(page)
+  await page.waitForTimeout(200)
+}
+// Drag what is under the pointer's start to (x, y): pressed, carried at a
+// drag's slower pace, let go.
+async function dragTo(page, from, x, y) {
+  const box = await from.boundingBox()
+  await moveTo(page, box.x + box.width / 2, box.y + box.height / 2)
   await page.waitForTimeout(250)
+  await page.mouse.down()
+  await moveTo(page, x, y, 0.7)
+  await page.waitForTimeout(250)
+  await page.mouse.up()
 }
 
 // Scroll an element into the middle of the viewport the way a wheel would,
@@ -238,7 +331,9 @@ async function take(name, fn, viewport = size) {
     while (recording) {
       const t = Date.now() / 1000
       const data = await page
-        .screenshot({ type: 'jpeg', quality: 96, animations: 'allow', caret: 'initial' })
+        // a screenshot can hang on a page mid-navigation; one given up on
+        // after 2s costs the clip a moment, not the whole take
+        .screenshot({ type: 'jpeg', quality: 96, animations: 'allow', caret: 'initial', timeout: 2000 })
         .catch(() => null)
       if (data) frames.push({ data, t })
     }
@@ -313,7 +408,7 @@ await take('create', async (page, mark) => {
   )
   await page.goto(base + '/', { waitUntil: 'networkidle' })
   await page.waitForSelector('.pillars')
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await page.waitForTimeout(900)
   await pointAt(page, page.locator('.pillar').getByRole('button', { name: 'New loop', exact: true }))
@@ -405,7 +500,7 @@ await take('link', async (page, mark) => {
 
   await page.goto(base + '/', { waitUntil: 'networkidle' })
   await page.waitForSelector('.pillars')
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await page.waitForTimeout(900)
   await pointAt(page, page.getByRole('button', { name: 'Attach a bot' }))
@@ -446,12 +541,94 @@ await take('link', async (page, mark) => {
   mark('end')
 })
 
-// The fleet, after the link, so scout is in it.
-await take('fleet', async (page, mark) => {
+// Every loop read back healthy and contained (#1472): the fixture's faults
+// (a workstation down, turns failing, sends failing, undelivered messages,
+// an uncontained loop) are there to exercise the room, and a hero video
+// shows a fleet working. A take that routes /api/loops itself for its own
+// story takes this one out of the way, as the last route added wins.
+const CALM = ['asleep', 'waking', 'busy', 'idle', 'draining', 'paused']
+const asHealthy = (l) => ({
+  ...l,
+  state: CALM.includes(l.state) ? l.state : 'asleep',
+  runtime: l.runtime === 'cloud' ? 'cloud' : 'docker',
+  problems: [],
+  health: 'ok',
+  undelivered: 0,
+  workstation_up: true,
+  workstation_detail: undefined,
+  down_reason: '',
+})
+async function healthyLoops(page) {
+  await page.route('**/api/loops', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: (await res.json()).map(asHealthy) })
+  })
+  await page.route(/\/api\/loops\/[a-z0-9-]+$/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    if (!res.ok()) return route.fulfill({ response: res })
+    return route.fulfill({ response: res, json: asHealthy(await res.json()) })
+  })
+}
+
+// Team up (#1472): the fleet on its Teams view, with handbook's card and
+// scout and watcher in no team. A new team, release, is made from + New
+// team, its home channel with it, and the two circles are dragged into its
+// card. handbook and its loops are made for real before the take's first
+// mark; release is made by the take, and stays for the clips after it.
+const HANDBOOK_TEAM = [
+  'handbook',
+  'Keeps the handbook true to what ships.',
+  ['gardener', 'archivist', 'courier'],
+]
+const RELEASE = { name: 'release', description: 'Ships the weekly release.' }
+await take('team-up', async (page, mark) => {
+  const [name, description, loops] = HANDBOOK_TEAM
+  await page.request.post(base + '/api/teams', { data: { name, description } })
+  for (const loop of loops) await page.request.patch(`${base}/api/loops/${loop}`, { data: { team: name } })
+  await healthyLoops(page)
+  // with a team on the hub and no layout chosen, Fleet opens on Teams
   await page.goto(base + '/', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.fleet-row')
+  await page.waitForSelector('.team-card')
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
-  await page.waitForTimeout(6000)
+  await page.waitForTimeout(1200)
+  await pointAt(page, page.getByRole('button', { name: '+ New team' }))
+  const dialog = page.getByRole('dialog', { name: 'New team' })
+  await dialog.waitFor()
+  mark('dialog')
+  await page.waitForTimeout(500)
+  // the home channel follows the name
+  await pointAt(page, dialog.locator('#team-new-name'))
+  await page.keyboard.type(RELEASE.name, { delay: 70 })
+  await page.waitForTimeout(300)
+  await pointAt(page, dialog.locator('#team-new-description'))
+  await page.keyboard.type(RELEASE.description, { delay: 25 })
+  await page.waitForTimeout(600)
+  mark('create-click')
+  await pointAt(page, dialog.getByRole('button', { name: 'Create', exact: true }))
+  const card = page.locator('.team-card', { has: page.locator('h2', { hasText: RELEASE.name }) })
+  await card.waitFor()
+  mark('created')
+  await page.waitForTimeout(900)
+  for (const loop of ['scout', 'watcher']) {
+    const target = await card.boundingBox()
+    await dragTo(
+      page,
+      page.getByRole('button', { name: new RegExp(`^${loop}: `) }),
+      target.x + target.width * 0.55,
+      target.y + target.height * 0.62,
+    )
+    await card.getByRole('button', { name: new RegExp(`^${loop}: `) }).waitFor()
+    mark(`moved-${loop}`)
+    await page.waitForTimeout(700)
+  }
+  // the pointer moves off, and the cards rest with every loop in a team
+  await moveTo(page, size.width * 0.72, size.height * 0.78)
+  mark('teamed')
+  await page.waitForTimeout(2600)
+  mark('end')
 })
 
 // A thread staged to run live: the messages a chat pane will show arriving
@@ -465,17 +642,6 @@ const hide = (page, snippets) =>
     }
     window.__showNewest('instant')
   }, snippets)
-// Show or hide the reactions under the message holding snippet.
-const setReactions = (page, snippet, display) =>
-  page.evaluate(
-    ([snippet, display]) => {
-      for (const knot of document.querySelectorAll('.knot')) {
-        if (!knot.textContent.includes(snippet)) continue
-        for (const r of knot.querySelectorAll('.reactions')) r.style.display = display
-      }
-    },
-    [snippet, display],
-  )
 // The clock on the message holding snippet, as its header shows it.
 const timeOf = (page, snippet) =>
   page.evaluate((snippet) => {
@@ -489,107 +655,63 @@ const reveal = (page, snippet) =>
     }
     window.__showNewest('smooth')
   }, snippet)
-// The fleet channel, beside the Telegram group that carries it: rana asks
-// with a screenshot, gardener answers, and the group reacts. The clip is
-// recorded at the size of the window it plays in, so the composition shows
-// all of it at 1:1 rather than cropping a 16:9 page.
-const ASK = 'the install page still tells people'
-const ANSWER = 'Three pages, all fixed'
+// The team's home channel (#1472), beside the Telegram group that carries
+// it: the operator asks scout, scout asks watcher, watcher answers scout and
+// scout answers the operator. The channel is the one team-up made; the
+// exchange is served in place of its messages, a minute apart up to now,
+// each revealed on the cue the composition's chat pane shows it. Recorded
+// at the size of the window it plays in, so it shows at 1:1.
+const THREAD = [
+  { author: 'rana', text: "@scout is Friday's release still on?" },
+  { author: 'scout', text: "@watcher is the nightly green? Friday's cut needs it." },
+  { author: 'watcher', text: '@scout green since 9d0e77c, three nights running.' },
+  { author: 'scout', text: '@rana yes, Friday is on: the calendar holds and the nightly is green.' },
+]
 await take(
-  'talk',
+  'release',
   async (page, mark) => {
-    await page.goto(base + '/?view=channel', { waitUntil: 'networkidle' })
+    await healthyLoops(page)
+    const ids = Object.fromEntries(
+      (await (await page.request.get(base + '/api/loops')).json()).map((l) => [l.name, l.id]),
+    )
+    const now = Date.now()
+    const messages = THREAD.map(({ author, text }, i) => ({
+      id: 990100 + i,
+      ts: now - (THREAD.length - i) * 60_000,
+      ...(ids[author]
+        ? { origin: 'loop', from_loop_id: ids[author] }
+        : { origin: 'telegram-group', tg_chat_id: -1002000000003, tg_message_id: 5100 + i }),
+      author,
+      text,
+      mentions: [],
+      // each line is to the loop it names first, and reached it
+      delivered_to: [ids[text.match(/^@(\S+)/)[1]]].filter(Boolean),
+      conversation: 'group',
+      channel: RELEASE.name,
+      mirror: 'mirrored',
+    })).reverse()
+    await page.route(`**/api/channels/${RELEASE.name}/messages*`, (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ json: messages }) : route.continue(),
+    )
+    await page.goto(`${base}/channels/${RELEASE.name}`, { waitUntil: 'networkidle' })
     await page.waitForSelector('.knot')
-    // The photo rana sends in Telegram is the one the room shows her post
-    // carrying.
-    const shot = page.locator('.knot', { hasText: ASK }).locator('img').first()
-    await shot.scrollIntoViewIfNeeded()
-    await shot.screenshot({ path: out + 'install-page.png' })
-    await mark.time('ask', ASK)
-    await mark.time('answer', ANSWER)
-    await hide(page, [ASK, ANSWER, 'the handbook freeze'])
-    await setReactions(page, ANSWER, 'none')
+    for (const [i, { text }] of THREAD.entries()) await mark.time(`line${i}`, text)
+    await hide(
+      page,
+      THREAD.map((m) => m.text),
+    )
     await page.waitForTimeout(400)
     mark('ready')
-    await page.waitForTimeout(1000)
-    await reveal(page, ASK)
-    mark('ask')
-    await page.waitForTimeout(3600)
-    await reveal(page, ANSWER)
-    mark('answer')
-    await page.waitForTimeout(1800)
-    await setReactions(page, ANSWER, '')
-    mark('reactions')
-    await page.waitForTimeout(3000)
+    for (const [i, { text }] of THREAD.entries()) {
+      await page.waitForTimeout(i === 0 ? 900 : 2300)
+      await reveal(page, text)
+      mark(`line${i}`)
+    }
+    await page.waitForTimeout(2800)
+    mark('end')
   },
   { width: 1098, height: 750 },
 )
-
-// A channel of two loops and the operator, docs, on one of the loops'
-// pages, beside the Telegram group that carries it.
-const DOCS = [
-  'the incident write-up template links the old runbook',
-  'Mine, it moved with the handbook',
-  'once that lands, close the stale-runbook issue',
-]
-await take('docs', async (page, mark) => {
-  // The fixture's archivist has no surface, and the operator's post in docs
-  // came from the room. The scene is two bots and their owner in a Telegram
-  // group carrying docs, so the archivist gets a bot and a room, as scout
-  // gets one in the link clip, and the operator's post comes in through
-  // Telegram.
-  const withBot = (l) =>
-    l.name === 'archivist'
-      ? { ...l, surface: 'telegram', has_tg_token: true, tg_bot_username: 'archivist_example_bot' }
-      : l
-  await page.route('**/api/loops', async (route) => {
-    const res = await route.fetch()
-    return route.fulfill({ response: res, json: (await res.json()).map(withBot) })
-  })
-  await page.route('**/api/loops/archivist', async (route) => {
-    const res = await route.fetch()
-    return route.fulfill({ response: res, json: withBot(await res.json()) })
-  })
-  await page.route('**/api/loops/archivist/rooms', (route) =>
-    route.fulfill({
-      json: [
-        {
-          surface: 'telegram',
-          room_id: '-1002000000002',
-          title: 'Docs reviewers',
-          channel: 'docs',
-          first_seen_at: Date.now() - 864e5,
-          bound_at: Date.now() - 864e5,
-        },
-      ],
-    }),
-  )
-  await page.route('**/api/channels/docs/messages*', async (route) => {
-    if (route.request().method() !== 'GET') return route.continue()
-    const res = await route.fetch()
-    // The exchange runs as one conversation, a minute apart, as the
-    // Telegram group beside it shows it.
-    const fromTelegram = (m) =>
-      m.origin === 'web' ? { ...m, origin: 'telegram-group', mirror: 'mirrored' } : m
-    const minute = (m) => {
-      const i = DOCS.findIndex((t) => m.text.includes(t))
-      return i === -1 ? m : { ...m, ts: Date.now() - (DOCS.length - i) * 60_000 }
-    }
-    return route.fulfill({ response: res, json: (await res.json()).map((m) => minute(fromTelegram(m))) })
-  })
-  await page.goto(base + '/loops/gardener?channel=docs', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.knot')
-  for (const [i, snippet] of DOCS.entries()) await mark.time(`line${i}`, snippet)
-  await hide(page, [...DOCS, 'which write-ups should move'])
-  await page.waitForTimeout(400)
-  mark('ready')
-  for (const [i, snippet] of DOCS.entries()) {
-    await page.waitForTimeout(i === 0 ? 800 : 2400)
-    await reveal(page, snippet)
-    mark(`line${i}`)
-  }
-  await page.waitForTimeout(3000)
-})
 
 // The report beat: watcher's own timeline, beside the Telegram DM it opens
 // with its owner. The room does not draw an owner DM's text, so what shows
@@ -666,6 +788,7 @@ await take(
       ),
       event(990006, 44, 'result', result(3100, 0.0174, 5390, 41), 't2'),
     ]
+    await healthyLoops(page)
     await page.route('**/api/loops/watcher/events*', (route) => route.fulfill({ json: events }))
     await page.goto(base + '/loops/watcher', { waitUntil: 'networkidle' })
     await page.waitForSelector('.knot')
@@ -807,7 +930,7 @@ await take('cloud', async (page, mark) => {
 
   await page.goto(base + '/new', { waitUntil: 'networkidle' })
   await page.locator('#nl-name').waitFor()
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await page.waitForTimeout(500)
   await pointAt(page, page.locator('#nl-name'))
@@ -848,7 +971,7 @@ await take('cloud', async (page, mark) => {
   if (walking) {
     await pointAt(page, walk.locator('.panel-head').getByRole('button', { name: 'Close' }))
     await walk.waitFor({ state: 'hidden' })
-    await page.mouse.move(size.width / 2, size.height - 80, { steps: 12 })
+    await moveTo(page, size.width / 2, size.height - 80)
   }
   mark('page')
   await page.waitForTimeout(1200)
@@ -1028,7 +1151,7 @@ await take('prompts-chat-bots', async (page, mark) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('https://prompts.chat/bots', { waitUntil: 'networkidle', timeout: 45000 })
   await settle(page)
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await page.waitForTimeout(1200)
   await page.mouse.wheel(0, 120)
@@ -1039,7 +1162,7 @@ await take('prompts-chat-teams', async (page, mark) => {
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.goto('https://prompts.chat/bots/teams', { waitUntil: 'networkidle', timeout: 45000 })
   await settle(page)
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await page.waitForTimeout(900)
   // The team's name opens its page: the address the import takes.
@@ -1088,7 +1211,7 @@ await take('import-bot', async (page, mark) => {
   })
   await page.goto(base + '/new', { waitUntil: 'networkidle' })
   await page.locator('.import-open').waitFor()
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await importFrom(page, mark, BOT.url)
   await page.waitForFunction((name) => document.querySelector('#nl-name')?.value === name, BOT.draft.name)
@@ -1122,7 +1245,7 @@ await take('import-team', async (page, mark) => {
   })
   await page.goto(base + '/new', { waitUntil: 'networkidle' })
   await page.locator('.import-open').waitFor()
-  await page.mouse.move(size.width / 2, size.height - 80)
+  await park(page, size.width / 2, size.height - 80)
   mark('ready')
   await importFrom(page, mark, TEAM.url)
   await page.locator('.team-preview').waitFor()
@@ -1139,7 +1262,7 @@ await take('import-team', async (page, mark) => {
   // 'channel' marks the landing, as it did when Create opened the channel.
   const card = page.locator('.team-card', { has: page.locator('h2', { hasText: TEAM.team.channel }) })
   await card.waitFor()
-  await page.mouse.move(size.width - 120, size.height / 2, { steps: 20 })
+  await moveTo(page, size.width - 120, size.height / 2)
   mark('channel')
   await page.waitForTimeout(3200)
   mark('fleet')
