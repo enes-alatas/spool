@@ -107,7 +107,7 @@ function Bot() {
 }
 
 // Beat 4: the team's preview at pace, the reach for Create fast, and its
-// channel at pace once it exists.
+// card on Fleet at pace once it exists.
 const T_PASTE_LEN = (M.import - M.ready) / PASTE_RATE
 const READ_LEN = M['create-click'] - M.import
 const GO_RATE = 1.5
@@ -125,13 +125,15 @@ function Team() {
       <Sequence from={s(T_PASTE_LEN + READ_LEN)}>
         <Screen
           {...shot}
-          url="localhost:8080/channels#approval-gated-build"
+          url="localhost:8080/"
           src="import-team.mp4"
           from={M['create-click']}
           rate={GO_RATE}
         />
       </Sequence>
-      <Caption step="03 · A team">A team&apos;s page makes every loop and the channel they share.</Caption>
+      <Caption step="03 · A team">
+        A team&apos;s page makes the team, its loops and the channel they share.
+      </Caption>
     </Stage>
   )
 }

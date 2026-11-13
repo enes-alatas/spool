@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PromptsChatTeamLoop } from './api'
-import { handoffLine, isTeamAddress } from './team'
+import { handoffLine, isBotAddress, isTeamAddress } from './team'
 import { channelHash } from './channels'
 
 const member = (handoffs: PromptsChatTeamLoop['handoffs']): PromptsChatTeamLoop => ({
@@ -47,5 +47,21 @@ describe('isTeamAddress', () => {
     expect(isTeamAddress('https://prompts.chat/bots/c1_notes')).toBe(false)
     expect(isTeamAddress('https://prompts.chat/bots/teams/')).toBe(false)
     expect(isTeamAddress('prompts.chat/bots/teams/x')).toBe(false)
+  })
+})
+
+describe('isBotAddress', () => {
+  it("takes a bot's page, its .md and its .json", () => {
+    expect(isBotAddress('https://prompts.chat/bots/c1_notes')).toBe(true)
+    expect(isBotAddress('https://prompts.chat/bots/c1_notes.md')).toBe(true)
+    expect(isBotAddress('https://prompts.chat/bots/c1_notes.json')).toBe(true)
+  })
+
+  it('leaves a team, the lists, the new-bot page and no URL', () => {
+    expect(isBotAddress('https://prompts.chat/bots/teams/release-crew')).toBe(false)
+    expect(isBotAddress('https://prompts.chat/bots/teams')).toBe(false)
+    expect(isBotAddress('https://prompts.chat/bots/new')).toBe(false)
+    expect(isBotAddress('https://prompts.chat/bots')).toBe(false)
+    expect(isBotAddress('prompts.chat/bots/c1_notes')).toBe(false)
   })
 })

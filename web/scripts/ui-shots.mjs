@@ -225,6 +225,23 @@ await newTeam.waitFor({ timeout: 15000 })
 const newTeamFile = `${outDir}/fleet-new-team.png`
 await page.screenshot({ path: newTeamFile })
 taken.push(newTeamFile)
+// A team imported from prompts.chat in it (#1559): its draft takes the
+// form's place, the team's name and description to edit above the home
+// channel and loops Create makes. The draft is the demo's, served here.
+const teamDraft = JSON.parse(
+  readFileSync(new URL('../demo/drafts/approval-gated-build.json', import.meta.url), 'utf8'),
+)
+await page.route('**/api/import/prompts-chat/team?*', (route) => route.fulfill({ json: teamDraft }))
+await newTeam.getByRole('button', { name: 'Import a team from prompts.chat' }).click()
+await newTeam.getByRole('textbox', { name: 'Team on prompts.chat' }).fill(teamDraft.source)
+await newTeam.getByRole('button', { name: 'Import', exact: true }).click()
+await newTeam.locator('.team-preview').waitFor({ timeout: 15000 })
+const newTeamImportFile = `${outDir}/fleet-new-team-import.png`
+await page.screenshot({ path: newTeamImportFile })
+taken.push(newTeamImportFile)
+await page.unroute('**/api/import/prompts-chat/team?*')
+// back to the empty team's form, which Cancel closes
+await newTeam.getByRole('button', { name: 'Cancel' }).click()
 await newTeam.getByRole('button', { name: 'Cancel' }).click()
 await page.evaluate(() => globalThis.localStorage.removeItem('spool.fleet.layout'))
 

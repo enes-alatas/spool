@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, type LoopView, type Team } from '../api'
+import { api, ApiError, type LoopView, type PromptsChatTeam, type Team } from '../api'
 import { channelRefusal, descriptionLength, homeChannelOptions, loopsNotInTeam } from '../channels'
 import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
@@ -10,7 +10,6 @@ import {
   moveTargets,
   needsYou,
   TEAM_DESCRIPTION_MAX,
-  TEAM_NAME_MAX,
   teamDeleteRefusal,
   teamGroups,
   validTeamName,
@@ -21,10 +20,12 @@ import {
   suggestedHomeChannel,
   type TeamGroup,
 } from '../teams'
-import { CharCount } from './CharCount'
 import { EditIcon } from './Icons'
 import { FocusedOrb, LoopOrb } from './LoopOrb'
 import { StepDialog } from './StepDialog'
+import { TeamFields } from './TeamFields'
+import { PromptsChatFill } from './PromptsChatImport'
+import { TeamDraft } from './TeamDraft'
 
 // The fleet as its teams (ADR-0066, #1411): a card per team with a circle
 // per loop, and the loops in no team in a full-width card last. An admin
@@ -574,6 +575,8 @@ const OFFER_SAYS = new Set(['channel_exists', 'channel_in_other_team', 'channel_
 // from the New team button beside the Teams/List switch (#1484, #1557). Typed work
 // is kept from a stray backdrop click or Escape; Cancel and the ✕ still
 // close it. `onCreated` hears the new team's name once the hub has it.
+// Above the form a team is imported from prompts.chat instead (#1559): its
+// draft takes the form's place, and Create makes the team with its loops.
 export function NewTeamDialog({
   onClose,
   onCreated,
@@ -582,6 +585,8 @@ export function NewTeamDialog({
   onCreated?: (name: string) => void
 }) {
   const refresh = useRefresh()
+  const [draft, setDraft] = useState<PromptsChatTeam>()
+  const [draftBusy, setDraftBusy] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   // The home channel follows the name until it is typed in itself (#1494).
@@ -649,87 +654,103 @@ export function NewTeamDialog({
     <StepDialog
       title="New team"
       className="new-team-dialog"
-      dismissible={name === '' && description === ''}
-      busy={busy}
+      dismissible={!draft && name === '' && description === ''}
+      busy={busy || draftBusy}
       onClose={onClose}
     >
-      <TeamForm
-        id={NEW_TEAM_FORM}
-        name={name}
-        description={description}
-        onName={(value) => {
-          setName(value)
-          setError('')
-        }}
-        onDescription={setDescription}
-        badName={badName}
-        tooLong={tooLong}
-        error={error}
-        newHome={{
-          value: home,
-          onChange: (value) => {
-            setOwnHome(value)
-          },
-          problem: homeProblem,
-          note: offer?.kind === 'take' && !homeProblem ? `#${home} already exists.` : undefined,
-          choice:
-            offer?.kind === 'take' && !homeProblem ? (
-              <fieldset className="team-form-choice">
-                <legend className="sr-only">What to do with #{home}</legend>
-                <label>
-                  <input
-                    type="radio"
-                    name={`${NEW_TEAM_FORM}-home-choice`}
-                    checked={choice?.take === true}
-                    onChange={() => setChose({ home, take: true })}
-                  />
-                  <span>
-                    Make #{home} this team's home channel
-                    <span className="team-form-note">
-                      It keeps its history, members and rooms. {homeOfferJoins(offer)}
-                    </span>
-                  </span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name={`${NEW_TEAM_FORM}-home-choice`}
-                    checked={choice?.take === false}
-                    onChange={() => {
-                      setChose({ home, take: false })
-                      const field = document.getElementById(homeFieldId(NEW_TEAM_FORM))
-                      if (field instanceof HTMLInputElement) {
-                        field.focus()
-                        field.select()
-                      }
-                    }}
-                  />
-                  <span>Give this team's home channel another name</span>
-                </label>
-              </fieldset>
-            ) : undefined,
-        }}
-      >
-        <button
-          type="button"
-          className="btn primary sm"
-          onClick={create}
-          disabled={
-            busy ||
-            !name ||
-            badName ||
-            tooLong ||
-            !home ||
-            !!homeProblem ||
-            (offer?.kind === 'take' && !taking)
-          }
-        >
-          {busy ? 'Creating…' : 'Create'}
-        </button>
-        <button type="button" className="btn sm" onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
-      </TeamForm>
+      {draft ? (
+        <TeamDraft
+          team={draft}
+          onCancel={() => setDraft(undefined)}
+          onBusy={setDraftBusy}
+          onCreated={(made) => {
+            onCreated?.(made)
+            onClose()
+          }}
+        />
+      ) : (
+        <>
+          <PromptsChatFill onTeam={setDraft} />
+          <div className="hint new-team-or">Or make an empty team:</div>
+          <TeamForm
+            id={NEW_TEAM_FORM}
+            name={name}
+            description={description}
+            onName={(value) => {
+              setName(value)
+              setError('')
+            }}
+            onDescription={setDescription}
+            badName={badName}
+            tooLong={tooLong}
+            error={error}
+            newHome={{
+              value: home,
+              onChange: (value) => {
+                setOwnHome(value)
+              },
+              problem: homeProblem,
+              note: offer?.kind === 'take' && !homeProblem ? `#${home} already exists.` : undefined,
+              choice:
+                offer?.kind === 'take' && !homeProblem ? (
+                  <fieldset className="team-form-choice">
+                    <legend className="sr-only">What to do with #{home}</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`${NEW_TEAM_FORM}-home-choice`}
+                        checked={choice?.take === true}
+                        onChange={() => setChose({ home, take: true })}
+                      />
+                      <span>
+                        Make #{home} this team's home channel
+                        <span className="team-form-note">
+                          It keeps its history, members and rooms. {homeOfferJoins(offer)}
+                        </span>
+                      </span>
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name={`${NEW_TEAM_FORM}-home-choice`}
+                        checked={choice?.take === false}
+                        onChange={() => {
+                          setChose({ home, take: false })
+                          const field = document.getElementById(homeFieldId(NEW_TEAM_FORM))
+                          if (field instanceof HTMLInputElement) {
+                            field.focus()
+                            field.select()
+                          }
+                        }}
+                      />
+                      <span>Give this team's home channel another name</span>
+                    </label>
+                  </fieldset>
+                ) : undefined,
+            }}
+          >
+            <button
+              type="button"
+              className="btn primary sm"
+              onClick={create}
+              disabled={
+                busy ||
+                !name ||
+                badName ||
+                tooLong ||
+                !home ||
+                !!homeProblem ||
+                (offer?.kind === 'take' && !taking)
+              }
+            >
+              {busy ? 'Creating…' : 'Create'}
+            </button>
+            <button type="button" className="btn sm" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+          </TeamForm>
+        </>
+      )}
     </StepDialog>
   )
 }
@@ -782,32 +803,15 @@ function TeamForm({
 }) {
   return (
     <div className="team-form">
-      <label htmlFor={`${id}-name`}>Name</label>
-      <input
-        id={`${id}-name`}
-        className="mono"
-        value={name}
-        maxLength={TEAM_NAME_MAX}
-        onChange={(e) => onName(e.target.value)}
-        aria-invalid={badName}
-        aria-describedby={`${id}-rule`}
-        autoComplete="off"
-        spellCheck={false}
+      <TeamFields
+        id={id}
+        name={name}
+        description={description}
+        onName={onName}
+        onDescription={onDescription}
+        badName={badName}
+        tooLong={tooLong}
         autoFocus
-      />
-      <div id={`${id}-rule`} className={`team-form-note${badName ? ' bad' : ''}`}>
-        Lowercase letters, digits, dashes and underscores, 2 to 32, as a loop's name.
-      </div>
-      <div className="team-form-label">
-        <label htmlFor={`${id}-description`}>Description</label>
-        <CharCount used={descriptionLength(description)} max={TEAM_DESCRIPTION_MAX} />
-      </div>
-      <input
-        id={`${id}-description`}
-        value={description}
-        onChange={(e) => onDescription(e.target.value)}
-        placeholder="What it is for (optional)"
-        aria-invalid={tooLong}
       />
       {newHome && (
         <>

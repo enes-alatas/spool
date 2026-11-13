@@ -19,3 +19,15 @@ export function isTeamAddress(raw: string): boolean {
     return false
   }
 }
+
+// Whether raw names a single bot's page on prompts.chat, as the hub reads
+// one: New team takes only a team, and says where a bot is imported
+// instead. Like isTeamAddress it checks no host; the hub does.
+export function isBotAddress(raw: string): boolean {
+  try {
+    const bot = /^\/bots\/([A-Za-z0-9][A-Za-z0-9_-]*)(?:\.md|\.json)?\/?$/.exec(new URL(raw).pathname)
+    return !!bot && bot[1] !== 'teams' && bot[1] !== 'new'
+  } catch {
+    return false
+  }
+}
