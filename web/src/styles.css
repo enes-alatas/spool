@@ -6324,7 +6324,8 @@ textarea {
   color: var(--text);
   font: inherit;
 }
-.orb svg {
+/* the rings, not a control's icon inside the focused circle (#1558) */
+.orb > svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -6651,6 +6652,34 @@ button.orb:focus-visible .orb-peek {
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--text-muted);
+}
+/* the focused circle's controls (#1558): the row is centred, and its
+   lines show above it, wider than the row, over the facts */
+.orb-ctls {
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.orb-ctls .round-ctl:hover .ctl-tip,
+.orb-ctls .round-ctl:focus-visible .ctl-tip {
+  left: 50%;
+  right: auto;
+  width: 15rem;
+  transform: translateX(-50%);
+}
+/* a refusal inside the circle is a line of danger text, not the boxed
+   form error, which pushed the name up into the ring */
+.orb-detail .control-error {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--fs-small);
+  line-height: 1.3;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 .orb-detail-open {
   margin-top: 4px;

@@ -191,6 +191,33 @@ await page.waitForSelector('.team-cards', { timeout: 15000 })
 const fleetTeamsFile = `${outDir}/fleet-teams.png`
 await page.screenshot({ path: fleetTeamsFile, fullPage: true })
 taken.push(fleetTeamsFile)
+// A loop's focused circle and its controls (#1558): the gardener's, its
+// Rotate session line shown by keyboard focus from Open loop, then a Wake
+// now the hub refuses, patched in, its answer inside the circle.
+await page.locator('button.orb[aria-label^="gardener:"]').click()
+const orbFocus = page.locator('dialog.orb-focus')
+await orbFocus.getByRole('link', { name: 'Open loop →' }).waitFor({ timeout: 15000 })
+await page.waitForTimeout(700)
+await page.keyboard.press('Shift+Tab')
+const orbControlsFile = `${outDir}/fleet-orb-controls.png`
+await page.screenshot({ path: orbControlsFile })
+taken.push(orbControlsFile)
+await page.route('**/api/loops/gardener/wake', (route) =>
+  route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'the hub is shutting down' }),
+  }),
+)
+await orbFocus.getByRole('button', { name: 'Wake now' }).click()
+await orbFocus.locator('.control-error').waitFor({ timeout: 15000 })
+await page.mouse.move(0, 0)
+const orbFailedFile = `${outDir}/fleet-orb-failed.png`
+await page.screenshot({ path: orbFailedFile })
+taken.push(orbFailedFile)
+await page.unroute('**/api/loops/gardener/wake')
+await page.keyboard.press('Escape')
+await orbFocus.waitFor({ state: 'detached', timeout: 15000 })
 // The List view's New team popup.
 await page.getByRole('button', { name: 'List', exact: true }).click()
 await page.getByRole('button', { name: '+ New team' }).click()

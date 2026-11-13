@@ -4,6 +4,7 @@ import type { LoopView } from '../api'
 import { formatUsd, inTurn, nextWake, spendShare } from '../format'
 import { problemLine } from '../health'
 import { needsYou } from '../teams'
+import { OrbControls } from './LoopControls'
 import { useMinuteClock } from './PlanUsage'
 
 // A loop as a circle on the Fleet page (#1411). Its outer ring is how full
@@ -324,6 +325,7 @@ export function FocusedOrb({
             {formatUsd(loop.cost_today_usd)}
           </span>
           <span className="orb-detail-facts">{wakeLine(loop, now)}</span>
+          <OrbControls loop={loop} />
           <Link ref={open} to={`/loops/${loop.name}`} className="orb-detail-open">
             Open loop →
           </Link>
