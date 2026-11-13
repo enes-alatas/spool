@@ -117,8 +117,8 @@ if [ -n "$pushed" ]; then
 		# A loop's own `loop/<name>` branch is never a PR (CONVENTIONS.md,
 		# "Branches"), so pr-guards never reads its commits: a ledger of
 		# hundreds goes through (#1390).
-		case $dst in "" | HEAD) dst=$(git rev-parse --abbrev-ref "$src" 2>/dev/null) ;; esac
-		case ${dst#refs/heads/} in loop/*) exit 0 ;; esac
+		case $dst in ("" | HEAD) dst=$(git rev-parse --abbrev-ref "$src" 2>/dev/null) ;; esac
+		case ${dst#refs/heads/} in (loop/*) exit 0 ;; esac
 		repo_file scripts/commit-subjects.sh | bash -s -- --git "origin/main..$src" 2>/dev/null
 		[ $? -eq 1 ] && exit 3
 		exit 0
