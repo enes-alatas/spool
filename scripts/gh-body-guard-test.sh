@@ -184,6 +184,7 @@ check 0 "issue create: untyped is CI's" "gh issue create -t t --body-file plain.
 check 0 "issue create: community is exempt" "gh issue create -t t -l community --body-file plain.md"
 check 0 "issue create: --web" "gh issue create --web -l chore"
 check 0 "issue comment: not a filing" "gh issue comment 3 --body-file plain.md"
+check 0 "push: commits that pass" "git push"
 gitw commit -q --allow-empty -m "the fleet channel is a tab"
 check 2 "push: a bad subject" "git push" "" "pr-guards will refuse"
 check 2 "push: piped, with an upstream flag" "git push -u origin HEAD 2>&1 | tail -n 5" "" "the subject isn't"

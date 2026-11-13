@@ -56,7 +56,8 @@ judge() {
 	if LC_ALL=C grep -Eiq "$keyword" "$work/message"; then
 		said+=("a closing keyword sits next to an issue number; link the issue in the PR body, and write around it here")
 	fi
-	for reason in "${said[@]}"; do
+	# bash 3.2, macOS's, calls an empty array unbound under set -u (#1571)
+	for reason in ${said[@]+"${said[@]}"}; do
 		echo "$sha: $reason"
 		failed=1
 	done
