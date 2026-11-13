@@ -6529,8 +6529,6 @@ button.orb:focus-visible .orb-peek {
   border: 1.5px dashed color-mix(in oklab, var(--text) 22%, transparent);
   border-radius: 50%;
   color: var(--text-muted);
-  font-size: var(--fs-display);
-  font-weight: 400;
   text-decoration: none;
   cursor: pointer;
 }
