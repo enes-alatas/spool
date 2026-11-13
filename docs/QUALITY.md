@@ -387,6 +387,10 @@ workflow and not in its `paths:`.
   asking, because it spends the operator's plan tokens. A green tier-2 row is
   only as strict as the fake, and #162 had two rows green on a behaviour the
   real CLI does not have.
+- A PR that changes rendered layout attaches its `make ui-align` report
+  (CONVENTIONS.md, Web, #1549) and says which offsets are meant. The
+  reviewer reads the report against those words. It is not a CI gate, as
+  some offsets are put in on purpose and a gate would fail them.
 - Loop-authored PRs stay under ~400 changed lines; bigger work is split.
 - Behavior changes update the relevant living doc in the same PR.
 - A PR that removes, renames or re-routes a flow updates the copy describing

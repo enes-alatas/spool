@@ -413,6 +413,23 @@ the gate and the roles are the release plan the operator agreed on
 - An error the room draws carries `role="alert"` (#354): `.form-error`, or
   `.load-older-failed` in the timeline. `src/alerts.test.ts` checks both, and a
   new error class joins its list.
+- **Alignment is measured, not eyeballed** (#1549, after #1546 and #1547):
+  - An icon is an SVG from `src/components/Icons.tsx`, never a typed glyph
+    such as `×`, `✕` or `▾`: a glyph sits where its font's line box puts
+    it, not in the middle of its control.
+  - A letter centred in a shape (an avatar, a loop's ring) trims its text
+    box to the cap height, `text-box: trim-both cap alphabetic`, so the
+    shape centres the letter itself, not a line box that keeps room for
+    descenders.
+  - Fields and buttons in one row share the control heights: a `min-height`
+    of 2rem, as a regular `.btn` has, or 1.625rem, as a `.btn.sm` has
+    (`styles.css`, #1547). Padding sets a control's width, never its height.
+  - A PR that changes rendered layout attaches the report of
+    `make ui-align` (`web/scripts/measure-alignment.mjs`), which measures
+    4× renders on the fixture hub. It lists every glyph off its control's
+    centre and every row of controls whose heights or tops differ, by more
+    than 0.5px. It is a report, not a gate: the PR says which of its
+    offsets are meant.
 - **No em dashes in UI text** (#331, the operator's call): labels,
   placeholders, hover titles, notices and timeline lines use a colon, comma,
   full stop or parentheses; an option label separates value from description
