@@ -142,9 +142,10 @@ export interface LoopView {
   // nobody has dealt with: no successful retry, no dismissal (#202, #269). No age
   // limit — a failure stops counting when someone resolves it, not when a
   // clock decides the operator is done looking. The server counts it,
-  // because the activity feed the client can see is a newest-N window and
-  // would undercount silently on a busy fleet — and a count quietly wrong
-  // about a delivery failure reads as a checked zero.
+  // because the activity feed the client could see was a newest-N window
+  // that would have undercounted silently on a busy fleet — and a count
+  // quietly wrong about a delivery failure reads as a checked zero. The feed
+  // is gone since #1560.
   undelivered: number
   has_tg_token: boolean
   // Which surface the loop is attached to: one at most, '' for none (#230).
@@ -1533,10 +1534,11 @@ export const api = {
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
   // One loop's failed sends, uncapped — the list its Fleet badge counts, by
   // the same predicate over the same scope (#290), so the two cannot
-  // disagree. Activity is a newest-100 window across everything, which is
-  // why the badge could once name a number the operator could not find
-  // (#263). The route also answers fleet-wide without `loop`; nothing in the
-  // room asks for that since the list became a pane of the loop (#281).
+  // disagree. Activity's feed, gone since #1560, was a newest-100 window
+  // across everything, which is why the badge could once name a number the
+  // operator could not find (#263). The route also answers fleet-wide
+  // without `loop`; nothing in the room asks for that since the list became
+  // a pane of the loop (#281).
   undelivered: (name: string) => req<ChatMessage[]>(`/api/undelivered?loop=${encodeURIComponent(name)}`),
   // 202, not 200: the send is the surface's and is queued behind whatever it
   // is already doing, so the outcome arrives as the row resolving or its
@@ -1546,7 +1548,6 @@ export const api = {
   // Resolves the failure without sending anything: the operator has read it
   // and is done. Takes the row off their list; it does not rewrite history.
   dismissSend: (id: number) => req<{ dismissed: boolean }>(`/api/messages/${id}/dismiss`, { method: 'POST' }),
-  activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   // The loops' change record, newest first (#695); loop narrows it to one.
   changes: (loop?: string, limit = 100) =>
     req<LoopChange[]>(

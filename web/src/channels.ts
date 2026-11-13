@@ -1,4 +1,4 @@
-import { ApiError, type Channel, type ChatMessage, type Team } from './api'
+import { ApiError, type Channel, type Team } from './api'
 
 // The rules the Channels page checks before it asks the hub, mirrored from
 // internal/store (ValidChannelName) and internal/httpapi (the description
@@ -91,14 +91,6 @@ export function channelRefusal(
     default:
       return message
   }
-}
-
-// Where a message was said, as a loop names it to send there (store
-// Message.Destination): a channel as channel:<name>, and the control room
-// and private chats by their kind.
-export function whereSaid(m: Pick<ChatMessage, 'conversation' | 'channel' | 'origin'>): string {
-  if (m.conversation === 'group' && m.channel) return `channel:${m.channel}`
-  return m.conversation || m.origin
 }
 
 // A channel card's anchor on the Channels page, which a team create lands

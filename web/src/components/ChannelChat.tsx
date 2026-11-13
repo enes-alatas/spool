@@ -20,9 +20,8 @@ import { surfaceNote } from '../messages'
 // is in is a pane of that loop's page (#549), read and posted by the
 // channel's name, and every channel's chat is a page under Channels
 // (#1443). No channel is the fleet's: `fleet` is one like any other
-// (ADR-0068). Not a part of
-// Activity: that is a read-only log of every conversation, owner DMs
-// included (ADR-0025), and a compose box there would sit beside them.
+// (ADR-0068). Activity shows no messages since #1560: a channel is read
+// here and on its loops' pages.
 //
 // Nothing posted here leaves the hub (ADR-0032). An attached surface
 // brings its room's posts in, so people on Telegram or Slack appear in this

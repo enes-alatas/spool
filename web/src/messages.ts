@@ -208,12 +208,13 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
   // The loop's Undelivered pane, not Activity and not its other panes. A
   // loop's group sends are listed on neither the control-room pane — the
   // private conversation — nor the timeline, which renders events and turns
-  // rather than messages. Activity carries the mark for every kind of
-  // failure and was the answer until the list existed, but it is a
-  // newest-100 window across every conversation: on a busy fleet it is the
-  // page that cannot answer the number this badge is showing, which is what
-  // #263 was filed for. The pane reads the predicate this count reads, for
-  // this loop, uncapped (#281). Clicking the badge opens it.
+  // rather than messages. Activity's feed carried the mark for every kind
+  // of failure and was the answer until the list existed, but it was a
+  // newest-100 window across every conversation: on a busy fleet it was the
+  // page that could not answer the number this badge is showing, which is
+  // what #263 was filed for; the feed itself is gone since #1560. The pane
+  // reads the predicate this count reads, for this loop, uncapped (#281).
+  // Clicking the badge opens it.
   return {
     text: `${count} undelivered`,
     title: `${count} ${plural} this loop sent never reached the surface, and no retry has got through and nobody has dismissed ${count === 1 ? 'it' : 'them'}. Click to see which on the loop's Undelivered pane; a private one is also marked on its control room.`,
@@ -303,7 +304,7 @@ export function surfaceNote(m: ChatMessage): string {
 export function droppedNote(
   m: ChatMessage,
   nameOf: (id: string) => string,
-): { label: string; text: string; title: string } | null {
+): { text: string; title: string } | null {
   const ids = m.dropped_by ?? []
   if (ids.length === 0) return null
   const names = ids.map((id) => `@${nameOf(id)}`)
@@ -311,7 +312,6 @@ export function droppedNote(
     names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
   const whose = names.length === 1 ? 'its turn' : 'their turns'
   return {
-    label: `dropped by ${names.join(', ')}`,
     text: `${who} couldn't take this message: ${whose} crashed three times, so it won't be tried again.`,
     title:
       'Each of the three turns that tried this message crashed, so the hub gave up on it and answered the ' +

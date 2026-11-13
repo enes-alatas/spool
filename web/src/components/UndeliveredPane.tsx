@@ -15,10 +15,10 @@ import { useMay } from './Session'
 // (`?loop=`, #290) rather than narrowed here, so it and the badge are the
 // same store predicate over the same scope and cannot disagree.
 //
-// As private as Activity and for the same reason: an undelivered owner DM
-// carries its text here. It is shot only by `make ui-shots`, whose fleet
-// `cmd/uifixture` invented seconds earlier; a shot taken any other way is the
-// violation (CONVENTIONS, "Screenshots come from fixtures").
+// Private: an undelivered owner DM carries its text here. It is shot only
+// by `make ui-shots`, whose fleet `cmd/uifixture` invented seconds earlier;
+// a shot taken any other way is the violation (CONVENTIONS, "Screenshots
+// come from fixtures").
 
 // What a row's hover says when the message is not a loop's own send.
 //
@@ -184,10 +184,11 @@ export function UndeliveredPane({ name }: { name: string }) {
               reason on a line of their own; the wide one lays the two out as
               grid columns through it (`display: contents`, styles.css). */}
           <span className="undelivered-where">
-            {/* "to #fleet", not "#fleet". The bare label is Activity's, where
-                this slot says where a message came *from*; here it says where
-                it was going, and the same word in the same place meaning the
-                opposite way round is half of why the row read wrong (#282). */}
+            {/* "to #fleet", not "#fleet". The bare label was Activity's feed's
+                (gone since #1560), where this slot said where a message came
+                *from*; here it says where it was going, and the same word in
+                the same place meaning the opposite way round was half of why
+                the row read wrong (#282). */}
             <span className="origin">to {destinationLabel(m)}</span>
             {/* The surface's own reason, verbatim: the sender scrubbed it of
                 credentials before it was stored (#155). The row carries it
