@@ -5763,9 +5763,11 @@ textarea {
   flex-wrap: wrap;
   gap: 4px 10px;
 }
-.team-description {
+/* named as the form's labels are: the channel is the draft's, not edited */
+.team-channel-label {
   flex-basis: 100%;
-  font-size: var(--fs-input);
+  font-size: var(--fs-body);
+  color: var(--text-muted);
 }
 .team-loops {
   list-style: none;
@@ -6257,6 +6259,10 @@ textarea {
 }
 .team-form-delete {
   margin-left: auto;
+}
+/* New team's line between the import above it and the empty team's form */
+.new-team-or {
+  margin: 2px 0 14px;
 }
 
 /* a loop's circle */

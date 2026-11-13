@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type PromptsChatDraft, type PromptsChatSkill, type PromptsChatTeam } from '../api'
 import { installable, skillSize } from '../skills'
-import { isTeamAddress } from '../team'
+import { isBotAddress, isTeamAddress } from '../team'
 import { egressAllows } from '../egress'
 import { PromptsChatLogo } from './PromptsChatLogo'
 
@@ -13,32 +14,43 @@ import { PromptsChatLogo } from './PromptsChatLogo'
 // keeps Name first; open it takes the URL, and a refusal says the hub's
 // reason under it. A draft taken closes it again. Given onTeam, it takes a
 // team's page as well (#1266) and hands over the team's draft instead.
+// Given onTeam alone, as on New team (#1559), it takes only a team, and a
+// bot's address is sent to New loop, where a bot is imported.
 export function PromptsChatFill({
   onDraft,
   onTeam,
 }: {
-  onDraft: (draft: PromptsChatDraft) => void
+  onDraft?: (draft: PromptsChatDraft) => void
   onTeam?: (team: PromptsChatTeam) => void
 }) {
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // A bot's address where only a team is taken: said with a way to New loop.
+  const [bot, setBot] = useState(false)
+  const bots = !!onDraft
+  const teams = !!onTeam
 
   const close = () => {
     setOpen(false)
     setUrl('')
     setError('')
+    setBot(false)
   }
 
   const fill = async () => {
     if (!url.trim()) return
+    const address = url.trim()
+    if (!onDraft && isBotAddress(address)) {
+      setBot(true)
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      const address = url.trim()
-      if (onTeam && isTeamAddress(address)) onTeam(await api.importPromptsChatTeam(address))
-      else onDraft(await api.importPromptsChat(address))
+      if (onTeam && (isTeamAddress(address) || !onDraft)) onTeam(await api.importPromptsChatTeam(address))
+      else if (onDraft) onDraft(await api.importPromptsChat(address))
       close()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -52,9 +64,9 @@ export function PromptsChatFill({
       <div className="field">
         <button type="button" className="btn import-open" onClick={() => setOpen(true)}>
           <PromptsChatLogo />
-          {onTeam ? 'Import a bot or a team from prompts.chat' : 'Import a bot from prompts.chat'}
+          {`Import ${bots && teams ? 'a bot or a team' : bots ? 'a bot' : 'a team'} from prompts.chat`}
         </button>
-        <BrowseLinks teams={!!onTeam} />
+        <BrowseLinks bots={bots} teams={teams} />
       </div>
     )
 
@@ -68,17 +80,18 @@ export function PromptsChatFill({
           <PromptsChatLogo />
           <input
             id="nl-import"
-            aria-label={onTeam ? 'Bot or team on prompts.chat' : 'Bot on prompts.chat'}
+            aria-label={`${bots && teams ? 'Bot or team' : bots ? 'Bot' : 'Team'} on prompts.chat`}
             // opened by the button, so the URL can be pasted at once
             autoFocus
             inputMode="url"
-            placeholder="https://prompts.chat/bots/…"
+            placeholder={bots ? 'https://prompts.chat/bots/…' : 'https://prompts.chat/bots/teams/…'}
             value={url}
             disabled={busy}
-            aria-invalid={error !== ''}
+            aria-invalid={error !== '' || bot}
             onChange={(e) => {
               setUrl(e.target.value)
               setError('')
+              setBot(false)
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') void fill()
@@ -98,31 +111,44 @@ export function PromptsChatFill({
           Cancel
         </button>
       </div>
-      {error ? (
+      {bot ? (
+        <div className="form-error" role="alert">
+          That is a single bot, not a team.{' '}
+          <Link className="text-link" to="/new">
+            Import it on New loop
+          </Link>
+          .
+        </div>
+      ) : error ? (
         <div className="form-error" role="alert">
           {error}
         </div>
       ) : (
         <div className="hint">
-          {onTeam
+          {bots && teams
             ? "Its page's address. A bot fills the fields below, for you to edit; a team shows the loops and the channel it makes, before any exists."
-            : "Its page's address. The bot fills the fields below, for you to edit."}
+            : bots
+              ? "Its page's address. The bot fills the fields below, for you to edit."
+              : "Its page's address. The team shows its loops and the channel it makes, before any exists."}
         </div>
       )}
-      <BrowseLinks teams={!!onTeam} />
+      <BrowseLinks bots={bots} teams={teams} />
     </div>
   )
 }
 
 // Where to find a bot or a team to import (#1325): prompts.chat's own
 // lists, opened in a new tab of the operator's browser. The hub fetches
-// nothing for them. Teams are offered only where a team can be imported.
-function BrowseLinks({ teams }: { teams: boolean }) {
+// nothing for them. Each list is offered only where what it lists can be
+// imported.
+function BrowseLinks({ bots, teams }: { bots: boolean; teams: boolean }) {
   return (
     <div className="hint import-browse">
-      <a className="text-link" href={PROMPTS_CHAT_BOTS} target="_blank" rel="noopener noreferrer">
-        Browse bots ↗
-      </a>
+      {bots && (
+        <a className="text-link" href={PROMPTS_CHAT_BOTS} target="_blank" rel="noopener noreferrer">
+          Browse bots ↗
+        </a>
+      )}
       {teams && (
         <a className="text-link" href={PROMPTS_CHAT_TEAMS} target="_blank" rel="noopener noreferrer">
           Browse teams ↗

@@ -833,8 +833,10 @@ export interface PromptsChatHandoff {
   label: string
 }
 
-// A team create's answer: the channel made and its loops, started.
+// A team create's answer: the team made, its home channel and its loops,
+// started.
 export interface CreatedTeam {
+  team: string
   channel: string
   loops: LoopView[]
 }
@@ -1862,10 +1864,12 @@ export const api = {
   // too large; nothing is created.
   importPromptsChatTeam: (url: string) =>
     req<PromptsChatTeam>(`/api/import/prompts-chat/team?url=${encodeURIComponent(url)}`),
-  // All or nothing: a refusal (a name taken since the draft, a channel that
-  // exists, a mission too long) stores none of it. runtime is "" for the
-  // hub's default; a team is never cloud.
+  // All or nothing: a refusal (a name taken since the draft, 409
+  // `team_exists` or `channel_exists`, 400 `team_name_invalid`, a mission
+  // too long) stores none of it. team names the team, the channel's name
+  // when absent; runtime is "" for the hub's default; a team is never cloud.
   createPromptsChatTeam: (team: {
+    team?: string
     channel: string
     description: string
     runtime: string

@@ -28,18 +28,27 @@ import { CapChips } from '../components/CapChips'
 import { EgressHints, ImportedFrom, PromptsChatFill, SkillHints } from '../components/PromptsChatImport'
 import { skillsRefused, skillsToInstall } from '../skills'
 import { TeamDraft } from '../components/TeamDraft'
+import { saveFleetLayout } from '../teams'
 import { LOGIN_SAY_SO, loginAccount, loopLoginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
   const nav = useNavigate()
   // A team read from prompts.chat (#1266) takes the form's place, and the
-  // page's title says what Create now makes.
+  // page's title says what Create now makes. The team made, the Fleet
+  // page's Teams view shows its card (#1559).
   const [team, setTeam] = useState<PromptsChatTeam | null>(null)
   if (team)
     return (
       <div className="page measure">
         <h1>New team</h1>
-        <TeamDraft team={team} onCancel={() => setTeam(null)} />
+        <TeamDraft
+          team={team}
+          onCancel={() => setTeam(null)}
+          onCreated={() => {
+            saveFleetLayout('teams')
+            nav('/')
+          }}
+        />
       </div>
     )
   return (
