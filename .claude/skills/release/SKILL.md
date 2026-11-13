@@ -90,11 +90,10 @@ half never holds a tag.
 on a fresh runner (`scripts/release-smoke.sh <tag>`). Not every step is
 the anonymous one a stranger makes:
 - **Anonymous:** downloading the archive and `SHA256SUMS` from the release
-  URL, `sha256sum -c`, the unpack, and the hub's start.
+  URL, `sha256sum -c`, the unpack, the `docker pull`s from `spool images`
+  with no registry login (#1580), and the hub's start.
 - **With the job's token:** `gh attestation verify` on the archive and both
-  images, which needs a token whatever the visibility, and the
-  `docker pull`s from `spool images`, through a `packages: read` login,
-  while the ghcr packages are private.
+  images, which needs a token whatever the visibility.
 
 **A red tag smoke** means the release is public and broken. Nothing is
 deleted, and the tag never moves: the attested files and the digests in
