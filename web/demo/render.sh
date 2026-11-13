@@ -52,5 +52,8 @@ done
 # The chunks share one encoder setup, so they join without re-encoding.
 (cd "$chunks" && ls [0-9][0-9][0-9][0-9][0-9].mp4 | sed "s/.*/file '&'/") >"$chunks/list.txt"
 ffmpeg=$(ls node_modules/@remotion/compositor-*/ffmpeg | head -1)
-"$ffmpeg" -v error -y -f concat -safe 0 -i "$chunks/list.txt" -c copy "out/$name.mp4"
+# It loads the libraries beside it: from LD_LIBRARY_PATH on Linux,
+# DYLD_LIBRARY_PATH on macOS.
+lib=$(dirname "$ffmpeg")
+LD_LIBRARY_PATH=$lib DYLD_LIBRARY_PATH=$lib "$ffmpeg" -v error -y -f concat -safe 0 -i "$chunks/list.txt" -c copy "out/$name.mp4"
 echo "out/$name.mp4"

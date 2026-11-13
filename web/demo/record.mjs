@@ -32,9 +32,11 @@ const compositor = join(
     .sort()
     .find((d) => d.startsWith('compositor-')),
 )
+// Its ffmpeg loads the libraries beside it: Linux looks for them on
+// LD_LIBRARY_PATH, macOS on DYLD_LIBRARY_PATH.
 const ffmpeg = (args) =>
   execFileSync(join(compositor, 'ffmpeg'), ['-hide_banner', '-loglevel', 'error', ...args], {
-    env: { ...process.env, LD_LIBRARY_PATH: compositor },
+    env: { ...process.env, LD_LIBRARY_PATH: compositor, DYLD_LIBRARY_PATH: compositor },
     stdio: 'inherit',
   })
 
