@@ -45,6 +45,24 @@ export default tseslint.config(
     },
   },
   {
+    // The alignment report (#1549) measures in the page through the
+    // functions it hands to `page.evaluate`, which use these browser globals.
+    files: ['scripts/measure-alignment.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        document: 'readonly',
+        getComputedStyle: 'readonly',
+        NodeFilter: 'readonly',
+        atob: 'readonly',
+        createImageBitmap: 'readonly',
+        Blob: 'readonly',
+        OffscreenCanvas: 'readonly',
+      },
+    },
+  },
+  {
     files: ['src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {

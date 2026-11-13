@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
+.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke ui-align demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -155,6 +155,13 @@ ui-shots: build
 # trace at web/smoke-trace.zip.
 ui-smoke: build
 	bash scripts/fixture-hub.sh npm run -s test:smoke
+
+# Alignment report (#1549): every glyph off its control's centre and every
+# row of controls with mismatched heights or tops, over 0.5px, on the
+# fixture hub. A report, not a gate: it exits 0, and a PR that changes
+# rendered layout attaches it (CONVENTIONS.md, Web).
+ui-align: build
+	bash scripts/fixture-hub.sh node scripts/measure-alignment.mjs
 
 # The README demo video (#447): record control-room footage from a fixture
 # hub, like ui-shots, then compose and render it with Remotion. web/demo is a
