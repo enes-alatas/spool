@@ -305,11 +305,12 @@ jobs:
       - run: scripts/release-smoke.sh --dir dist
 
   # A tag smokes what a stranger downloads: the published release, fetched
-  # from its public URL with no token. Two steps do use one: gh attestation
-  # verify always needs a token, and the images are pulled with this job's
-  # read grant while the packages are private (#765). It runs after
-  # publish, so red means the release is out and broken; the release skill
-  # lists the steps. The gate is the dry run before the tag.
+  # from its public URL with no token. One step does use one: gh
+  # attestation verify always needs a token. The images are pulled with no
+  # login, as a stranger pulls them, so a package gone private turns it red
+  # (#1580). It runs after publish, so red means the release is out and
+  # broken; the release skill lists the steps. The gate is the dry run
+  # before the tag.
   smoke:
     needs: publish
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
@@ -317,7 +318,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      packages: read # the images, while their packages are private
       attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,6 +330,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SPOOL_REPO: ${{ github.repository }}
         run: |
-          trap 'docker logout ghcr.io' EXIT
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           scripts/release-smoke.sh "$GITHUB_REF_NAME"
