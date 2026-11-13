@@ -5,7 +5,7 @@ import { messageTime } from './MessageKnot'
 import { applying, countHosts, filterHosts } from '../egress'
 import { Copyable } from './Copyable'
 import { Marked } from './Marked'
-import { PlusIcon } from './Icons'
+import { DisclosureIcon, PlusIcon } from './Icons'
 import { StepDialog } from './StepDialog'
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): what a docker
@@ -202,7 +202,7 @@ function EgressDialog({ onClose }: { onClose: () => void }) {
           aria-expanded={builtInOpen}
           onClick={() => setBuiltInOpen(!builtInOpen)}
         >
-          <span aria-hidden>{builtInOpen ? '▾' : '▸'}</span> Built in
+          <DisclosureIcon open={builtInOpen} /> Built in
         </button>{' '}
         <span className="egress-count">{countHosts(data.built_in)}</span>
       </h3>

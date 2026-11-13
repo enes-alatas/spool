@@ -108,11 +108,13 @@ export function PlusIcon({ size }: { size?: number }) {
   )
 }
 
-// Remove: a cross, for the × that takes a loop out of a chip list. Drawn
-// rather than typed, so it sits on the chip's middle (#1546).
-export function RemoveIcon() {
+// Remove: a cross, for the × that takes a loop out of a chip list, removes
+// or detaches a connection, closes a dialog, and marks a failed check.
+// Drawn rather than typed, so it sits on its control's middle (#1546,
+// #1576).
+export function RemoveIcon({ size = 12 }: { size?: number }) {
   return (
-    <Icon size={12}>
+    <Icon size={size}>
       <path d="M5 5l10 10M15 5L5 15" />
     </Icon>
   )
@@ -173,6 +175,25 @@ export function CheckIcon({ size }: { size?: number }) {
   return (
     <Icon size={size}>
       <path d="M4.5 10.5l3.5 3.5 7.5-8" />
+    </Icon>
+  )
+}
+
+// A disclosure: a chevron pointing right while what it opens is shut, and
+// down once it is open (#1576).
+export function DisclosureIcon({ open, size = 12 }: { open: boolean; size?: number }) {
+  return (
+    <Icon size={size}>
+      {open ? <path d="M5.5 7.75 10 12.25l4.5-4.5" /> : <path d="M7.75 5.5l4.5 4.5-4.5 4.5" />}
+    </Icon>
+  )
+}
+
+// Needs a look: an exclamation mark, for a check that warns (#1576).
+export function WarnIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <path d="M10 4.5v7M10 15.5h.01" />
     </Icon>
   )
 }

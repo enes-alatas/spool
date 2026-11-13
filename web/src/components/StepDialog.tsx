@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode, type SyntheticEvent } from 'react'
+import { RemoveIcon } from './Icons'
 
 // The shell the first-run cards open their step in (#588, #589): a native
 // modal `<dialog>`, as Add connection is, so the backdrop, the focus trap
@@ -82,7 +83,7 @@ export function StepDialog({
       <div className="panel-head">
         <h3 id={titleId}>{title}</h3>
         <button className="panel-action" onClick={close} disabled={busy} aria-label="Close" title="Close">
-          ✕
+          <RemoveIcon size={14} />
         </button>
       </div>
       {children}

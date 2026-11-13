@@ -3063,6 +3063,12 @@ textarea {
   border: 0;
   padding: 0;
 }
+/* the chevron is drawn (#1576); the toggle stays inline, so its label
+   keeps the baseline of the count beside it */
+.egress-toggle svg {
+  vertical-align: middle;
+  margin-right: 4px;
+}
 .egress-none {
   font-size: var(--fs-body);
   color: var(--text-muted);
@@ -3310,8 +3316,14 @@ textarea {
 .cloud-check .warn {
   color: var(--active);
 }
+.cloud-check li {
+  /* the mark is drawn (#1576), and centred on the line beside it */
+  display: flex;
+  align-items: center;
+}
 .cloud-mark {
-  display: inline-block;
+  display: inline-flex;
+  flex: none;
   width: 16px;
 }
 .cloud-check-hint {
