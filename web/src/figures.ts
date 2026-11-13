@@ -157,3 +157,19 @@ export function cardLine(f: LoopFigures): string | null {
       return 'a cloud loop sends no traces'
   }
 }
+
+// A team's figures on Activity (#1563): its loops' spend, turns and failed
+// turns summed, from the loops that have figures; null when none has. No
+// median: a team's is not the sum of its loops', and the cards under the
+// heading carry each loop's.
+export function teamFigures(
+  answers: LoopFigures[],
+): Pick<Figures, 'cost_usd' | 'turns' | 'failed_turns'> | null {
+  const served = answers.flatMap((a) => (a.figures ? [a.figures] : []))
+  if (served.length === 0) return null
+  return {
+    cost_usd: served.reduce((sum, f) => sum + f.cost_usd, 0),
+    turns: served.reduce((sum, f) => sum + f.turns, 0),
+    failed_turns: served.reduce((sum, f) => sum + f.failed_turns, 0),
+  }
+}

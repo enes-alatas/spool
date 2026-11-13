@@ -13,6 +13,14 @@ export default function Activity() {
   // open the page on one loop's week. With no loop, every loop's card.
   const [params, setParams] = useSearchParams()
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // The teams group the cards (#1563), as Fleet's query has them. A hub too
+  // old for teams answers 404 and the cards are one row; until the answer
+  // comes the strip waits, so the row never flashes up ahead of the groups.
+  const { data: teams, isPending: teamsPending } = useQuery({
+    queryKey: ['teams'],
+    queryFn: api.teams,
+    retry: false,
+  })
   const byName = [...(loops ?? [])].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   const loopNames = byName.map((l) => l.name)
   const figuresLoop = loopNames.find((n) => n === params.get('loop')) ?? ''
@@ -30,9 +38,10 @@ export default function Activity() {
   return (
     <div className="page">
       <h1>Activity</h1>
-      {loopNames.length > 0 && (
+      {loopNames.length > 0 && !teamsPending && (
         <FiguresStrip
           loops={byName}
+          teams={teams}
           loop={figuresLoop}
           window={figuresWindow(params.get('window'))}
           onLoop={(name) => pick('loop', name, false)}

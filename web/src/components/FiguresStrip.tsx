@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query'
-import { api, type FiguresTurn, type FiguresWindow, type LoopFigures, type LoopView } from '../api'
+import { api, type FiguresTurn, type FiguresWindow, type LoopFigures, type LoopView, type Team } from '../api'
 import {
   FIGURES_WINDOWS,
   LANGFUSE_DOCS,
@@ -14,24 +14,28 @@ import {
   figuresLine,
   formatDuration,
   perTurn,
+  teamFigures,
   toolMix,
   turnShares,
 } from '../figures'
 import { formatAgo, formatTokens, formatUsd, sumCostToday } from '../format'
+import { teamGroups } from '../teams'
 import { RowOrb } from './LoopOrb'
 import { messageTime } from './MessageKnot'
 import { useMinuteClock } from './PlanUsage'
 
 // How the loops are doing (#1301), from the figures the hub reads back from
 // Langfuse (#1300). A window to pick, then a card a loop by default, each
-// with its spend, turns and turn duration over its turns' bars; a card
-// opens that loop's detail: its tokens, each turn's spend, and the tools
+// with its spend, turns and turn duration over its turns' bars, under its
+// team's heading once the hub has teams (#1563); a card opens that loop's
+// detail: its tokens, each turn's spend, and the tools
 // and failures. Numbers and names only: no trace content exists to show.
 // Data is drawn in the text colour, and red marks only what failed
 // (ADR-0027). A hub without the route answers 404, and the strip then
 // shows nothing rather than an error, as it isn't the page's point.
 export function FiguresStrip({
   loops,
+  teams,
   loop,
   window,
   onLoop,
@@ -39,6 +43,8 @@ export function FiguresStrip({
 }: {
   // by name, as the loop picker lists them
   loops: LoopView[]
+  // the hub's teams, which group the cards (#1563); none or absent, one row
+  teams?: Team[]
   // '' for the overview
   loop: string
   window: FiguresWindow
@@ -61,7 +67,7 @@ export function FiguresStrip({
     </div>
   )
   return loop === '' ? (
-    <Overview loops={loops} window={window} windows={windows} onLoop={onLoop} />
+    <Overview loops={loops} teams={teams ?? []} window={window} windows={windows} onLoop={onLoop} />
   ) : (
     <Detail loops={loops.map((l) => l.name)} loop={loop} window={window} windows={windows} onLoop={onLoop} />
   )
@@ -78,13 +84,19 @@ function figuresQuery(loop: string, window: FiguresWindow) {
   }
 }
 
+// The cards, under a heading a team once the hub has teams (#1563): the
+// team's name and its loops' figures summed, in the Fleet page's team order
+// with the loops in none last, as Fleet's cards are. A hub with no team
+// keeps the one row it had.
 function Overview({
   loops,
+  teams,
   window,
   windows,
   onLoop,
 }: {
   loops: LoopView[]
+  teams: Team[]
   window: FiguresWindow
   windows: ReactNode
   onLoop: (name: string) => void
@@ -95,6 +107,26 @@ function Overview({
   const served = answers.flatMap((a) => (a.data ? [a.data] : []))
   if (served.length === 0) return null
   const off = allOff(served)
+  const byLoop = new Map(served.map((f) => [f.loop, f]))
+  const cards = (names: string[]) => (
+    <div className="figures-cards">
+      {names.flatMap((name) => {
+        const f = byLoop.get(name)
+        return f
+          ? [
+              <Card
+                key={name}
+                figures={f}
+                view={views.get(name)}
+                spentToday={spentToday}
+                onOpen={() => onLoop(name)}
+              />,
+            ]
+          : []
+      })}
+    </div>
+  )
+  const groups = teams.length > 0 ? teamGroups(teams, loops).filter((g) => g.loops.length > 0) : []
   return (
     <section className="figures" aria-label="Figures">
       <div className="figures-head">
@@ -103,20 +135,40 @@ function Overview({
       </div>
       {off ? (
         <Body figures={served[0]} />
+      ) : groups.length === 0 ? (
+        cards(loops.map((l) => l.name))
       ) : (
-        <div className="figures-cards">
-          {served.map((f) => (
-            <Card
-              key={f.loop}
-              figures={f}
-              view={views.get(f.loop)}
-              spentToday={spentToday}
-              onOpen={() => onLoop(f.loop)}
-            />
-          ))}
-        </div>
+        groups.map((g) => {
+          const names = g.loops.map((l) => l.name)
+          return (
+            <div key={g.key} className="figures-team">
+              <TeamHead
+                name={g.team?.name ?? 'No team'}
+                answers={names.flatMap((n) => byLoop.get(n) ?? [])}
+              />
+              {cards(names)}
+            </div>
+          )
+        })
       )}
     </section>
+  )
+}
+
+// A team's heading: its name, then its loops' spend, turns and failed turns
+// summed, failures in red as on a card.
+function TeamHead({ name, answers }: { name: string; answers: LoopFigures[] }) {
+  const f = teamFigures(answers)
+  return (
+    <h2 className="figures-team-head">
+      <span className="figures-team-name">{name}</span>
+      {f && (
+        <span className="figures-team-sum">
+          {formatUsd(f.cost_usd)} · {count(f.turns, 'turn')}
+          {f.failed_turns > 0 && <span className="figures-failed"> · {f.failed_turns} failed</span>}
+        </span>
+      )}
+    </h2>
   )
 }
 

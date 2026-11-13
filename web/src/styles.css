@@ -3763,6 +3763,24 @@ textarea {
   gap: 10px;
   margin-top: 14px;
 }
+/* A team's cards under its heading (#1563): its name, then its loops'
+   figures summed in the strip's mono, failures in red as on a card. */
+.figures-team-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin: 18px 0 0;
+  font: inherit;
+}
+.figures-team-name {
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  color: var(--text);
+}
+.figures-team .figures-cards {
+  margin-top: 10px;
+}
 .figures-card {
   display: flex;
   flex-direction: column;
