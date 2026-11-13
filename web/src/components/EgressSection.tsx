@@ -285,7 +285,7 @@ function AddHostDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (ho
           placeholder="pkg.example.dev or .example.com"
           value={host}
           disabled={busy}
-          autoFocus
+          data-autofocus
           onChange={(e) => setHost(e.target.value)}
         />
         <button className="btn primary" disabled={busy || !host.trim()}>

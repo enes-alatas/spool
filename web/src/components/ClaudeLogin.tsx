@@ -492,7 +492,7 @@ function AddLoginDialog({ logins, onClose }: { logins: ClaudeLogin[]; onClose: (
             id="add-claude-login"
             className="mono"
             value={name}
-            autoFocus
+            data-autofocus
             autoComplete="off"
             spellCheck={false}
             placeholder="ada"

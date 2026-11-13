@@ -219,6 +219,10 @@ try {
   const missionDialog = page.locator('dialog.mission-dialog')
   const missionText = missionDialog.getByRole('textbox', { name: 'Mission' })
   await see(missionText, 'the mission editor')
+  // it opens on the editor (#1572)
+  if (!(await missionText.evaluate((el) => el === el.ownerDocument.activeElement))) {
+    throw new Error(`${step}: the mission dialog did not open on its editor`)
+  }
   // Typed, not filled: the keys are the reader's input that lets the page
   // refuse the first Escape, and the second is then the browser's to take.
   await missionText.click()
@@ -275,7 +279,12 @@ try {
   const logins = page.locator('section.claude-login')
   await logins.getByRole('button', { name: 'Add a Claude login' }).click()
   const addLogin = page.getByRole('dialog', { name: 'Add a Claude login' })
-  await addLogin.getByLabel('Name').fill('ada')
+  // it opens on Name, as New team does (#1572)
+  await see(addLogin, 'the Add a Claude login popup')
+  await page.keyboard.type('ada')
+  if ((await addLogin.getByLabel('Name').inputValue()) !== 'ada') {
+    throw new Error(`${step}: typing on open did not fill Name`)
+  }
   await addLogin.getByRole('button', { name: 'Add and sign in' }).click()
   const loginSignIn = page.getByRole('dialog', { name: 'Sign in ada' })
   await see(loginSignIn, "the new login's sign-in")
@@ -310,6 +319,9 @@ try {
   }
   await egress.getByRole('button', { name: 'Add a host' }).click()
   await see(addHost.getByLabel('Host'), 'the add-host field')
+  if (!(await addHost.getByLabel('Host').evaluate((el) => el === el.ownerDocument.activeElement))) {
+    throw new Error(`${step}: Add a host did not open on its Host field`)
+  }
 
   // A literal to type copies on a click (#870): the clipboard holds the
   // command afterwards, and the chip says so. This one sits in a modal
@@ -457,7 +469,12 @@ try {
   await page.getByRole('button', { name: '+ New team' }).click()
   const dialog = page.getByRole('dialog', { name: 'New team' })
   await see(dialog, 'the New team popup')
-  await dialog.getByLabel('Name').fill('smoke-crew')
+  // It opens on Name: typing straight away fills it, as the dialog's
+  // showModal() used to take the focus to its first control (#1572).
+  await page.keyboard.type('smoke-crew')
+  if ((await dialog.getByLabel('Name').inputValue()) !== 'smoke-crew') {
+    throw new Error(`${step}: typing on open did not fill Name`)
+  }
   await dialog.getByRole('button', { name: 'Create' }).click()
   await see(page.locator('.team-card h2', { hasText: 'smoke-crew' }), "the new team's card")
   for (const name of ['gardener', 'watcher', 'courier', 'archivist']) {

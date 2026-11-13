@@ -633,7 +633,7 @@ function MissionPanel({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={18}
-            autoFocus
+            data-autofocus
           />
           {/* Before Save, not after: a rotation costs the loop its context,
               and an operator who learns that from the result has already
