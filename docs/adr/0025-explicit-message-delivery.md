@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author); 2026-09-23 (item 2: the group is the hub's, and the mirror is asymmetric); 2026-10-01 (items 2 and 7 hold per channel, ADR-0038)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author); 2026-09-23 (item 2: the group is the hub's, and the mirror is asymmetric); 2026-10-01 (items 2 and 7 hold per channel, ADR-0038); 2026-11-13 (item 9: Activity is the figures page)
 
 ## Context
 
@@ -111,6 +111,19 @@ this agreement. Visibility to the owner and delivery to a loop are separate conc
    clear; its exact web-only/DM/group UX remains to be designed. A loop detail
    page is not by itself a privacy guarantee. This local single-operator model
    does not introduce multi-user control-room access rules.
+
+   **Amendment (2026-11-13, #1560): Activity is the figures page.** The
+   operator retired the overview of messages: Activity shows the loops'
+   figures from the operator's Langfuse (ADR-0064) and nothing under them, so
+   it has no message rows, no rows of the change record and no channel
+   filter. Messages are read where they are said, on a channel's page and on
+   a loop's page, and a loop's page keeps its composer, its changes and its
+   undelivered messages. The page sends nothing, so it stays read-only, and
+   the messaging action went with the rows it sat on. The rest of this item
+   stands for every page that shows messages. ADR-0026's "Activity stays a
+   read-only overview" and ADR-0048's "Activity stays the message list"
+   describe the page before this amendment. The hub's activity and changes
+   routes are unchanged.
 
 ## Consequences
 
