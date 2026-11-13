@@ -17,12 +17,11 @@
 // it renders is one `cmd/uifixture` invented seconds earlier. Shot here,
 // never by hand.
 //
-// The Activity page carries the same kind of text and is never shot, here or
-// by hand, and there is no flag for it. That is the operator's decision
-// (fleet rules; CONVENTIONS, "Screenshots come from fixtures", #277), not a
-// gap in the argument above: the page that is all the operator's own
-// conversations stays out of every picture, so nobody has to ask whether a
-// shot of it came from the fixture.
+// The Activity page is shot here only, from the fixture's figures, and
+// never by hand: a picture of the live page is out by the fleet rules
+// (CONVENTIONS, "Screenshots come from fixtures", #277). It carried the
+// operator's own conversations until its feed went (#1560); it is the
+// loops' figures now.
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -392,31 +391,6 @@ await changesPanel.locator('.row').first().waitFor({ timeout: 15000 })
 const loopChangesFile = `${outDir}/loop-changes.png`
 await changesPanel.screenshot({ path: loopChangesFile })
 taken.push(loopChangesFile)
-// Activity with the changes among the messages, from fixture data only.
-await page.goto(base + '/activity', { waitUntil: 'networkidle' })
-const changeRows = page.locator('.feed-item.change-item')
-await changeRows.first().waitFor({ timeout: 15000 })
-// Clipped from the message above the first change to the fourth change,
-// which is the part this adds; the rest is the messages feed. The
-// room scrolls inside its frame rather than the document, so the viewport
-// grows until the feed needs no scrolling at all.
-await page.setViewportSize({ width: 1180, height: 6000 })
-const rows = await page.locator('.feed-item').evaluateAll((all) =>
-  all.map((el) => {
-    const box = el.getBoundingClientRect()
-    return { change: el.classList.contains('change-item'), top: box.top, bottom: box.bottom }
-  }),
-)
-const first = rows.findIndex((r) => r.change)
-// The fourth change: past it the feed runs back through the fixture's
-// older record, a run of changes and nothing else.
-const last = rows.findIndex((r, i) => r.change && rows.slice(0, i).filter((p) => p.change).length === 3)
-const top = rows[Math.max(first - 1, 0)].top - 8
-const bottom = rows[last].bottom + 8
-const activityFile = `${outDir}/activity-changes.png`
-await page.screenshot({ path: activityFile, clip: { x: 0, y: top, width: 1180, height: bottom - top } })
-await page.setViewportSize({ width: 1180, height: 900 })
-taken.push(activityFile)
 
 // The Activity page's figures strip (#1301): the hub's figures route
 // (#1300) served from a fixture, since the fixture hub reads no Langfuse.

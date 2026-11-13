@@ -354,8 +354,8 @@ describe('undeliveredNote', () => {
     expect(note?.title).not.toContain('24 hours')
     // The Undelivered pane rather than the loop's other panes or Activity:
     // the control room is the private conversation and the timeline renders
-    // turns, so a group send appears on neither, and Activity is the capped
-    // window the pane exists to replace.
+    // turns, so a group send appears on neither, and Activity's feed was the
+    // capped window the pane exists to replace (gone since #1560).
     expect(note?.title).toContain("the loop's Undelivered pane")
     expect(note?.title).not.toContain('Open Activity')
   })
@@ -530,7 +530,6 @@ describe('droppedNote', () => {
     expect(note?.text).toBe(
       "@terra couldn't take this message: its turn crashed three times, so it won't be tried again.",
     )
-    expect(note?.label).toBe('dropped by @terra')
   })
 
   // In a channel only the loops that dropped it are named; the others took it.
@@ -542,13 +541,12 @@ describe('droppedNote', () => {
     expect(two?.text).toBe(
       "@terra and @quinn couldn't take this message: their turns crashed three times, so it won't be tried again.",
     )
-    expect(two?.label).toBe('dropped by @terra, @quinn')
     const three = droppedNote(msg({ dropped_by: ['l1', 'l2', 'l3'] }), nameOf)
     expect(three?.text).toMatch(/^@terra, @milo and @quinn couldn't/)
   })
 
   // A deleted loop's id is still a loop that dropped it, so it is shown as is.
   it('shows an id no loop has any more', () => {
-    expect(droppedNote(msg({ dropped_by: ['gone'] }), nameOf)?.label).toBe('dropped by @gone')
+    expect(droppedNote(msg({ dropped_by: ['gone'] }), nameOf)?.text).toMatch(/^@gone couldn't/)
   })
 })

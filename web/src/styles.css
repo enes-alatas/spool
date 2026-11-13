@@ -721,10 +721,6 @@ textarea {
   color: var(--danger);
   margin-top: 3px;
 }
-.feed-item .undelivered {
-  margin-top: 0;
-  white-space: nowrap;
-}
 /* a failure somebody has dealt with: the words still say what happened, but
    `--danger` is for what still wants the operator and a resolution is them
    having dealt with it (#269) */
@@ -742,10 +738,6 @@ textarea {
   font-family: var(--mono);
   color: var(--danger);
   margin-top: 3px;
-}
-.feed-item .dropped {
-  margin-top: 0;
-  white-space: nowrap;
 }
 /* the Fleet row's count, which opens that loop's Undelivered pane (#281):
    it has to read as a way in among the row's plain notes, without looking
@@ -829,15 +821,6 @@ textarea {
 .undelivered-row.feed-item .origin {
   grid-area: dest;
   margin-left: 0;
-}
-/* On Activity, a message's files take their own line under the row, lined up
-   with the author: the time column is 76px and the row's gap 12px */
-.feed-item .attachments {
-  flex-basis: 100%;
-  margin: 0 0 0 88px;
-}
-.feed-item .attachment-thumb img {
-  max-height: 120px;
 }
 .undelivered-row .undelivered-reason {
   grid-area: reason;
@@ -3675,29 +3658,13 @@ textarea {
   font-family: var(--mono);
 }
 
-/* ---- activity feed ---- */
-/* the channel filter under the title: a narrowing of the page, not a
-   setting, so it sits small and to the left of the feed it narrows */
-.activity-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  color: var(--text-muted);
-}
-.activity-filter .panel-select {
-  width: auto;
-}
 /* The figures strip (#1301): one loop's figures from Langfuse over a
-   window, above the feed. Mono figures as the plan strip has them, data in
-   the text colour at a set weight, red for what failed and amber for
+   window, and since #1560 the whole of the Activity page, so no rule
+   divides it from a feed under it. Mono figures as the plan strip has them,
+   data in the text colour at a set weight, red for what failed and amber for
    figures Langfuse couldn't refresh (ADR-0027). */
 .figures {
   margin: 4px 0 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--hairline);
   font-family: var(--mono);
   font-size: var(--fs-small);
   color: var(--text-muted);
@@ -3961,21 +3928,6 @@ textarea {
   font-size: var(--fs-input);
   color: var(--text-muted);
   margin: 18px 0 4px;
-}
-.feed-item .author {
-  font-family: var(--mono);
-  color: var(--text);
-  flex: none;
-}
-.feed-item .author.loop-author {
-  color: var(--ready);
-}
-/* a change to a loop, among the messages (#696): the record speaking, not
-   anyone saying something, so it is set as a note */
-.feed-item.change-item .text {
-  color: var(--text-muted);
-  font-family: var(--mono);
-  font-size: var(--fs-small);
 }
 .feed-item .text {
   color: var(--text);
@@ -5010,14 +4962,6 @@ textarea {
   font-size: var(--fs-meta);
   color: var(--text-muted);
 }
-.feed-item .poll {
-  flex-basis: 100%;
-  margin: 0 0 0 88px;
-}
-.feed-item .reactions {
-  flex-basis: 100%;
-  margin: 0 0 0 88px;
-}
 /* The first-run page (#581): a heading and three pillar cards, centred in
    the room. The cards are glass (#1526), never filled with a state: white
    marks the next step's button alone (ADR-0027), and green says done on the
@@ -5941,8 +5885,8 @@ textarea {
 }
 
 /* The Connections page's filters (#1322): a narrowing of the list, so they
-   sit small above it, as the Activity page's channel filter does. The name
-   box takes what the row leaves; the count ends the row. */
+   sit small above it. The name box takes what the row leaves; the count
+   ends the row. */
 .connection-filters {
   margin-bottom: 10px;
 }

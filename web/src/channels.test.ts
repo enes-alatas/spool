@@ -11,7 +11,6 @@ import {
   loopsNotInTeam,
   loopsOutside,
   validChannelName,
-  whereSaid,
 } from './channels'
 
 describe('validChannelName', () => {
@@ -134,20 +133,6 @@ describe('channelRefusal', () => {
       'hub words for channel_exists',
     )
     expect(channelRefusal(new Error('offline'), { channel: 'ops', team: '' })).toBe('offline')
-  })
-})
-
-describe('whereSaid', () => {
-  it('names every channel as a loop sends to it, fleet included', () => {
-    expect(whereSaid({ conversation: 'group', channel: 'docs', origin: 'loop' })).toBe('channel:docs')
-    expect(whereSaid({ conversation: 'group', channel: 'fleet', origin: 'telegram_group' })).toBe(
-      'channel:fleet',
-    )
-  })
-
-  it('names a private conversation by its kind, and falls back to the origin', () => {
-    expect(whereSaid({ conversation: 'owner_dm', origin: 'telegram_dm' })).toBe('owner_dm')
-    expect(whereSaid({ conversation: '', origin: 'web' })).toBe('web')
   })
 })
 
