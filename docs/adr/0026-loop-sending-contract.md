@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on); 2026-10-30 (item 5: a crashed turn's batch is said again, three attempts at most); 2026-11-08 (item 3: a fresh session starts with no doing, #1284)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on); 2026-10-30 (item 5: a crashed turn's batch is said again, three attempts at most); 2026-11-08 (item 3: a fresh session starts with no doing, #1284); 2026-11-14 (dismissing a failed resend dismisses the chain, #1586)
 
 ## Context
 
@@ -364,3 +364,17 @@ still ruled out. One failure is told once and not reminded of: one the
 operator dismissed, since it is no longer the loop's to deal with. Nor is a
 failure a later send claims to resend, so a resend that fails again is named
 by its own failure alone, and a further resend resolves the whole chain.
+
+**Amendment (2026-11-14, #1586): dismissing a failed resend dismisses the
+chain.** The amendment above names a failed resend by its own failure
+alone, so the loop never hears of the failures before it again. A further
+resend resolved them. A dismissal of the resend didn't: it closed the last
+link and left the earlier ones open, out of the loop's reach and on the
+operator's list. In #1586 that kept a loop's undelivered-send problem open
+for hours, and alerted its owner after every acknowledgement.
+
+A loop's dismissal of a resend now resolves every failure in its chain as
+`dismissed_by_loop`, the way a resend that arrives resolves them as
+`resent`. None of them names a resend, since nothing arrived. The
+operator's own dismissal still closes only the row they dismissed: each
+row is on their list, and they can see what is left.

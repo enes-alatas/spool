@@ -1444,11 +1444,15 @@ type MessageStore interface {
 	ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error)
 	// ResolveResends resolves every failure the given message was sent to
 	// replace — the one its ResendsID names, the one that one named, and
-	// so on — as resent by it, and reports how many it resolved. Called
-	// when a send gets through: the words arrived, so every failure that
-	// was an attempt to say them is dealt with, however many attempts it
-	// took. A message that resends nothing resolves nothing.
-	ResolveResends(ctx context.Context, messageID int64, at int64) (int, error)
+	// so on — the way resolution says, and reports how many it resolved.
+	// Called with SendResolutionResent when a send gets through: the words
+	// arrived, so every failure that was an attempt to say them is dealt
+	// with, however many attempts it took, and each names this message as
+	// its resend. Called with SendResolutionDismissedByLoop when the loop
+	// dismisses a failed resend: it is done with the words, and the earlier
+	// attempts are never put to it again (#1586). A message that resends
+	// nothing resolves nothing.
+	ResolveResends(ctx context.Context, messageID int64, at int64, resolution string) (int, error)
 	// MarkSendFailuresTold records that the loop has now been told about
 	// these messages once more, counting the telling. Called once the turn
 	// carrying the news has completed, so a turn that dies before it still

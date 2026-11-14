@@ -15,7 +15,8 @@ import (
 // loop's own, unresolved, named with the destination it was lost going to
 // — and resolves as dismissed by the loop, which takes it off the
 // operator's list and ends the reminders. It says nothing, wakes nobody,
-// and spends no send budget: it closes a send rather than making one. It
+// and spends no send budget: it closes a send rather than making one. A
+// failed resend takes the sends it resent with it (#1586). It
 // returns the message dismissed.
 func (router *Router) SendDismiss(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
 	if strings.TrimSpace(req.Text) != "" || req.Attach != "" || req.Resends != "" || req.Poll != nil {
@@ -29,7 +30,8 @@ func (router *Router) SendDismiss(ctx context.Context, req SendRequest) (*store.
 	if serr != nil || err != nil {
 		return nil, serr, err
 	}
-	resolved, err := router.store.Messages().ResolveSend(ctx, target.ID, time.Now().UnixMilli(),
+	now := time.Now().UnixMilli()
+	resolved, err := router.store.Messages().ResolveSend(ctx, target.ID, now,
 		store.SendResolutionDismissedByLoop, 0)
 	if err != nil {
 		return nil, nil, err
@@ -39,6 +41,12 @@ func (router *Router) SendDismiss(ctx context.Context, req SendRequest) (*store.
 		// operator dismissed it first
 		return nil, &SendError{ErrDismissNotFailed,
 			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
+	}
+	// A failed resend stands for the attempts before it: the loop is told
+	// of it instead of them, so they go with it (#1586). The dismissal
+	// itself is made, so a failure here is logged rather than answered.
+	if _, err := router.store.Messages().ResolveResends(ctx, target.ID, now, store.SendResolutionDismissedByLoop); err != nil {
+		router.log.Warn("dismiss the sends a dismissed resend stood for", "message", target.ID, "err", err)
 	}
 	router.recordSend(req.From.ID, req.Destination, "dismissed "+loop.MessageRef(target.ID))
 	return target, nil, nil
