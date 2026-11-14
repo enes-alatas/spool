@@ -288,6 +288,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("PUT /api/channels/{name}/chat", server.handlePutChat)
 	mux.HandleFunc("DELETE /api/channels/{name}/chat", server.handleDeleteChat)
 	mux.HandleFunc("PUT /api/channels/{name}/chat/members/{loop}", server.handlePutChatMember)
+	mux.HandleFunc("POST /api/channels/{name}/chat/members/{loop}/join", server.handleJoinChat)
 	mux.HandleFunc("GET /api/teams", server.handleListTeams)
 	mux.HandleFunc("POST /api/teams", server.handleCreateTeam)
 	mux.HandleFunc("GET /api/teams/{name}", server.handleGetTeam)

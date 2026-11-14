@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,12 @@ type fakeSlack struct {
 	// updates are the chat.update calls apps made, each the post as it
 	// was redrawn.
 	updates []slackPost
+	// scopes are what x-oauth-scopes says each bot token holds, by token;
+	// private are the channels Slack shows an app only once it is in them;
+	// joins are the conversations.join calls apps made, each "token channel".
+	scopes  map[string]string
+	private map[string]bool
+	joins   []string
 }
 
 // slackReaction is one reactions.add or reactions.remove an app made.
@@ -95,7 +102,8 @@ func startFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
 	slack := &fakeSlack{bots: map[string]slackBot{}, apps: map[string]bool{},
 		opens: map[string]int{}, live: map[string]*fakeSocket{}, acks: map[string][]string{},
-		files: map[string]fakeSlackFile{}, downloads: map[string]int{}, pending: map[string]*slackUpload{}}
+		files: map[string]fakeSlackFile{}, downloads: map[string]int{}, pending: map[string]*slackUpload{},
+		scopes: map[string]string{}, private: map[string]bool{}}
 	slack.srv = httptest.NewServer(http.HandlerFunc(slack.handle))
 	t.Cleanup(slack.srv.Close)
 	return slack
@@ -164,6 +172,7 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/auth.test":
 		if bot, ok := slack.bots[token]; ok {
+			w.Header().Set("X-OAuth-Scopes", slack.scopes[token])
 			answer = map[string]any{"ok": true, "user_id": bot.UserID, "user": bot.Name,
 				"team_id": bot.TeamID, "team": bot.TeamName, "bot_id": "B" + bot.UserID}
 		}
@@ -211,8 +220,24 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/conversations.info":
 		if _, ok := slack.bots[token]; ok {
+			if slack.private[r.FormValue("channel")] {
+				answer = map[string]any{"ok": false, "error": "channel_not_found"}
+				break
+			}
 			answer = map[string]any{"ok": true, "channel": map[string]any{"id": r.FormValue("channel"),
 				"name": strings.ToLower(r.FormValue("channel"))}}
+		}
+	case "/conversations.join":
+		if _, ok := slack.bots[token]; ok {
+			switch channel := r.FormValue("channel"); {
+			case slack.private[channel]:
+				answer = map[string]any{"ok": false, "error": "method_not_supported_for_channel_type"}
+			case !slices.Contains(strings.Split(slack.scopes[token], ","), "channels:join"):
+				answer = map[string]any{"ok": false, "error": "missing_scope", "needed": "channels:join"}
+			default:
+				slack.joins = append(slack.joins, token+" "+channel)
+				answer = map[string]any{"ok": true, "channel": map[string]any{"id": channel}}
+			}
 		}
 	case "/apps.connections.open":
 		switch {

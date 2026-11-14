@@ -14,6 +14,7 @@ type chatMemberJSON struct {
 	Loop    string `json:"loop"`
 	Status  string `json:"status"`
 	AddLink string `json:"add_link"`
+	Join    string `json:"join"`
 }
 
 type chatJSON struct {
@@ -102,9 +103,12 @@ func TestAChannelsChatBindsItsMembers(t *testing.T) {
 	if got := view.memberStatus("alpha"); got.Status != "carrying" {
 		t.Errorf("alpha's status = %+v, want carrying", got)
 	}
-	if got := view.memberStatus("gamma"); got.Status != "not_in_chat" || !strings.Contains(got.AddLink, "gamma_bot?startgroup=") {
-		t.Errorf("gamma's status = %+v, want not_in_chat with its startgroup link", got)
+	if got := view.memberStatus("gamma"); got.Status != "not_in_chat" || !strings.Contains(got.AddLink, "gamma_bot?startgroup=") || got.Join != "" {
+		t.Errorf("gamma's status = %+v, want not_in_chat with its startgroup link and no join", got)
 	}
+	// a Telegram bot can't join a group by itself: the Join call says so,
+	// apart from a loop with no bot there
+	srv.wantRefusal("POST", "/api/channels/backend/chat/members/gamma/join", nil, 409, "join_unsupported")
 
 	// gamma's bot hears the group: its room binds with no second write
 	tg.post(groupChatID, "supergroup", "gamma, welcome", operator)

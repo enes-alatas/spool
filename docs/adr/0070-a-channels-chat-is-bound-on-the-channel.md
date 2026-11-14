@@ -1,6 +1,6 @@
 # ADR-0070: A channel's chat is bound on the channel
 
-Date: 2026-11-11 · Status: accepted (the operator agreed the shape on 2026-11-11, in direct messages to Milo, recorded on #1499; he chose one chat per channel the same day and accepted this ADR as written, with its other choices and item 2's refusals, in direct messages to Quinn, recorded on #1503) · Relates to: ADR-0026, ADR-0029, ADR-0032, ADR-0038, ADR-0051, ADR-0066, ADR-0068 · Amends: ADR-0038 (rooms, and the #1320 amendment's "a removal changes no room"), ADR-0066 and ADR-0068 item 3 (a loop put in a channel, or a team made from one), ADR-0068 item 5 (a new group waits for a per-loop bind)
+Date: 2026-11-11 · Status: accepted (the operator agreed the shape on 2026-11-11, in direct messages to Milo, recorded on #1499; he chose one chat per channel the same day and accepted this ADR as written, with its other choices and item 2's refusals, in direct messages to Quinn, recorded on #1503) · Relates to: ADR-0026, ADR-0029, ADR-0032, ADR-0038, ADR-0051, ADR-0066, ADR-0068 · Amends: ADR-0038 (rooms, and the #1320 amendment's "a removal changes no room"), ADR-0066 and ADR-0068 item 3 (a loop put in a channel, or a team made from one), ADR-0068 item 5 (a new group waits for a per-loop bind) · Amended: 2026-11-12 (item 9: the Join call's route, #1508)
 
 ## Context
 
@@ -215,6 +215,22 @@ Two limits hold whatever is decided:
    - `GET /api/loops/{name}/rooms` stays as it is, read-only.
    - Every write publishes `rooms_changed`, as a room's bind does
      today, so an open page updates.
+
+   **Amendment (2026-11-12, #1508):** the Join call is
+   `POST /api/channels/{name}/chat/members/{loop}/join` (item 10). It
+   has the loop's Slack app join the channel's chat, records the room
+   under Slack's name for the chat, binds it as item 4 does, and
+   answers 204. It refuses with nothing changed: 404
+   `channel_not_found`, `chat_not_found` or `loop_not_in_channel`; 409
+   `loop_not_on_surface`, `already_in_chat` when the loop has a room
+   for the chat, `needs_scope` when its app lacks `channels:join`,
+   `chat_private`, or `join_unsupported` when the chat is a Telegram
+   group; 502 when Slack doesn't take the join. It is a `POST`
+   because it asks the surface to act rather than setting a field.
+   The surface offers the call through `surface.ChatJoiner`, an
+   interface beside the Surface seam that Telegram's surface doesn't
+   implement. The operator accepted this amendment and that interface
+   on 2026-11-12, in direct messages to Terra, recorded on #1508.
 
 10. **The two open questions of #1499:**
     - **A Slack app joining a public channel by itself.** Slack lets an

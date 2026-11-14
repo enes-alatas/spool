@@ -120,6 +120,16 @@ Slack connects out over Socket Mode, so no port is opened for either
   stranger's or a blocked person's invite. A missing or unknown inviter
   is never read as allowed. The room is recorded unbound, or bound
   through its channel's chat, which was already the operator's choice.
+- **A loop's Slack app joins a public channel by itself only on an
+  admin's call,** `POST /api/channels/{name}/chat/members/{loop}/join`,
+  for the chat of a channel the loop is in (ADR-0070). The hub never
+  joins on its own, and the app's own join event names no inviter, so
+  it records nothing more. The call needs `channels:join`, which the
+  manifest leaves out. An operator who adds it widens what the bot token
+  can read: with `channels:history`, a leaked token can join any public
+  channel in the workspace and read its history, where without it the
+  token reads only the channels it was invited to. Slack lets an app
+  join only a public channel, so a private one still takes an invite.
 - **A loop's bot removed from a chat forgets its room there,** on
   Telegram by its `my_chat_member` update, on Slack by `channel_left`
   or `group_left` on the app's own link, or `member_left_channel` for
