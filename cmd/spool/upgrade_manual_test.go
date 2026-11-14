@@ -222,8 +222,8 @@ func TestUpgradeWithNoUnitRollsBackAFailedStart(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("%v; want a rollback\n%s", err, term)
 	}
-	data := filepath.Join(env.backupDir, "spool-data-20261016T000000Z.tar.gz")
-	keys := filepath.Join(env.backupDir, "spool-keys-20261016T000000Z.tar")
+	data := filepath.Join(up.backupDir, "spool-data-20261016T000000Z.tar.gz")
+	keys := filepath.Join(up.backupDir, "spool-keys-20261016T000000Z.tar")
 	want := append(expand(env, manualOrder),
 		"lsof -t -- "+env.dataDir+"/spool.db",
 		"kill -TERM "+testHubPID,

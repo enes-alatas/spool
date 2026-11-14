@@ -1,6 +1,6 @@
 # ADR-0052: A release ships built artifacts, and the operator verifies them before the hub runs them
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Amended: 2026-10-31 (decision 1: a release pins its Claude Code CLI, #1223); 2026-11-09 (decision 2: releases are trunk-based, #1452) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Amended: 2026-10-31 (decision 1: a release pins its Claude Code CLI, #1223); 2026-11-09 (decision 2: releases are trunk-based, #1452); 2026-11-14 (decision 1: each archive carries the backup and restore scripts, #1583; accepted by the operator on 2026-11-14, in a direct message to Elliot, recorded on #1583) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
 
 ## Context
 
@@ -60,6 +60,16 @@ Three facts shape the options:
      release builds only: a new upstream CLI reaches a release through a
      reviewed bump of that file. `make image` still installs the newest
      one unless `CLAUDE_CODE_VERSION` is set, so decision 6 holds.
+
+   **Amendment (2026-11-14, #1583): each archive carries the backup and
+   restore scripts.** `spool_<version>_<os>_<arch>.tar.gz` holds
+   `scripts/spool-backup.sh` and `scripts/spool-restore.sh`, mode 0755,
+   beside the binaries. `spool upgrade` installs them from the archive it
+   has verified (ADR-0057, item 8's amendment of the same date). They sit
+   under `scripts/` so that the README's install, which copies the
+   archive's top-level `spool*` into `bin/`, takes no script with it. No
+   new attached file: `SHA256SUMS` and the attestation cover the archive
+   that holds them.
 2. **One workflow builds a release, on GitHub-hosted runners, from the tag
    the operator pushes.** No loop tags (CONVENTIONS.md, #223), and no
    artifact is built on a workstation or on the fleet's VPS.
