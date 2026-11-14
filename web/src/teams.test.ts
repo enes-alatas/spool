@@ -17,6 +17,10 @@ import {
   teamDeleteRefusal,
   teamGroups,
   teamLabel,
+  moved,
+  placeText,
+  stepped,
+  withShown,
   type HomeOffer,
   validTeamName,
 } from './teams'
@@ -118,6 +122,58 @@ describe('teamGroups', () => {
   })
   it('counts a loop in a team the list does not have yet as in none', () => {
     expect(teamGroups([], [loop({ team: 'gone' })]).map((g) => g.key)).toEqual([''])
+  })
+})
+
+describe('teamGroups in the hub order (#1450)', () => {
+  const teams = [team({ name: 'alpha' }), team({ name: 'beta' })]
+  const loops = [loop({ name: 'aster', team: 'alpha' }), loop({ name: 'dune' })]
+  it('puts No team where the order puts it', () => {
+    expect(teamGroups(teams, loops, ['beta', '', 'alpha']).map((g) => g.key)).toEqual(['beta', '', 'alpha'])
+  })
+  it('puts a team the order does not name yet last, before No team while No team is last', () => {
+    const three = [...teams, team({ name: 'gamma' })]
+    expect(teamGroups(three, loops, ['beta', 'alpha', '']).map((g) => g.key)).toEqual([
+      'beta',
+      'alpha',
+      'gamma',
+      '',
+    ])
+    expect(teamGroups(three, loops, ['', 'beta', 'alpha']).map((g) => g.key)).toEqual([
+      '',
+      'beta',
+      'alpha',
+      'gamma',
+    ])
+  })
+  it('keeps the hub list order, No team last, with no order read yet', () => {
+    expect(teamGroups(teams, loops).map((g) => g.key)).toEqual(['alpha', 'beta', ''])
+  })
+})
+
+describe('arranging the cards (#1450)', () => {
+  it('fills the shown cards places and leaves a card not drawn where it was', () => {
+    // No team is in the order but not drawn: no loop is in none.
+    expect(withShown(['alpha', '', 'beta', 'gamma'], ['gamma', 'alpha', 'beta'])).toEqual([
+      'gamma',
+      '',
+      'alpha',
+      'beta',
+    ])
+  })
+  it('moves one key', () => {
+    expect(moved(['a', 'b', 'c'], 2, 0)).toEqual(['c', 'a', 'b'])
+    expect(moved(['a', 'b', 'c'], 0, 1)).toEqual(['b', 'a', 'c'])
+  })
+  it('steps a card one place with the arrow keys, and not past either end', () => {
+    expect(stepped(['a', '', 'b'], '', -1)).toEqual(['', 'a', 'b'])
+    expect(stepped(['a', '', 'b'], '', 1)).toEqual(['a', 'b', ''])
+    expect(stepped(['a', 'b'], 'a', -1)).toBeNull()
+    expect(stepped(['a', 'b'], 'b', 1)).toBeNull()
+  })
+  it('says the moved card place', () => {
+    expect(placeText('', ['a', '', 'b', 'c'])).toBe('No team is now 2 of 4.')
+    expect(placeText('b', ['a', '', 'b'])).toBe('Team b is now 3 of 3.')
   })
 })
 

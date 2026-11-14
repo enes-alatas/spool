@@ -38,9 +38,11 @@ const loops = [
   loop({ name: 'cedar', team: 'release' }),
 ]
 
-function render(manage: boolean, teams = [docs]) {
+function render(manage: boolean, teams = [docs], order?: string[]) {
+  const client = new QueryClient()
+  if (order) client.setQueryData(['teams', 'order'], { order })
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <MemoryRouter>
         <FleetTeams teams={teams} loops={loops} spentToday={1} manage={manage} />
       </MemoryRouter>
@@ -61,6 +63,29 @@ describe('FleetTeams', () => {
     // a loop in a team the list doesn't have yet is in none, not lost
     expect(html).toContain('aria-label="cedar: idle"')
   })
+  it('gives an admin a grip on every card, No team included (#1450)', () => {
+    const html = render(true)
+    expect(html.match(/class="team-card-grip"/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="Move the docs card"')
+    expect(html).toContain('aria-label="Move the No team card"')
+    expect(html).toContain('aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"')
+    expect(html).toContain('aria-live="polite"')
+  })
+  it('shows a member the shared order with no grip to change it', () => {
+    const html = render(false, [docs], ['', 'docs'])
+    expect(html).not.toContain('team-card-grip')
+    expect(html.indexOf('No team')).toBeLessThan(html.indexOf('>docs'))
+  })
+  it('offers no grip while there is one card', () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <FleetTeams teams={[docs]} loops={[loop({ name: 'aster', team: 'docs' })]} spentToday={1} manage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(html).not.toContain('team-card-grip')
+  })
   it('marks a card with a loop that needs you, and names what is wrong on the circle', () => {
     const html = render(false)
     expect(html).toContain('team-card alert')
@@ -80,7 +105,9 @@ describe('FleetTeams', () => {
   })
   it("lets an admin drag a loop's circle, or move it from its menu", () => {
     const html = render(true)
-    expect(html.match(/draggable="true"/g)).toHaveLength(loops.length)
+    // Each circle drags, and so does each card's grip (#1450).
+    const grips = html.match(/class="team-card-grip"/g)?.length ?? 0
+    expect(html.match(/draggable="true"/g)).toHaveLength(loops.length + grips)
     expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(loops.length)
     expect(html).toContain('aria-keyshortcuts="Shift+F10"')
   })

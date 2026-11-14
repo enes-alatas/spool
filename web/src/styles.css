@@ -6332,7 +6332,6 @@ textarea {
 }
 .team-card.loose {
   grid-column: 1 / -1;
-  order: 2;
 }
 .team-card-head {
   display: flex;
@@ -6369,7 +6368,8 @@ textarea {
 .team-card-pulse.working {
   color: var(--active);
 }
-.team-card-edit {
+.team-card-edit,
+.team-card-grip {
   display: grid;
   place-items: center;
   width: 28px;
@@ -6382,9 +6382,29 @@ textarea {
   cursor: pointer;
 }
 .team-card-edit:hover,
-.team-card-edit:focus-visible {
+.team-card-edit:focus-visible,
+.team-card-grip:hover,
+.team-card-grip:focus-visible {
   color: var(--text);
   background: var(--canvas);
+}
+/* A card's grip (#1450): the handle it is dragged by, after Edit at the
+   head's end, so the title keeps its place. */
+.team-card-grip {
+  cursor: grab;
+}
+.team-card-grip:active {
+  cursor: grabbing;
+}
+/* The place of the card being dragged: the cards make room around it, and
+   it shows where the card will land. */
+.team-card.lifted {
+  border-style: dashed;
+  border-color: var(--text-muted);
+  opacity: 0.45;
+}
+.team-order-error {
+  margin-bottom: 14px;
 }
 .team-card-desc {
   margin: -4px 0 0;

@@ -20,6 +20,7 @@ const KINDS = [
   'connection-kind-tab', // segment pill: the connection kinds
   'panel-action', // icon square
   'team-card-edit', // icon square
+  'team-card-grip', // icon square: a card's drag handle (#1450)
 ]
 
 // Buttons that are not controls of that sort, each drawn as what it is.

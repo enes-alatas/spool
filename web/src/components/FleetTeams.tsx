@@ -20,7 +20,7 @@ import {
   suggestedHomeChannel,
   type TeamGroup,
 } from '../teams'
-import { EditIcon, PlusIcon } from './Icons'
+import { EditIcon, GripIcon, PlusIcon } from './Icons'
 import { FocusedOrb, LoopOrb } from './LoopOrb'
 import { StepDialog } from './StepDialog'
 import { TeamFields } from './TeamFields'
@@ -29,6 +29,7 @@ import { TeamDraft } from './TeamDraft'
 import { JoinAsk } from './JoinAsk'
 import { channelDetailKey } from './SurfaceChat'
 import { joinNote, notOnSurfaceText, type JoinNote } from '../chatJoin'
+import { useTeamOrder, type TeamArrange } from '../teamOrder'
 
 // The fleet as its teams (ADR-0066, #1411): a card per team with a circle
 // per loop, and the loops in no team in a full-width card last. An admin
@@ -83,10 +84,32 @@ export function FleetTeams({
   const [focused, setFocused] = useState<{ name: string; from: DOMRect; back: HTMLElement } | null>(null)
   const focusedLoop = focused && loops.find((loop) => loop.name === focused.name)
   const moves = useLoopMoves(teams, loops)
+  const arrange = useTeamOrder(teams)
+  const all = teamGroups(teams, loops, arrange.order)
+  const shown = all.map((group) => group.key)
+  // While a card is dragged, the order its drag has made so far.
+  const groups = arrange.draft
+    ? arrange.draft.flatMap((key) => all.filter((group) => group.key === key))
+    : all
   return (
     <>
-      <div className={`team-cards${moves.dragging ? ' dragging' : ''}`}>
-        {teamGroups(teams, loops).map((group) => (
+      {arrange.error && (
+        <div className="form-error team-order-error" role="alert">
+          {arrange.error}
+        </div>
+      )}
+      <div
+        className={`team-cards${moves.dragging ? ' dragging' : ''}${arrange.dragging !== undefined ? ' arranging' : ''}`}
+        // A card released in a gap between the cards is dropped, not given
+        // up: the order its drag made is kept.
+        onDragOver={(e) => {
+          if (arrange.held()) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (arrange.held()) e.preventDefault()
+        }}
+      >
+        {groups.map((group) => (
           <TeamCard
             key={group.key || '-'}
             group={group}
@@ -96,9 +119,13 @@ export function FleetTeams({
             hidden={focused?.name}
             onOpen={(name, el) => setFocused({ name, from: el.getBoundingClientRect(), back: el })}
             moves={moves}
+            arrange={manage && shown.length > 1 ? { ...arrange, shown } : undefined}
           />
         ))}
       </div>
+      <p className="sr-only" aria-live="polite">
+        {arrange.said}
+      </p>
       {focused && focusedLoop && (
         <FocusedOrb
           loop={focusedLoop}
@@ -325,6 +352,7 @@ function TeamCard({
   hidden,
   onOpen,
   moves,
+  arrange,
 }: {
   group: TeamGroup
   loops: LoopView[]
@@ -334,6 +362,9 @@ function TeamCard({
   hidden?: string
   onOpen: (name: string, el: HTMLElement) => void
   moves: LoopMoves
+  // An admin's way to move the card among the shown cards (#1450); absent
+  // for a member, and while there is one card.
+  arrange?: TeamArrange & { shown: string[] }
 }) {
   const { team } = group
   const [editing, setEditing] = useState(false)
@@ -347,6 +378,14 @@ function TeamCard({
   const over = !!dragging && dragging.from !== group.key && moves.over === group.key
   const label = team ? team.name : 'no team'
   const slots = useRef(new Map<string, HTMLElement>())
+  const grip = useRef<HTMLButtonElement>(null)
+  // The grip the arrow keys moved this card by, once the card is drawn in
+  // its new place.
+  useEffect(() => {
+    if (arrange?.refocus !== group.key || !grip.current) return
+    if (document.activeElement !== grip.current) grip.current.focus({ preventScroll: true })
+    arrange.refocused()
+  })
   const faults = group.loops.filter(needsYou).length
   const working = group.loops.filter((loop) => inTurn(loop.state)).length
   const orb = (name: string) => {
@@ -365,8 +404,15 @@ function TeamCard({
   })
   return (
     <section
-      className={`team-card${team ? '' : ' loose'}${faults > 0 ? ' alert' : ''}${over ? ' drop-target' : ''}`}
+      className={`team-card${team ? '' : ' loose'}${faults > 0 ? ' alert' : ''}${over ? ' drop-target' : ''}${arrange?.dragging === group.key ? ' lifted' : ''}`}
       onDragOver={(e) => {
+        // A card dragged over this one takes its place as it passes.
+        if (arrange?.held()) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          arrange.over(group.key)
+          return
+        }
         if (!takes()) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
@@ -377,6 +423,11 @@ function TeamCard({
         if (over && !e.currentTarget.contains(e.relatedTarget as Node | null)) moves.setOver(undefined)
       }}
       onDrop={(e) => {
+        // A card's drop: its drag's end saves the order.
+        if (arrange?.held()) {
+          e.preventDefault()
+          return
+        }
         const drag = moves.held()
         if (!drag || drag.from === group.key) return
         e.preventDefault()
@@ -401,6 +452,40 @@ function TeamCard({
             onClick={() => setEditing(true)}
           >
             <EditIcon />
+          </button>
+        )}
+        {arrange && (
+          <button
+            type="button"
+            ref={grip}
+            className="team-card-grip"
+            draggable
+            aria-label={`Move the ${team ? `${team.name} card` : 'No team card'}`}
+            aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+            title="Drag to move this card, or use the arrow keys"
+            onKeyDown={(e) => {
+              const by =
+                e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+                  ? -1
+                  : e.key === 'ArrowRight' || e.key === 'ArrowDown'
+                    ? 1
+                    : 0
+              if (!by) return
+              e.preventDefault()
+              arrange.step(group.key, arrange.shown, by)
+            }}
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', team ? team.name : 'No team')
+              const card = e.currentTarget.closest('section')
+              if (card) e.dataTransfer.setDragImage(card, 24, 24)
+              arrange.start(group.key, arrange.shown)
+            }}
+            // A drag given up, by Escape or a release away from the cards,
+            // ends with no drop effect.
+            onDragEnd={(e) => arrange.end(e.dataTransfer.dropEffect !== 'none')}
+          >
+            <GripIcon />
           </button>
         )}
       </header>

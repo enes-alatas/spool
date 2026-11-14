@@ -70,10 +70,11 @@ export interface TeamGroup {
   loops: LoopView[]
 }
 
-// The cards, in the hub's team order with each team's loops by name, and the
-// loops in no team last. The order holds still as faults come and go, so a
-// loop is where it was a minute ago.
-export function teamGroups(teams: Team[], loops: LoopView[]): TeamGroup[] {
+// The cards, in the hub's team order with each team's loops by name. The
+// loops in no team take the place `order` gives No team ('' in it, #1450),
+// last while there is no order to read. The order holds still as faults come
+// and go, so a loop is where it was a minute ago.
+export function teamGroups(teams: Team[], loops: LoopView[], order?: readonly string[]): TeamGroup[] {
   const byName = (a: LoopView, b: LoopView) => a.name.localeCompare(b.name)
   const groups: TeamGroup[] = teams.map((team) => ({
     key: team.name,
@@ -82,7 +83,51 @@ export function teamGroups(teams: Team[], loops: LoopView[]): TeamGroup[] {
   }))
   const loose = loops.filter((loop) => !loop.team || !teams.some((team) => team.name === loop.team))
   if (loose.length > 0) groups.push({ key: '', loops: loose.sort(byName) })
-  return groups
+  if (!order) return groups
+  const rank = orderRank(order)
+  // A stable sort: teams the order ranks alike keep the hub's own order.
+  return groups.sort((a, b) => rank(a.key) - rank(b.key))
+}
+
+// Each card's place in `order`. A team the order doesn't name yet, one made
+// since it was read, goes last, but before No team while No team is last,
+// as the hub places a new team.
+function orderRank(order: readonly string[]): (key: string) => number {
+  const at = new Map(order.map((key, i) => [key, i]))
+  const loose = at.get('') ?? order.length
+  const fresh = loose === order.length - 1 ? loose - 0.5 : order.length
+  return (key) => at.get(key) ?? (key === '' ? order.length : fresh)
+}
+
+// The hub's order (#1450) with the cards shown rearranged: each key in
+// `shown` takes the next of the places the shown cards held, so a card not
+// drawn, No team's while no loop is in none, keeps its place.
+export function withShown(order: readonly string[], shown: readonly string[]): string[] {
+  const drawn = new Set(shown)
+  const next = shown[Symbol.iterator]()
+  return order.map((key) => (drawn.has(key) ? (next.next().value as string) : key))
+}
+
+// The shown cards with `key` one place earlier (-1) or later (1), as the
+// arrow keys on its grip move it; null at either end, where it can't go.
+export function stepped(shown: readonly string[], key: string, by: -1 | 1): string[] | null {
+  const from = shown.indexOf(key)
+  const to = from + by
+  if (from < 0 || to < 0 || to >= shown.length) return null
+  return moved(shown, from, to)
+}
+
+// What a moved card's place is, as a screen reader hears it.
+export function placeText(key: string, keys: readonly string[]): string {
+  return `${key ? `Team ${key}` : 'No team'} is now ${keys.indexOf(key) + 1} of ${keys.length}.`
+}
+
+// `keys` with the one at `from` moved to `to`.
+export function moved<T>(keys: readonly T[], from: number, to: number): T[] {
+  const out = [...keys]
+  const [key] = out.splice(from, 1)
+  out.splice(to, 0, key)
+  return out
 }
 
 // How the Fleet page lays the fleet out: as its teams' cards, or as the rows

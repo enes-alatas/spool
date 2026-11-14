@@ -856,6 +856,12 @@ export interface Team {
   claude_login?: string
 }
 
+// The hub's order of the Fleet page's team cards (#1451): every team by
+// name, and '' for the No team card. Mirrors httpapi's teamOrder.
+export interface TeamOrder {
+  order: string[]
+}
+
 // A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to
 // show before it creates anything: one loop per member, named from its role
 // and suffixed where a name is taken, and the channel holding them all.
@@ -1936,6 +1942,13 @@ export const api = {
     loops: { name: string; mission: string; skills?: SkillInstall[] }[]
   }) => req<CreatedTeam>('/api/import/prompts-chat/team', { method: 'POST', body: JSON.stringify(team) }),
   teams: () => req<Team[]>('/api/teams'),
+  // The cards' order on the Fleet page, shared by every user of the hub
+  // (#1450, #1451). Writing it is an admin's: 409 `team_order_stale` for a
+  // list that misses a team or names a gone one, 400 `team_order_invalid`
+  // for a name twice or no ''.
+  teamOrder: () => req<TeamOrder>('/api/teams/order'),
+  putTeamOrder: (order: string[]) =>
+    req<TeamOrder>('/api/teams/order', { method: 'PUT', body: JSON.stringify({ order }) }),
   // Refused 400 `team_name_invalid` or 409 `team_exists`.
   // home_channel names the channel made with the team, the team's name when
   // absent; one that exists is 409 `channel_exists` (#1494). from_channel

@@ -88,6 +88,20 @@ export function EditIcon() {
   )
 }
 
+// A card's grip (#1450): two columns of dots, the handle a card is dragged
+// by.
+export function GripIcon() {
+  return (
+    <Icon>
+      {[7, 13].map((x) =>
+        [5, 10, 15].map((y) => (
+          <circle key={`${x}-${y}`} cx={x} cy={y} r="1.1" fill="currentColor" stroke="none" />
+        )),
+      )}
+    </Icon>
+  )
+}
+
 // Sign out: a door left open, with the way out (#674).
 export function SignOutIcon() {
   return (
