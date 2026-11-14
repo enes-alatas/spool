@@ -189,6 +189,16 @@ export function DisclosureIcon({ open, size = 12 }: { open: boolean; size?: numb
   )
 }
 
+// Opens elsewhere: an arrow out of a box, on a link that leaves the room for
+// a surface's own app, such as a bot's add link (#1509).
+export function ExternalIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <path d="M8.5 4.5h-4v11h11v-4M11.5 4.5h4v4M15.5 4.5 9.5 10.5" />
+    </Icon>
+  )
+}
+
 // Needs a look: an exclamation mark, for a check that warns (#1576).
 export function WarnIcon({ size }: { size?: number }) {
   return (

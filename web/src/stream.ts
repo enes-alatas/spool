@@ -63,6 +63,15 @@ export function useGlobalStream() {
   useStream('/api/stream', (item) => {
     switch (item.kind) {
       case 'loop_status':
+        qc.invalidateQueries({ queryKey: ['loops'] })
+        // A bot arrived in a chat, or a chat was bound or unbound: a
+        // channel's page shows its chat's members and the chats found
+        // (ADR-0070, #1509).
+        if (item.payload?.rooms_changed) {
+          qc.invalidateQueries({ queryKey: ['channel-detail'] })
+          qc.invalidateQueries({ queryKey: ['found-chats'] })
+        }
+        break
       case 'schedule':
       case 'turn_result':
       case 'workstation':

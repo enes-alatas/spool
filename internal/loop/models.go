@@ -7,6 +7,9 @@ import "strings"
 // read as "unknown" rather than "zero": the control room then shows absolute
 // tokens with no percentage rather than a ratio against a guess.
 var contextLimits = map[string]int{
+	// No source states claude-fable-5-2's window; 1M is the operator's
+	// figure, given on 2026-11-14 (#1591).
+	"claude-fable-5-2":  1_000_000,
 	"claude-fable-5-1":  1_000_000,
 	"claude-fable-5":    1_000_000,
 	"claude-mythos-5":   1_000_000,
@@ -28,8 +31,9 @@ var contextLimits = map[string]int{
 // claude-opus-4-1 is a 200k model, and treating it as a megatoken one would
 // under-report a nearly full context as barely used.
 var aliasLimits = map[string]int{
-	// "fable" resolves to claude-fable-5-2 on 2.1.322, whose window no
-	// source states, so the alias is unknown too (#1466).
+	// "fable" resolves to claude-fable-5-2 on 2.1.322, and answers its
+	// window, the operator's figure (#1591).
+	"fable":  1_000_000,
 	"opus":   1_000_000,
 	"sonnet": 1_000_000,
 	"haiku":  1_000_000,
