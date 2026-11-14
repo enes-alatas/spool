@@ -29,3 +29,9 @@ func fileOwner(path string) (int, error) {
 	}
 	return int(stat.Uid), nil
 }
+
+// openNoFollow opens path for reading, refusing a symlink in its last
+// element (#1583: root reads files the hub's user wrote).
+func openNoFollow(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+}

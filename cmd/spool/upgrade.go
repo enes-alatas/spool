@@ -115,6 +115,8 @@ type upgrader struct {
 	lookGh  func() (string, error)
 	freeAt  func(dir string) (uint64, error)
 	ownerOf func(path string) (*user.User, error)
+	// lookupUser finds the unit's User=, who runs the scripts (#1583)
+	lookupUser func(name string) (*user.User, error)
 	// for a hub with no unit (#1311)
 	uidOf    func(path string) (int, error)
 	selfExe  func() (string, error)
@@ -137,6 +139,9 @@ type upgrader struct {
 	backupDir   string
 	backupPath  string
 	restorePath string
+	// scriptsKept are the script paths this run replaced, each with its
+	// *.previous beside it, which a rollback puts back (#1583)
+	scriptsKept []string
 	healthWait  time.Duration
 	healthEvery time.Duration
 	// began is when the run started, for the time each step reports
@@ -170,6 +175,7 @@ func newUpgrader(out io.Writer) *upgrader {
 			}
 			return user.LookupId(strconv.Itoa(uid))
 		},
+		lookupUser:  user.Lookup,
 		releaseBase: "https://github.com/" + upgradeRepo + "/releases",
 		apiBase:     "https://api.github.com",
 		platform:    goPlatform(),
@@ -479,11 +485,20 @@ func (up *upgrader) printPlan(p plan) {
 	if u.Manual {
 		wait = up.startWait
 	}
+	scriptsCheck := "check " + up.backupPath + " and " + up.restorePath + " are installed and " + up.backupDir + " has room"
+	if !up.asSelf() {
+		scriptsCheck = "check " + up.backupDir + " has room and, for a target that carries no scripts, that " + up.backupPath + " and " + up.restorePath + " are installed"
+	}
 	steps = append(steps,
 		"ask the new build, as "+asker+", for its version, migrations and images; refuse a downgrade onto "+filepath.Join(u.DataDir, "spool.db"),
-		"check "+up.backupPath+" and "+up.restorePath+" are installed and "+up.backupDir+" has room",
+		scriptsCheck,
 		u.stopWhat(),
-		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir+" --no-volumes (the upgrade changes no workstation volume)",
+	)
+	if !up.asSelf() {
+		steps = append(steps, "install the target's spool-backup.sh and spool-restore.sh as "+up.backupPath+" and "+up.restorePath+", keeping those there as *.previous; a target from before #1583 carries none, and those installed are used")
+	}
+	steps = append(steps,
+		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir+" --no-volumes (the upgrade changes no workstation volume)"+up.scriptsAs(u),
 		"keep "+u.Bin+", "+u.HookBin+" and "+u.GitHubBin+" as *.previous, those there are",
 		"install the new build there"+map[bool]string{true: " (the build is the install: " + map[bool]string{true: "the hub", false: "the unit"}[u.Manual] + " runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
 		u.startWhat(),
@@ -502,7 +517,22 @@ type candidate struct {
 	github  string
 	version string   // what /api/version must answer
 	pulls   []string // for a release: refs by digest, workstation then egress
-	cleanup func()
+	// backup and restore are the target's own spool-backup.sh and
+	// spool-restore.sh, which the upgrade installs before it backs up;
+	// both "" for a target that carries none, whose installed pair must
+	// already be there (#1583)
+	backup, restore string
+	cleanup         func()
+}
+
+// scripts are the files a candidate installs as the backup and restore
+// scripts, each then the path it goes to, nil when it carries none or
+// the upgrade runs as the hub's own user, who can't write them (#1583).
+func (up *upgrader) scripts(cand candidate) [][2]string {
+	if cand.backup == "" || cand.restore == "" || up.asSelf() {
+		return nil
+	}
+	return [][2]string{{cand.backup, up.backupPath}, {cand.restore, up.restorePath}}
 }
 
 // execute runs the runbook's order (ADR-0057). Every check comes before the stop,
@@ -579,15 +609,19 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	if err := up.stopHub(ctx, u); err != nil {
 		return err
 	}
+	// the target's backup and restore scripts, so the backup below and any
+	// restore of it run the build that will read it (#1583)
+	if scripts := up.scripts(cand); scripts != nil {
+		up.step("installing the target's scripts as %s and %s", up.backupPath, up.restorePath)
+		if err := up.installScripts(scripts); err != nil {
+			return up.unstarted(ctx, p, retag, false, fmt.Errorf("installing the target's backup and restore scripts: %w", err))
+		}
+	}
 	// 4. back up the data directory alone: the upgrade changes no
 	// workstation volume, and its rollback leaves them as they are, so
 	// copying them would only keep the hub down longer (#947)
 	up.step("backing up %s into %s (the workstation volumes stay as they are)", u.DataDir, up.backupDir)
-	backup, err := up.host.Run(ctx, hostCmd{Name: up.backupPath, Args: []string{"--data-dir", u.DataDir, "--out", up.backupDir, "--no-volumes"}})
-	dataFile, keysFile := backupFiles(backup)
-	if err == nil && dataFile == "" {
-		err = fmt.Errorf("%s named no data file:\n%s", up.backupPath, backup)
-	}
+	dataFile, keysFile, err := up.backUp(ctx, u)
 	if err != nil {
 		return up.unstarted(ctx, p, retag, false, fmt.Errorf("the backup failed, so nothing was installed: %w", err))
 	}
@@ -642,6 +676,7 @@ func (up *upgrader) unstarted(ctx context.Context, p plan, retag func() []error,
 	if installed || p.buildIsInstall {
 		steps = append(steps, rollbackStep{"put back " + p.unit.Bin + ".previous", func() error { return up.restorePrevious(p) }})
 	}
+	steps = append(steps, up.scriptsBack()...)
 	steps = append(steps, []rollbackStep{
 		{p.unit.retagPrevious(), func() error { return errors.Join(retag()...) }},
 		{p.unit.startWhat(), func() error { return up.startHub(ctx, p.unit) }},
@@ -690,13 +725,15 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 		{u.stopWhat(), func() error { return up.stopHub(ctx, u) }},
 		{"move " + u.DataDir + " aside as " + failed, func() error { return os.Rename(u.DataDir, failed) }},
 		{up.restorePath + " " + strings.Join(restore, " "), func() error {
-			_, err := up.host.Run(ctx, hostCmd{Name: up.restorePath, Args: restore})
-			return err
+			return up.restore(ctx, u, restore, slices.DeleteFunc([]string{dataFile, keysFile}, func(f string) bool { return f == "" })...)
 		}},
 		{u.retagPrevious(), func() error { return errors.Join(retag()...) }},
 		{"put back " + u.Bin + ".previous, " + u.HookBin + ".previous and " + u.GitHubBin + ".previous, those there are", func() error { return up.restorePrevious(p) }},
-		{u.startWhat(), func() error { return up.startHub(ctx, u) }},
 	}
+	// the restore above ran the target's own script, on its own backup;
+	// the previous scripts go back with the previous build (#1583)
+	steps = append(steps, up.scriptsBack()...)
+	steps = append(steps, rollbackStep{u.startWhat(), func() error { return up.startHub(ctx, u) }})
 	if err := up.runSteps(steps); err != nil {
 		return errors.Join(cause, err)
 	}
@@ -712,6 +749,47 @@ func (p plan) ownerIfInCheckout(path string) *user.User {
 		return p.homeOwner
 	}
 	return nil
+}
+
+// installScripts installs each script over its path, root's, mode 0755,
+// keeping the one there as *.previous first. A path with no script yet
+// gets one, and a rollback leaves it: the hub needs it either way.
+func (up *upgrader) installScripts(scripts [][2]string) error {
+	for _, script := range scripts {
+		src, dst := script[0], script[1]
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if _, err := os.Stat(dst); err == nil {
+			if err := installFile(dst, dst+".previous", nil); err != nil {
+				return fmt.Errorf("keeping %s: %w", dst, err)
+			}
+			up.scriptsKept = append(up.scriptsKept, dst)
+		}
+		if err := installFile(src, dst, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// restoreScripts puts back the scripts installScripts replaced.
+func (up *upgrader) restoreScripts() error {
+	for _, path := range up.scriptsKept {
+		if err := installFile(path+".previous", path, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scriptsBack is the rollback step that puts the previous scripts back,
+// none when this run replaced none.
+func (up *upgrader) scriptsBack() []rollbackStep {
+	if len(up.scriptsKept) == 0 {
+		return nil
+	}
+	return []rollbackStep{{"put back " + strings.Join(up.scriptsKept, ".previous and ") + ".previous", up.restoreScripts}}
 }
 
 func (up *upgrader) keepPrevious(p plan) error {
@@ -905,6 +983,19 @@ func (up *upgrader) build(ctx context.Context, p plan) (candidate, error) {
 			return cand, err
 		}
 	}
+	// the target's scripts, copied out of the owner's reach like the
+	// binaries; a tag from before them leaves both "" (#1583)
+	backup, restore := filepath.Join(p.checkout, "scripts", "spool-backup.sh"), filepath.Join(p.checkout, "scripts", "spool-restore.sh")
+	if _, err := os.Stat(backup); err == nil {
+		if _, err := os.Stat(restore); err == nil {
+			cand.backup, cand.restore = filepath.Join(dir, "spool-backup.sh"), filepath.Join(dir, "spool-restore.sh")
+			for src, dst := range map[string]string{backup: cand.backup, restore: cand.restore} {
+				if err := installFile(src, dst, nil); err != nil {
+					return cand, err
+				}
+			}
+		}
+	}
 	return cand, nil
 }
 
@@ -974,10 +1065,21 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 		copy(cand.pulls, refs)
 	}
 
-	for _, script := range []string{up.backupPath, up.restorePath} {
+	// a target that carries its scripts installs them; one that doesn't
+	// backs up through those already there (#1583)
+	installed := []string{up.backupPath, up.restorePath}
+	if up.scripts(cand) != nil {
+		installed = nil
+	}
+	for _, script := range installed {
 		if info, err := os.Stat(script); err != nil || info.Mode()&0o111 == 0 {
 			return fmt.Errorf("%s isn't installed (docs/OPERATIONS.md, Back up): the upgrade backs up through it", script)
 		}
+	}
+	// the scripts run as the unit's User= (#1583): a name that isn't a user
+	// here refuses now, before anything stops
+	if _, err := up.scriptUser(p.unit); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(up.backupDir, 0o700); err != nil {
 		return err

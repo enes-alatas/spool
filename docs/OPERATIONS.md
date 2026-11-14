@@ -685,6 +685,13 @@ for s in spool-backup.sh spool-restore.sh; do
 done
 ```
 
+`spool upgrade` does this for you: it installs the target's own two
+scripts before its backup (#1583). The block above is still for a first
+install, an upgrade by hand, and an upgrade that can't: one run by a
+`spool` from before #1583, which is the hub's installed binary and not
+the target's, or to a release from before it, which carries no scripts
+([Upgrade](#upgrade)).
+
 The scripts need nothing else from the checkout. The commands below call
 them from `/usr/local/sbin`.
 
@@ -797,13 +804,15 @@ have `gh` 2.49 or later and are logged in; without that it warns, and
 packages can be older: install it from cli.github.com's apt repository
 ([Linux install](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)) (#1338).
 A target that doesn't know a migration the database has applied is
-refused. It then stops the hub,
-backs up the data directory with the installed `spool-backup.sh
---no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
+refused. It then stops the hub, installs the target's `spool-backup.sh`
+and `spool-restore.sh` in `/usr/local/sbin` (#1583), keeping those
+there as `*.previous`, backs up the data directory with that
+`spool-backup.sh --no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
 outside the data directory and is checked before anything stops), installs,
 starts, and waits two minutes for the hub to answer at the target
-version. If it doesn't, the command rolls the binary, the images and
-the data directory back, leaves the volumes, and prints where the
+version. If it doesn't, the command rolls the binary, the images, the
+data directory and the scripts back, restoring with the target's
+`spool-restore.sh` before the previous one goes back, leaves the volumes, and prints where the
 backup and the failed data directory are. Each step prints as it
 starts, with the time since the run began.
 
@@ -819,8 +828,11 @@ a rollback tags them back. They stay until the next upgrade moves them;
 
 `main`, or a tag with `--from-source <checkout>`, is built in the
 checkout as its owner. Until a release ships binaries (#747), only those
-work. The installed backup and restore scripts are needed either way:
-[Installing the scripts](#installing-the-scripts).
+work. An upgrade run by a `spool` from before #1583, or to a release from
+before it, installs no scripts and needs them installed already:
+[Installing the scripts](#installing-the-scripts). A hub upgraded with
+`--no-unit` as its own user keeps the scripts it has, since that user
+can't write `/usr/local/sbin`.
 
 The build runs in the owner's login shell, which isn't interactive, so it
 reads `~/.profile` and not `~/.bashrc`. It loads a Node or Go that nvm,

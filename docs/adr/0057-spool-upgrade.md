@@ -1,6 +1,6 @@
 # ADR-0057: `spool upgrade`, one root-run command that upgrades a hub
 
-Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054); 2026-10-23 (items 6 and 7: the previous images are kept by name, #1086); 2026-11-04 (items 1, 3, 6 and 7: a hub no unit runs, #1311; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1312) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
+Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054); 2026-10-23 (items 6 and 7: the previous images are kept by name, #1086); 2026-11-04 (items 1, 3, 6 and 7: a hub no unit runs, #1311; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1312); 2026-11-14 (item 8: the upgrade installs the target's scripts, #1583) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
 
 ## Context
 
@@ -243,6 +243,44 @@ replaces a binary. That needs its limits written down before it is built.
    (`spool-backup-test.sh`) and work across versions, which is the point
    of installing them outside the checkout. The command doesn't refresh
    them during a rollback.
+
+   **Amendment (2026-11-14, #1583): the upgrade installs the target's
+   scripts.** Run as root, the upgrade installs the target's own
+   `spool-backup.sh` and `spool-restore.sh` over the installed pair,
+   after item 6's step 3 stops the unit and before its step 4 backs up,
+   keeping the pair it replaces as `*.previous`. A path with no script
+   yet gets one. The backup is then taken by the script of the build
+   that will read it, and the operator's refresh before each upgrade
+   goes. The operator asked for this on 2026-11-13, and on 2026-11-14 chose
+   the archive over embedding the scripts in the binary, in a direct
+   message to Elliot, recorded on #1583.
+   - **Where the scripts come from.** A source build takes them from
+     the checkout at the target (`scripts/`). A release takes them from
+     its archive, which carries them under `scripts/`, so `SHA256SUMS`
+     and the attestation cover them as they cover the binaries (ADR-0052,
+     amendment of the same date). A target that carries no scripts, such
+     as a release from before this amendment, installs none and backs up
+     through the installed pair. Item 6's step 2 still checks that pair is
+     there.
+   - **The rollback.** Item 7's restore runs the target's
+     `spool-restore.sh`, which reads the backup its own `spool-backup.sh`
+     wrote. The `*.previous` scripts then go back with the `*.previous`
+     binaries, before the unit starts. A rollback before the start, when
+     the backup fails, puts them back too. This is the one refresh a
+     rollback makes, and it puts back what was there, so item 8's last
+     sentence stands for anything newer.
+   - **What doesn't change.** The binary running the upgrade decides, not
+     the target: a hub whose installed `spool` predates this amendment
+     upgrades as before, once more. A hub with no unit, upgraded by its
+     own user, can't write `/usr/local/sbin` and keeps its scripts.
+   - **A new root path.** Beside item 2, the target's `spool-backup.sh`
+     now runs as root at step 4, and its `spool-restore.sh` on a rollback,
+     before the health check has passed. Before, root ran only the pair
+     the operator installed. A source build's scripts are the checkout as
+     fetched; a release's are covered by its attestation, or only by its
+     `SHA256SUMS` when the attestation can't be checked. The installed
+     binary already runs as the unit's user, whom item 2 counts as root,
+     so the widening is small.
 
 9. **Stdlib only.** It uses HTTP, SHA-256, `os/exec` for `systemctl`,
    `docker`, `git`, `make`, `gh` and the scripts, and archive extraction
