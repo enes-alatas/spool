@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, type LoopView, type PromptsChatTeam, type Team } from '../api'
+import { api, ApiError, type ChannelChat, type LoopView, type PromptsChatTeam, type Team } from '../api'
 import { channelRefusal, descriptionLength, homeChannelOptions, loopsNotInTeam } from '../channels'
 import { loginOptions } from '../claudeLogins'
 import { inTurn } from '../format'
@@ -26,6 +26,9 @@ import { StepDialog } from './StepDialog'
 import { TeamFields } from './TeamFields'
 import { PromptsChatFill } from './PromptsChatImport'
 import { TeamDraft } from './TeamDraft'
+import { JoinAsk } from './JoinAsk'
+import { channelDetailKey } from './SurfaceChat'
+import { joinNote, notOnSurfaceText, type JoinNote } from '../chatJoin'
 
 // The fleet as its teams (ADR-0066, #1411): a card per team with a circle
 // per loop, and the loops in no team in a full-width card last. An admin
@@ -79,7 +82,7 @@ export function FleetTeams({
 }) {
   const [focused, setFocused] = useState<{ name: string; from: DOMRect; back: HTMLElement } | null>(null)
   const focusedLoop = focused && loops.find((loop) => loop.name === focused.name)
-  const moves = useLoopMoves(teams)
+  const moves = useLoopMoves(teams, loops)
   return (
     <>
       <div className={`team-cards${moves.dragging ? ' dragging' : ''}`}>
@@ -120,7 +123,7 @@ export function FleetTeams({
 // refusal leaves it there and is said on the card it was meant for.
 type LoopMoves = ReturnType<typeof useLoopMoves>
 
-function useLoopMoves(teams: Team[]) {
+function useLoopMoves(teams: Team[], loops: LoopView[]) {
   const qc = useQueryClient()
   // The loop being dragged and the card it left, and the card under it. The
   // ref is what the cards' drag events read: it is set as the drag starts,
@@ -135,12 +138,54 @@ function useLoopMoves(teams: Team[]) {
   // card it ends on, once that card draws it, or the keyboard is left at
   // the top of the page.
   const [focusOn, setFocusOn] = useState<{ loop: string; card: string }>()
+  // A move into a team whose home channel has a chat, held for a yes
+  // (#1511): the card it was meant for says which chat the loop will carry
+  // the channel in, or why the hub would refuse it.
+  const [asking, setAsking] = useState<{
+    loop: string
+    from: string
+    to: string
+    refocus: boolean
+    note: JoinNote
+  }>()
 
-  const move = async (loop: string, from: string, to: string, refocus = false) => {
+  // What moving loop to the card `to` does in its home channel's chat, read
+  // from the hub as it is now; null when there is nothing to say.
+  const noteFor = async (loop: string, to: string): Promise<JoinNote | null> => {
+    const home = teams.find((team) => team.name === to)?.home_channel
+    if (!home) return null
+    try {
+      const detail = await qc.fetchQuery({
+        queryKey: channelDetailKey(home),
+        queryFn: () => api.channel(home),
+        staleTime: 0,
+      })
+      return joinNote(
+        home,
+        detail.chat,
+        loops.find((view) => view.name === loop),
+        `In team ${to}, `,
+      )
+    } catch {
+      // Unread, the hub still refuses a loop the chat can't take.
+      return null
+    }
+  }
+
+  // `asked` is the chat a yes was given for, whose refusal the card names.
+  const move = async (loop: string, from: string, to: string, refocus = false, asked?: ChannelChat) => {
     // Back onto the card it came from: nothing to ask.
     if (from === to) return
     setRefusal(undefined)
+    setAsking(undefined)
     setFocusOn(undefined)
+    if (!asked) {
+      const note = await noteFor(loop, to)
+      if (note) {
+        setAsking({ loop, from, to, refocus, note })
+        return
+      }
+    }
     setPending(loop)
     let card = from
     try {
@@ -154,7 +199,11 @@ function useLoopMoves(teams: Team[]) {
       void qc.invalidateQueries({ queryKey: ['loop'] })
       card = to
     } catch (err) {
-      setRefusal({ card: to, text: `${loop} stays in ${from || 'no team'}: ${errorText(err)}` })
+      const home = teams.find((team) => team.name === to)?.home_channel ?? ''
+      setRefusal({
+        card: to,
+        text: `${loop} stays in ${from || 'no team'}: ${notOnSurfaceText(err, home, loop, asked) ?? errorText(err)}`,
+      })
     } finally {
       setPending(undefined)
       if (refocus) setFocusOn({ loop, card })
@@ -170,6 +219,14 @@ function useLoopMoves(teams: Team[]) {
     pending,
     refusal,
     move,
+    asking,
+    confirm: () => {
+      if (asking) void move(asking.loop, asking.from, asking.to, asking.refocus, asking.note.chat)
+    },
+    cancel: () => {
+      if (asking?.refocus) setFocusOn({ loop: asking.loop, card: asking.from })
+      setAsking(undefined)
+    },
     focusOn,
     focused: () => setFocusOn(undefined),
     held: () => held.current,
@@ -401,12 +458,20 @@ function TeamCard({
                 )}
               </span>
             ))}
-            {manage && (team ? <AddLoop team={team} loops={loops} /> : <NewLoopOrb />)}
+            {manage && (team ? <AddLoop team={team} loops={loops} moves={moves} /> : <NewLoopOrb />)}
           </div>
           {over && dragging && (
             <p className="team-card-drop">
               Drop to move {dragging.loop} to {label}
             </p>
+          )}
+          {moves.asking?.to === group.key && (
+            <JoinAsk
+              note={moves.asking.note}
+              yes={`Move @${moves.asking.loop}`}
+              onYes={moves.confirm}
+              onNo={moves.cancel}
+            />
           )}
           {moves.refusal?.card === group.key && (
             <div className="form-error" role="alert">
@@ -425,43 +490,33 @@ const ORB_ADD_PLUS = 22
 
 // The dashed circle at the end of a team's loops: a pick-list of the loops
 // it could take, each with the team it would leave, since a loop is in one
-// team at most. Choosing one moves it at once.
-function AddLoop({ team, loops }: { team: Team; loops: LoopView[] }) {
-  const refresh = useRefresh()
-  const [error, setError] = useState('')
+// team at most. Choosing one moves it as a drag would: at once, or after a
+// yes when the team's home channel has a chat (#1511).
+function AddLoop({ team, loops, moves }: { team: Team; loops: LoopView[]; moves: LoopMoves }) {
   const addable = loopsToAdd(team, loops)
   if (addable.length === 0) return null
-  const add = async (name: string) => {
-    setError('')
-    try {
-      await api.patchLoop(name, { team: team.name })
-    } catch (err) {
-      setError(errorText(err))
-    }
-    refresh()
-  }
   return (
-    <>
-      <label className="orb-add" title={`Add a loop to ${team.name}`}>
-        <PlusIcon size={ORB_ADD_PLUS} />
-        <select value="" aria-label={`Add a loop to ${team.name}`} onChange={(e) => void add(e.target.value)}>
-          <option value="" disabled>
-            Add a loop to {team.name}
+    <label className="orb-add" title={`Add a loop to ${team.name}`}>
+      <PlusIcon size={ORB_ADD_PLUS} />
+      <select
+        value=""
+        aria-label={`Add a loop to ${team.name}`}
+        onChange={(e) => {
+          const loop = addable.find((each) => each.name === e.target.value)
+          if (loop) void moves.move(loop.name, loop.from, team.name)
+        }}
+      >
+        <option value="" disabled>
+          Add a loop to {team.name}
+        </option>
+        {addable.map((loop) => (
+          <option key={loop.name} value={loop.name}>
+            {loop.name}
+            {loop.from && ` (from ${loop.from})`}
           </option>
-          {addable.map((loop) => (
-            <option key={loop.name} value={loop.name}>
-              {loop.name}
-              {loop.from && ` (from ${loop.from})`}
-            </option>
-          ))}
-        </select>
-      </label>
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-    </>
+        ))}
+      </select>
+    </label>
   )
 }
 

@@ -6888,3 +6888,30 @@ button.orb:focus-visible .orb-peek {
   display: block;
   margin-top: 2px;
 }
+
+/* What a membership control says before a loop joins a channel with a chat
+   (#1511): the amber of a change about to happen, or the danger of a
+   refusal, with its buttons on the line's end. */
+.join-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--active-line);
+  border-radius: 7px;
+  background: var(--active-wash);
+}
+.join-ask.refuse {
+  border-color: var(--danger-line);
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+.join-ask-text {
+  flex: 1 1 240px;
+}
+.join-ask-actions {
+  display: inline-flex;
+  gap: 6px;
+}

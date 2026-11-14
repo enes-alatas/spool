@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, Channel, LoopView } from '../api'
+import { api, ApiError, Channel, type ChannelChat, LoopView } from '../api'
 import { CharCount } from '../components/CharCount'
 import { RowOrb } from '../components/LoopOrb'
 import { RemoveIcon } from '../components/Icons'
+import { JoinAsk } from '../components/JoinAsk'
+import { channelDetailKey } from '../components/SurfaceChat'
+import { joinNote, notOnSurfaceText, type JoinNote } from '../chatJoin'
 import { sumCostToday } from '../format'
 import {
   CHANNEL_DESCRIPTION_MAX,
@@ -143,14 +146,42 @@ function ChannelCard({
   const views = new Map(loops.map((loop) => [loop.name, loop]))
   const spentToday = sumCostToday(loops)
 
-  const act = async (run: () => Promise<unknown>, loop?: string) => {
+  const qc = useQueryClient()
+  // A loop about to be put in a channel that has a chat, and what the card
+  // says before it is (#1511): the write waits for a yes.
+  const [asking, setAsking] = useState<{ loop: string; note: JoinNote }>()
+
+  const act = async (run: () => Promise<unknown>, loop?: string, chat?: ChannelChat) => {
     setError('')
+    setAsking(undefined)
     try {
       await run()
     } catch (err) {
-      setError(channelRefusal(err, { channel: channel.name, team: channel.team, home: homeOf, loop }))
+      setError(
+        (loop && notOnSurfaceText(err, channel.name, loop, chat)) ||
+          channelRefusal(err, { channel: channel.name, team: channel.team, home: homeOf, loop }),
+      )
     }
     refresh()
+  }
+
+  // Reads the channel's chat as the hub has it now, then adds the loop at
+  // once if there is none, or says what joining does there first.
+  const pick = async (loop: string) => {
+    setError('')
+    let note: JoinNote | null = null
+    try {
+      const detail = await qc.fetchQuery({
+        queryKey: channelDetailKey(channel.name),
+        queryFn: () => api.channel(channel.name),
+        staleTime: 0,
+      })
+      note = joinNote(channel.name, detail.chat, views.get(loop))
+    } catch {
+      // Unread, the hub still refuses a loop the chat can't take.
+    }
+    if (note) setAsking({ loop, note })
+    else void act(() => api.addChannelLoop(channel.name, loop), loop)
   }
 
   return (
@@ -237,10 +268,7 @@ function ChannelCard({
             className="channel-add"
             value=""
             aria-label={`Add a loop to #${channel.name}`}
-            onChange={(e) => {
-              const loop = e.target.value
-              act(() => api.addChannelLoop(channel.name, loop), loop)
-            }}
+            onChange={(e) => void pick(e.target.value)}
           >
             <option value="" disabled>
               + Add loop
@@ -253,6 +281,16 @@ function ChannelCard({
           </select>
         )}
       </div>
+      {asking && (
+        <JoinAsk
+          note={asking.note}
+          yes={`Add @${asking.loop}`}
+          onYes={() =>
+            void act(() => api.addChannelLoop(channel.name, asking.loop), asking.loop, asking.note.chat)
+          }
+          onNo={() => setAsking(undefined)}
+        />
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
