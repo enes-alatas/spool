@@ -715,15 +715,65 @@ sudo systemctl start spool
 ```
 
 Loops are paused while the copy runs: seconds for a small fleet, longer once
-volumes hold installed toolchains. A nightly
-line for root's crontab, with the hub as a system unit named `spool`:
+volumes hold installed toolchains. Move the keys file off the host.
 
-```cron
-15 3 * * *  systemctl stop spool && /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool --keep 7; systemctl start spool
+### Nightly, with a timer
+
+Two units run the backup each night, with the hub as the system unit
+`spool` above (#1601).
+
+`/etc/systemd/system/spool-backup.service`:
+
+```ini
+[Unit]
+Description=Spool backup
+
+[Service]
+Type=oneshot
+Environment=SPOOL_BACKUP_KEEP=7
+EnvironmentFile=-/etc/default/spool-backup
+ExecStartPre=/usr/bin/systemctl stop spool
+ExecStart=/usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool \
+    --out /var/backups/spool --keep ${SPOOL_BACKUP_KEEP}
+# Runs when the backup fails too, so the hub is never left stopped.
+ExecStopPost=/usr/bin/systemctl start spool
 ```
 
-The `;` before `start` restarts the hub even when the backup fails. Move the
-keys file off the host.
+`/etc/systemd/system/spool-backup.timer`:
+
+```ini
+[Unit]
+Description=Nightly Spool backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+# A night the box was off runs once at the next boot.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now spool-backup.timer
+sudo systemctl start spool-backup.service    # one backup now, to check it works
+systemctl list-timers spool-backup.timer     # the last and next run
+systemctl status spool-backup                # the last result
+journalctl -u spool-backup -n 50             # the script's output, and its reason when it fails
+```
+
+The backup runs as root. A failed one leaves the hub running and
+`spool-backup` failed, and the reason is in the journal. To keep a
+different number of backups, put `SPOOL_BACKUP_KEEP=14` in
+`/etc/default/spool-backup`. No upgrade writes that file. Stop the timer
+before an upgrade, `spool upgrade` too, or a restore
+(`sudo systemctl stop spool-backup.timer`), and start it again after, so
+the backup doesn't start the hub partway through.
+
+A nightly line in root's crontab, from before #1601, does the same without
+a record of the last run. To swap it for the units, delete the line
+(`sudo crontab -e`) and install the units as above.
 
 `--keep 7` deletes all but the newest seven backups in `--out` once the new
 one is written (#1600). Pick the count your disk holds: each backup takes
