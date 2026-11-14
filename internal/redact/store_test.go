@@ -464,6 +464,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// A team's description is operator-written text, like a
 			// channel's; the rest are names and timestamps.
 			"Create": false, "CreateFromChannel": false, "Edit": false, "Delete": false, "Get": false, "List": false,
+			// the order holds team names, which are under the loop-name rule
+			"Order": false, "SetOrder": false,
 		},
 		"ProblemStore": {
 			// A symptom from a fixed set, ids, timestamps and who cleared it.

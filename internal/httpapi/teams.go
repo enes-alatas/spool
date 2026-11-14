@@ -115,6 +115,9 @@ func (server *Server) teamErr(w http.ResponseWriter, err error, name string) {
 // teamNameRefusal refuses a name the loop-name rule does not allow
 // (ADR-0066).
 func teamNameRefusal(name string) *requestError {
+	if name == reservedTeamName {
+		return refusalf(400, codeTeamNameInvalid, "a team can't be named %q: it is the name of the teams' order", name)
+	}
 	if !nameRe.MatchString(name) {
 		return refusalf(400, codeTeamNameInvalid, "a team name must match %s", nameRe.String())
 	}
@@ -477,6 +480,75 @@ func (server *Server) loopTeamRefusal(ctx context.Context, name string) *request
 		return refusalf(404, codeTeamNotFound, "team %q not found", name)
 	} else if err != nil {
 		return refusalf(500, "", "%v", err)
+	}
+	return nil
+}
+
+// The hub's one order of its teams, shared by everyone who reads the Fleet
+// page (#1451): every team's name once, and "" in No team's place.
+const (
+	// The list names a team the hub doesn't have or leaves one out: its
+	// writer read the teams before one was made or deleted.
+	codeTeamOrderStale = "team_order_stale"
+	// The list names a team twice, or has no place for No team.
+	codeTeamOrderInvalid = "team_order_invalid"
+)
+
+// reservedTeamName is the one name the loop-name rule allows that no team
+// may take: GET /api/teams/order is the order, not a team called order.
+const reservedTeamName = "order"
+
+type teamOrder struct {
+	Order []string `json:"order"`
+}
+
+func (server *Server) handleGetTeamOrder(w http.ResponseWriter, r *http.Request) {
+	order, err := server.Store.Teams().Order(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, teamOrder{Order: order})
+}
+
+// handlePutTeamOrder sets the whole order in one write, and answers it as
+// stored. A list that is not the hub's teams is stale, so two admins who
+// drag at once can't drop a team one of them never saw.
+func (server *Server) handlePutTeamOrder(w http.ResponseWriter, r *http.Request) {
+	var req teamOrder
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		server.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	if refusal := teamOrderRefusal(req.Order); refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	err := server.Store.Teams().SetOrder(r.Context(), req.Order)
+	if errors.Is(err, store.ErrTeamOrderStale) {
+		server.jsonErrCode(w, 409, codeTeamOrderStale,
+			"the order must name every team the hub has, and no other; read the teams again")
+		return
+	}
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	server.handleGetTeamOrder(w, r)
+}
+
+// teamOrderRefusal refuses a list that can't be an order whatever teams the
+// hub has: a name twice, or no place for No team.
+func teamOrderRefusal(order []string) *requestError {
+	seen := map[string]bool{}
+	for _, name := range order {
+		if seen[name] {
+			return refusalf(400, codeTeamOrderInvalid, "the order names %q twice", name)
+		}
+		seen[name] = true
+	}
+	if !seen[""] {
+		return refusalf(400, codeTeamOrderInvalid, `the order has no place for No team; give it as ""`)
 	}
 	return nil
 }

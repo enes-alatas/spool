@@ -1938,7 +1938,8 @@ type TeamEdit struct {
 // the loop's own Team, written through LoopStore, so a loop can never be in
 // two.
 type TeamStore interface {
-	// List returns every team, by name.
+	// List returns every team, in the hub's order of them (Order without
+	// No team).
 	List(ctx context.Context) ([]*Team, error)
 	// Get returns one team, or ErrNotFound.
 	Get(ctx context.Context, name string) (*Team, error)
@@ -1969,6 +1970,16 @@ type TeamStore interface {
 	// unbind their rooms as a deleted channel does; ErrNotFound if there is
 	// none, ErrTeamHasLoops while any loop is in it.
 	Delete(ctx context.Context, name string) error
+	// Order returns the hub's one order of its teams (#1451): every team's
+	// name, with "" in No team's place. A new team takes the last place,
+	// before No team when No team is last; a deleted one leaves the order,
+	// and a renamed one keeps its place. Until somebody sets an order, No
+	// team is last, and the teams an upgrade found come by name.
+	Order(ctx context.Context) ([]string, error)
+	// SetOrder writes the whole order, in one write: every team's name once,
+	// and "" for No team. ErrTeamOrderStale if the list leaves out a team
+	// the hub has, names one it doesn't, or names any twice.
+	SetOrder(ctx context.Context, order []string) error
 }
 
 // Room is a surface's chat as one loop's bot knows it (ADR-0038): a
@@ -2200,6 +2211,10 @@ const (
 	// one is moved out first, which is the operator choosing where it goes
 	// (ADR-0066).
 	ErrTeamHasLoops = sentinelError("store: team has loops")
+	// ErrTeamOrderStale refuses an order of the teams that doesn't name
+	// exactly the hub's teams: its writer read them before one was made or
+	// deleted, and re-reads rather than dropping a team it never saw.
+	ErrTeamOrderStale = sentinelError("store: team order stale")
 	// ErrChannelTaken refuses a team whose home channel would take a
 	// channel name already in use.
 	ErrChannelTaken = sentinelError("store: channel name taken")

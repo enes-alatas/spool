@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397; superseded by ADR-0068: item 1's fleet channel bullet and item 4's `default` team) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411); 2026-11-09 (item 6: the Claude login by scope, #1440); 2026-11-11 (item 2: a team's loops are on its home channel's chat surface, ADR-0070, #1500)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397; superseded by ADR-0068: item 1's fleet channel bullet and item 4's `default` team) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411); 2026-11-09 (item 6: the Claude login by scope, #1440); 2026-11-11 (item 2: a team's loops are on its home channel's chat surface, ADR-0070, #1500); 2026-11-14 (item 6: the hub keeps one order of its teams, #1451)
 
 ## Context
 
@@ -274,6 +274,28 @@ channel, item 1 is amended with it.
      request.
    - **`DELETE /api/claude-logins/{name}`** for a login a team names is
      409 `claude_login`, and the error names the teams.
+
+   **Amendment (2026-11-14, #1451): the hub keeps one order of its
+   teams.** The operator asked on 2026-11-09 for an order shared by
+   everyone who reads the hub, with No team movable like any team.
+   - **`GET /api/teams/order`** answers `{"order": [...]}`: every
+     team's name once, and `""` for No team, in the hub's order. A
+     member reads it. **`PUT /api/teams/order`** takes the same body,
+     sets the whole order in one write, and answers it as stored. It
+     is an admin's. A list that leaves out a team the hub has, or
+     names one it doesn't, is 409 `team_order_stale`, so two admins
+     ordering at once can't drop a team one of them never saw. A name
+     given twice, or no `""`, is 400 `team_order_invalid`.
+   - **`GET /api/teams`** comes in that order, no longer by name.
+   - **A new team** takes the last place, before No team when No team
+     is last. A deleted team leaves the order and every other place as
+     it was, and a renamed one keeps its place. Until an admin sets an
+     order, No team is last, and the teams the upgrade found come by
+     name, as the Fleet page showed them.
+     This changes item 7's #1411 amendment, which puts the card of
+     loops in no team last: it is last until an admin moves it.
+   - **No team may be named `order`,** the route's name: 400
+     `team_name_invalid`.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;

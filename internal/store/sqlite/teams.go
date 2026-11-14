@@ -26,7 +26,7 @@ func scanTeam(row interface{ Scan(...any) error }) (*store.Team, error) {
 }
 
 func (table teams) List(ctx context.Context) ([]*store.Team, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT `+teamCols+` FROM teams ORDER BY name`)
+	rows, err := table.db.QueryContext(ctx, `SELECT `+teamCols+` FROM teams ORDER BY position, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +98,12 @@ func (table teams) Create(ctx context.Context, team *store.Team) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login) VALUES (?,?,?,NULLIF(?, ''))`,
-		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin)
+	position, err := takeLastTeamPlace(ctx, tx)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login, position) VALUES (?,?,?,NULLIF(?, ''),?)`,
+		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin, position)
 	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
 		return store.ErrNotFound // no Claude login by that name
 	}
@@ -151,8 +155,12 @@ func (table teams) CreateFromChannel(ctx context.Context, team *store.Team) erro
 	// a taken team name is ErrDuplicate whatever the channel is, which is
 	// the order the route's refusals are documented in (ADR-0068). Every
 	// refusal below returns before the commit, and the rollback undoes it.
-	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login, home_channel) VALUES (?,?,?,NULLIF(?, ''),?)`,
-		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin, team.HomeChannel)
+	position, err := takeLastTeamPlace(ctx, tx)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO teams (name, description, created_at, claude_login, home_channel, position) VALUES (?,?,?,NULLIF(?, ''),?,?)`,
+		team.Name, team.Description, team.CreatedAt, team.ClaudeLogin, team.HomeChannel, position)
 	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
 		return store.ErrNotFound // no Claude login by that name
 	}
