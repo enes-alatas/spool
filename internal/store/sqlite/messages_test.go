@@ -814,7 +814,7 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 	}
 
 	// The third send is the one that got through.
-	resolved, err := db.Messages().ResolveResends(ctx, third.ID, now)
+	resolved, err := db.Messages().ResolveResends(ctx, third.ID, now, store.SendResolutionResent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,8 +842,55 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 		t.Error("a failure the chain never named was resolved with it")
 	}
 	// And a message that resends nothing resolves nothing.
-	if resolved, err := db.Messages().ResolveResends(ctx, unrelated.ID, now); err != nil || resolved != 0 {
+	if resolved, err := db.Messages().ResolveResends(ctx, unrelated.ID, now, store.SendResolutionResent); err != nil || resolved != 0 {
 		t.Errorf("ResolveResends on a message that resends nothing = %d (err %v), want 0", resolved, err)
+	}
+}
+
+// A dismissal walks the chain as a resend does, but names no resend:
+// nothing arrived (#1586).
+func TestResolveResendsDismissesTheChain(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	var chain []*store.Message
+	resends := int64(0)
+	for _, text := range []string{"the build is stuck", "the build is stuck (again)", "the build is stuck (again, again)"} {
+		message := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+			FromLoopID: "l1", Text: text, Conversation: store.ConversationGroup, Channel: "fleet",
+			ResendsID: resends}
+		if err := db.Messages().Insert(ctx, message); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Messages().SetSendResult(ctx, message.ID, now, "telegram 502: Bad Gateway"); err != nil {
+			t.Fatal(err)
+		}
+		chain, resends = append(chain, message), message.ID
+	}
+	last := chain[len(chain)-1]
+	if _, err := db.Messages().ResolveSend(ctx, last.ID, now, store.SendResolutionDismissedByLoop, 0); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := db.Messages().ResolveResends(ctx, last.ID, now, store.SendResolutionDismissedByLoop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != 2 {
+		t.Errorf("dismissed %d earlier attempts, want both", resolved)
+	}
+	for _, message := range chain {
+		got, err := db.Messages().Get(ctx, message.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SendResolution != store.SendResolutionDismissedByLoop || got.SendResentAs != 0 {
+			t.Errorf("%q resolved as %q naming %d; want dismissed_by_loop naming none",
+				message.Text, got.SendResolution, got.SendResentAs)
+		}
 	}
 }
 

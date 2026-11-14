@@ -76,7 +76,7 @@ func (ledger *Ledger) Result(ctx context.Context, messageID int64, loopID string
 		// row rather than from this send: a resend that failed too is
 		// itself resent later, and the chain is what lets that last send
 		// close the failure this one could not (#270).
-		if _, resErr := msgs.ResolveResends(ctx, messageID, now); resErr != nil {
+		if _, resErr := msgs.ResolveResends(ctx, messageID, now, store.SendResolutionResent); resErr != nil {
 			ledger.Log.Warn(ledger.Surface+": resolve resent failures", "err", resErr)
 		}
 		ledger.outcome(loopID, false)

@@ -2317,8 +2317,8 @@ func (server *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	resolved, err := server.Store.Messages().ResolveSend(r.Context(), id,
-		time.Now().UnixMilli(), store.SendResolutionDismissed, 0)
+	now := time.Now().UnixMilli()
+	resolved, err := server.Store.Messages().ResolveSend(r.Context(), id, now, store.SendResolutionDismissed, 0)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
@@ -2326,6 +2326,12 @@ func (server *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) 
 	if !resolved {
 		server.jsonErr(w, 404, "no unresolved send failure for message %d", id)
 		return
+	}
+	// a failed resend stands for the attempts before it, so they go with
+	// it, as a loop's own dismissal takes them (#1586); the dismissal
+	// itself is made, so a failure here is logged rather than answered
+	if _, err := server.Store.Messages().ResolveResends(r.Context(), id, now, store.SendResolutionDismissed); err != nil {
+		server.Log.Warn("dismiss the sends a dismissed resend stood for", "message", id, "err", err)
 	}
 	if message, err := server.Store.Messages().Get(r.Context(), id); err == nil && message.FromLoopID != "" {
 		server.Bus.Publish(bus.Item{Kind: bus.KindSendOutcome, Payload: &surface.SendOutcome{LoopID: message.FromLoopID}})

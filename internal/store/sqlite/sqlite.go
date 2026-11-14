@@ -944,10 +944,19 @@ const maxResendChain = 50
 // got through rather than the next link, because that is the one an operator
 // reading any of them wants to read.
 //
+// A dismissal walks the same chain: the loop that dismisses the last
+// attempt is done with the words, and the earlier links are never put
+// to it again, so a link left open would alert its owner for good
+// (#1586). Only a resend names the message that got through.
+//
 // Each link is resolved through the same conditional update as any other
 // resolution, so a link somebody already dismissed keeps their reason and
 // the walk continues past it.
-func (table messages) ResolveResends(ctx context.Context, messageID int64, at int64) (int, error) {
+func (table messages) ResolveResends(ctx context.Context, messageID int64, at int64, resolution string) (int, error) {
+	resentAs := int64(0)
+	if resolution == store.SendResolutionResent {
+		resentAs = messageID
+	}
 	resolved := 0
 	id := messageID
 	for i := 0; i < maxResendChain; i++ {
@@ -958,7 +967,7 @@ func (table messages) ResolveResends(ctx context.Context, messageID int64, at in
 		if message.ResendsID == 0 {
 			return resolved, nil
 		}
-		ok, err := table.ResolveSend(ctx, message.ResendsID, at, store.SendResolutionResent, messageID)
+		ok, err := table.ResolveSend(ctx, message.ResendsID, at, resolution, resentAs)
 		if err != nil {
 			return resolved, err
 		}
