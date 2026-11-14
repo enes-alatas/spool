@@ -995,6 +995,12 @@ func (table messages) Undelivered(ctx context.Context, loopID string) ([]*store.
 		ORDER BY send_failed_at DESC, id DESC`, args...)
 }
 
+func (table messages) AcknowledgeSendFailures(ctx context.Context, loopID string, until int64) error {
+	_, err := table.db.ExecContext(ctx, `UPDATE messages SET send_ack_until=?
+		WHERE from_loop_id=? AND `+unresolvedSendFailure, until, loopID)
+	return err
+}
+
 func (table messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {
 	if len(ids) == 0 {
 		return nil
@@ -1051,7 +1057,7 @@ func (table messages) Traffic(ctx context.Context) ([]store.SurfaceTraffic, erro
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
-	send_failure_told_at, send_failure_tellings, send_resolved_at, send_resolution, send_resent_as,
+	send_failure_told_at, send_failure_tellings, send_ack_until, send_resolved_at, send_resolution, send_resent_as,
 	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person,
 	edit_of, edit_kind, edit_key, edited_at, deleted_at, dropped_by`
 
@@ -1345,7 +1351,7 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 		if err := rows.Scan(&message.ID, &message.TS, &message.Origin, &message.Author, &message.FromLoopID, &message.Text,
 			&mentions, &message.TGChatID, &message.TGMessageID, &message.TGBotLoopID, &delivered,
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
-			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendResolvedAt,
+			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendAckUntil, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
 			&message.SlackChannelID, &message.SlackTS, &message.Channel, &message.DMPerson,
 			&message.EditOf, &message.EditKind, &message.EditKey, &message.EditedAt, &message.DeletedAt, &dropped); err != nil {

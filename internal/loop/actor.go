@@ -319,12 +319,11 @@ type Actor struct {
 	firstErrorAt int64
 	downSince    int64
 	// The send_failed watch (#1144): sendWoken is whether the open problem
-	// has had its one wake, sendHeld whether an outage holds its wake and
-	// notice, and sendAckAt when the operator last acknowledged it, which
-	// starts the grace over for the failures still unresolved.
+	// has had its one wake, and sendHeld whether an outage holds its wake
+	// and notice. An acknowledgement's silence is on the failures' rows
+	// (#1588), so a restart keeps it.
 	sendWoken bool
 	sendHeld  bool
-	sendAckAt int64
 
 	// loginRejected holds the unauthenticated alert through the spawns and
 	// health polls that would otherwise clear it: the machine is up, the

@@ -1868,6 +1868,10 @@ type settingsView struct {
 	// undelivered and unresolved before its owner is told, 0 for never, the
 	// default included (#1144).
 	HealthSendGraceMinutes int `json:"health_send_grace_minutes"`
+	// HealthSendAckMinutes is how many minutes acknowledging a loop's
+	// send_failed alert silences the failures it covered, 0 for until each
+	// is resolved, the default included (#1588).
+	HealthSendAckMinutes int `json:"health_send_ack_minutes"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1904,6 +1908,7 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		HealthTurnMinutes:      loop.HealthTurnMinutes(ctx, server.Store.Settings(), server.Log),
 		HealthWakeGraceMinutes: loop.HealthWakeGraceMinutes(ctx, server.Store.Settings(), server.Log),
 		HealthSendGraceMinutes: loop.HealthSendGraceMinutes(ctx, server.Store.Settings(), server.Log),
+		HealthSendAckMinutes:   loop.HealthSendAckMinutes(ctx, server.Store.Settings(), server.Log),
 		BareAllowed:            server.BareAllowed,
 		DefaultRuntime:         server.defaultRuntime(),
 		ClaudeVersion:          server.ClaudeVer,
@@ -1939,6 +1944,9 @@ type putSettingsReq struct {
 	HealthWakeGraceMinutes *int `json:"health_wake_grace_minutes"`
 	// nil leaves the send_failed grace unchanged (minutes 0-1440, 0 for off).
 	HealthSendGraceMinutes *int `json:"health_send_grace_minutes"`
+	// nil leaves the send_failed acknowledgement's silence unchanged
+	// (minutes 0-1440, 0 for until resolved).
+	HealthSendAckMinutes *int `json:"health_send_ack_minutes"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1969,6 +1977,10 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthSendGraceMinutes != nil && !loop.ValidHealthSendGraceMinutes(*req.HealthSendGraceMinutes) {
 		server.jsonErr(w, 400, "health_send_grace_minutes must be minutes 0-1440, 0 for off (got %d)", *req.HealthSendGraceMinutes)
+		return
+	}
+	if req.HealthSendAckMinutes != nil && !loop.ValidHealthSendAckMinutes(*req.HealthSendAckMinutes) {
+		server.jsonErr(w, 400, "health_send_ack_minutes must be minutes 0-1440, 0 for until resolved (got %d)", *req.HealthSendAckMinutes)
 		return
 	}
 	if req.ClaudeOAuthToken != nil {
@@ -2063,6 +2075,12 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthSendGraceMinutes != nil {
 		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthSendGraceMinutes, strconv.Itoa(*req.HealthSendGraceMinutes)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.HealthSendAckMinutes != nil {
+		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthSendAckMinutes, strconv.Itoa(*req.HealthSendAckMinutes)); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}

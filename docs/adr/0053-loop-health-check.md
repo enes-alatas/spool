@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260); 2026-11-08 (item 3: an operator-ended turn is not counted, #1420)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260); 2026-11-08 (item 3: an operator-ended turn is not counted, #1420); 2026-11-14 (item 11: an acknowledgement silences its failures for a while, #1588)
 
 ## Context
 
@@ -209,6 +209,24 @@ an amendment here.
     the surface retries and lands says nothing. `GET/PUT /api/settings`
     carries it beside the other health settings. Health is `warning` while
     it is open.
+
+    **Amendment (2026-11-14, #1588):** an acknowledgement no longer starts
+    the grace over. It silences the failures unresolved when it is given
+    for the setting `health_send_ack_minutes`, 0 to 1440 with 0 for until
+    each is resolved, defaulting to **60** (longer than the grace, as
+    #1588 records the operator deciding on 2026-11-14; the figure is the
+    PR's). The silence is kept on each failure's row, so a hub restart
+    keeps it, and a failure after the acknowledgement is not covered: it
+    opens the problem on the ordinary grace. A failure is due once past
+    both its grace and its silence, and the problem is dated from the
+    earliest due one. When the silence ends with a failure still
+    unresolved, the problem opens again, told and woken for as on any
+    opening. A problem that only silenced failures are left under clears
+    without a word, departing from item 6 as a held one does: the owner
+    has heard of those, and "none left" would be untrue. A failure merely
+    in its grace, with no acknowledgement on it, leaves an open problem as
+    it is. The operator's clearing notice says until when it is quiet.
+    `GET/PUT /api/settings` carries the setting beside the grace.
 
 ## Consequences
 

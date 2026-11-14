@@ -2,6 +2,7 @@ package surface
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -64,6 +65,10 @@ type ProblemNotice struct {
 	// ByOperator is true when the operator cleared the problem by acting on
 	// the loop, false when the signal itself cleared.
 	ByOperator bool `json:"by_operator,omitempty"`
+	// QuietUntil is, on a send_failed the operator cleared, until when the
+	// failures it covered stay silent, in Unix ms: math.MaxInt64 for until
+	// each is resolved (#1588).
+	QuietUntil int64 `json:"quiet_until,omitempty"`
 }
 
 // Text is the notice as the owner reads it, the same on every surface.
@@ -124,6 +129,16 @@ func (notice ProblemNotice) Text() string {
 			problem = notice.LoopName + "'s missed wake"
 		case "send_failed":
 			problem = notice.LoopName + "'s undelivered messages"
+		}
+		if notice.Symptom == "send_failed" && notice.QuietUntil != 0 {
+			if notice.QuietUntil == math.MaxInt64 {
+				return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
+					"You will not hear of them again until each is delivered, resent or dismissed; "+
+					"a message that fails from now on alerts as usual.", problem)
+			}
+			return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
+				"You will hear of them again at %s if any is still undelivered; "+
+				"a message that fails from now on alerts as usual.", problem, time.UnixMilli(notice.QuietUntil).UTC().Format("15:04 UTC"))
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)

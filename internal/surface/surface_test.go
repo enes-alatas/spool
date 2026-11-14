@@ -3,6 +3,7 @@ package surface
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +82,12 @@ func TestProblemNoticeText(t *testing.T) {
 			"Spool: gardener has no undelivered messages left: each was delivered, resent or dismissed."},
 		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed", ByOperator: true},
 			"Spool: the alert about gardener's undelivered messages was cleared in the control room."},
+		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed", ByOperator: true, QuietUntil: since},
+			"Spool: the alert about gardener's undelivered messages was cleared in the control room. " +
+				"You will hear of them again at 09:12 UTC if any is still undelivered; a message that fails from now on alerts as usual."},
+		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed", ByOperator: true, QuietUntil: math.MaxInt64},
+			"Spool: the alert about gardener's undelivered messages was cleared in the control room. " +
+				"You will not hear of them again until each is delivered, resent or dismissed; a message that fails from now on alerts as usual."},
 	}
 	for _, testCase := range cases {
 		if got := testCase.notice.Text(); !strings.HasPrefix(got, testCase.want) {
