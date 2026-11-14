@@ -280,7 +280,7 @@ function AddChatDialog({
   return (
     <StepDialog
       title={`Add a ${words.name} ${words.chat} to #${channel}`}
-      className="group-dialog chat-dialog"
+      className="chat-dialog"
       onClose={onClose}
       busy={put.isPending}
     >

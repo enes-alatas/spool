@@ -568,19 +568,22 @@ export interface FoundChat {
   found_by: string[]
 }
 
-// A chat on a surface that the loop's bot is in: for now a Telegram group
-// (#514). It carries one of the loop's channels, or none until the operator
-// binds it. Mirrors roomView in internal/httpapi/rooms.go.
+// A chat on a surface that the loop's bot is in: a Telegram group or a
+// Slack channel (#514). It carries one of the loop's channels, or none
+// until it's the chat of a channel the loop is in, which a channel's page
+// binds (ADR-0070). The loop page lists it read-only. Mirrors roomView in
+// internal/httpapi/rooms.go.
 export interface Room {
   surface: string
   // The surface's id for the chat, as text: a Telegram group's is negative,
   // a Slack channel's starts with C (or G for an older private one).
   room_id: string
-  // The chat's name as the surface last reported it; "" for a room bound by
-  // id before the bot ever heard from it.
+  // The chat's name as the surface last reported it; "" until it reports
+  // one.
   title: string
-  // The channel it carries; "" while unbound. A new room arrives unbound,
-  // for the operator to bind (ADR-0068).
+  // The channel it carries; "" while unbound. A new room arrives bound when
+  // it's the chat of a channel the loop is in, and unbound otherwise
+  // (ADR-0070).
   channel: string
   first_seen_at: number
   // 0 while unbound.
@@ -1620,10 +1623,6 @@ export const api = {
       `/api/loops/${name}/telegram/status`,
     ),
   rooms: (name: string) => req<Room[]>(`/api/loops/${name}/rooms`),
-  // Binds a room to one of the loop's channels. A room the bot never heard
-  // from is added bound, which is the paste-the-id fallback.
-  bindRoom: (name: string, body: { surface: string; room_id: string; channel: string }) =>
-    req<Room>(`/api/loops/${name}/rooms`, { method: 'PUT', body: JSON.stringify(body) }),
   forgetRoom: (name: string, surface: string, roomID: string) =>
     req<void>(`/api/loops/${name}/rooms/${surface}/${encodeURIComponent(roomID)}`, { method: 'DELETE' }),
   senders: () => req<TGSender[]>('/api/telegram/senders'),

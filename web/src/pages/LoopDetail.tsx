@@ -1228,8 +1228,8 @@ function SlackSurface({
       {!!status?.bridge.ignored_events && (
         <div className="hint surface-hint">
           Ignored {status.bridge.ignored_events} {status.bridge.ignored_events === 1 ? 'event' : 'events'}{' '}
-          from Slack channels that carry none of @{loop.name}'s channels yet. Bind them under{' '}
-          <a href={`#${ROOMS_ANCHOR}`}>Slack channels</a>.
+          from Slack channels that carry none of @{loop.name}'s channels yet. They're listed under{' '}
+          <a href={`#${ROOMS_ANCHOR}`}>Slack channels</a>; a channel's page binds its Slack channel.
         </div>
       )}
       {isError && (
