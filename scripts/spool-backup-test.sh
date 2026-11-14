@@ -299,6 +299,49 @@ mkdir "$STUB/volumes"
 PATH=$work/bsd-bin:$PATH bash scripts/spool-restore.sh --data "$data" --volumes "$vols" --data-dir "$work/dst-bsd" >/dev/null 2>"$work/err"
 check "with BSD tar a restore reads the volumes file and restores its volumes" '[ $? -eq 0 ] && [ -f "$work/dst-bsd/spool.db" ] && diff -r "$work/old-volumes/spool-ws-b/data" "$STUB/volumes/spool-ws-b/data" && [ "$(cat "$STUB/volumes/spool-ws-c/spool.loop.id")" = c ]'
 
+
+# --keep N (#1600): after a backup succeeds, only the newest N backups stay
+# in --out, each deleted whole, and nothing else there is touched.
+keepdir=$work/out-keep
+mkdir "$keepdir"
+for n in 1 2 3 4 5; do
+	: >"$keepdir/spool-data-2026010${n}T000000Z.tar.gz"
+	: >"$keepdir/spool-keys-2026010${n}T000000Z.tar"
+done
+: >"$keepdir/spool-volumes-20260101T000000Z.tar.gz"
+: >"$keepdir/spool-volumes-20260105T000000Z.tar.gz"
+# a backup with no data file left, and files that only look like backups
+: >"$keepdir/spool-volumes-20251231T000000Z.tar.gz"
+for other in notes.txt spool-data-old.tar.gz spool-data-20260101T000000Z.tar.gz.bak spool-keys-2026T1.tar; do
+	: >"$keepdir/$other"
+done
+snapshot() { ls -A "$keepdir" | sort | tr "\n" " "; }
+before=$(snapshot)
+for bad in 0 -1 abc 03 ""; do
+	bash scripts/spool-backup.sh --data-dir "$dst" --out "$keepdir" --no-volumes --keep "$bad" >/dev/null 2>"$work/err"
+	check "--keep '$bad' refuses before writing anything" '[ $? -ne 0 ] && [ "$(snapshot)" = "$before" ]'
+done
+STUB_RUN_FAIL=1 bash scripts/spool-backup.sh --data-dir "$dst" --out "$keepdir" --keep 3 >/dev/null 2>"$work/err"
+check "a failed backup with --keep deletes nothing" '[ $? -ne 0 ] && [ "$(snapshot)" = "$before" ]'
+bash scripts/spool-backup.sh --data-dir "$dst" --out "$keepdir" --no-volumes --keep 3 >"$work/stdout" 2>"$work/err"
+check "a backup with --keep 3 succeeds" '[ $? -eq 0 ]'
+new=$(sed -n "s|^$keepdir/spool-data-\(.*\)\.tar\.gz$|\1|p" "$work/stdout")
+check "--keep 3 leaves the new backup and the two newest before it, whole" \
+	'[ -n "$new" ] && [ "$(ls "$keepdir" | sed -n "s/^spool-[a-z]*-\([0-9]\{8\}T[0-9]\{6\}Z\)\.tar\(\.gz\)\{0,1\}$/\1/p" | sort -u | tr "\n" " ")" = "20260104T000000Z 20260105T000000Z $new " ] && [ -f "$keepdir/spool-volumes-20260105T000000Z.tar.gz" ] && [ -f "$keepdir/spool-keys-20260104T000000Z.tar" ]'
+check "--keep deletes a backup whose data file is gone too" '[ ! -e "$keepdir/spool-volumes-20251231T000000Z.tar.gz" ]'
+check "--keep touches no file it did not write" 'for other in notes.txt spool-data-old.tar.gz spool-data-20260101T000000Z.tar.gz.bak spool-keys-2026T1.tar; do [ -e "$keepdir/$other" ] || exit 1; done'
+check "what --keep deletes goes to stderr, never stdout" 'grep -q "deleted the backup of 20260101T000000Z" "$work/err" && ! grep -q 2026010 "$work/stdout"'
+sleep 1 # a backup a second later, so its timestamp is its own
+bash scripts/spool-backup.sh --data-dir "$dst" --out "$keepdir" --no-volumes >/dev/null 2>&1
+check "without --keep nothing is deleted" '[ $? -eq 0 ] && [ "$(ls "$keepdir" | grep -c "^spool-data-[0-9]\{8\}T[0-9]\{6\}Z\.tar\.gz$")" = 4 ]'
+
+# a clock set back leaves a backup dated after the new one; the new one stays
+futuredir=$work/out-future
+mkdir "$futuredir"
+: >"$futuredir/spool-data-20991231T000000Z.tar.gz"
+bash scripts/spool-backup.sh --data-dir "$dst" --out "$futuredir" --no-volumes --keep 1 >"$work/stdout" 2>"$work/err"
+check "--keep never deletes the backup it just wrote" '[ $? -eq 0 ] && [ -f "$(sed -n 1p "$work/stdout")" ] && [ -f "$futuredir/spool-data-20991231T000000Z.tar.gz" ]'
+
 # The runbook runs restore with sudo while the hub runs as its own user, so
 # what root restores must stay readable by the data directory's owner.
 if sudo -n true 2>/dev/null; then

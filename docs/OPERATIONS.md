@@ -719,12 +719,23 @@ volumes hold installed toolchains. A nightly
 line for root's crontab, with the hub as a system unit named `spool`:
 
 ```cron
-15 3 * * *  systemctl stop spool && /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool; systemctl start spool
+15 3 * * *  systemctl stop spool && /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool --keep 7; systemctl start spool
 ```
 
 The `;` before `start` restarts the hub even when the backup fails. Move the
-keys file off the host. Prune old backups yourself, data and volumes files
-both. The script deletes nothing.
+keys file off the host.
+
+`--keep 7` deletes all but the newest seven backups in `--out` once the new
+one is written (#1600). Pick the count your disk holds: each backup takes
+about the data directory plus the workstation volumes, compressed, and
+`spool upgrade` refuses to start when `/var/backups/spool` lacks room for
+its own copy of the data directory. A backup there is the data, keys and volumes files
+that share a timestamp, and each goes whole. A failed run deletes nothing,
+and no file the script didn't name is touched. Each `spool upgrade` also
+leaves its backup in `/var/backups/spool`, under the same names, so the
+nightly run counts it and in time deletes it like the others. Copy one off
+the host first if you want it kept. Without `--keep`, the script deletes
+nothing.
 
 A hub with only bare loops, or no docker on the host, passes `--no-volumes`.
 A bare loop's sessions live under the hub user's `~/.claude/projects/`, which

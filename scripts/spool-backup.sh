@@ -2,13 +2,15 @@
 # Backs up a stopped hub: its data directory and every docker workstation
 # volume, as three files (#708, #948).
 #
-#   bash scripts/spool-backup.sh [--data-dir DIR] [--out DIR]
+#   bash scripts/spool-backup.sh [--data-dir DIR] [--out DIR] [--keep N]
 #                                [--image IMAGE] [--no-volumes]
 #
 # spool-data-<ts>.tar.gz     the data directory without its two credentials.
 # spool-volumes-<ts>.tar.gz  every spool-ws-* volume, and a manifest naming
 #                            each volume's loop (none with --no-volumes).
 # spool-keys-<ts>.tar        hub.key and operator-token.
+# --keep N                   once this backup is written, delete all but the
+#                            newest N in --out, the new one among them (#1600).
 #
 # Keep the keys file apart from the data file (README, ADR-0046): a copy of
 # spool.db holds its secrets sealed under hub.key, so the pair together is as
@@ -29,8 +31,9 @@ data_dir=${SPOOL_DATA_DIR:-$HOME/.spool}
 out=.
 image=spool-workstation
 volumes=1
+keep=
 
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { printf 'spool-backup: %s\n' "$1" >&2; exit 1; }
 
 # volume_label VOLUME KEY is the label's value, or nothing when the volume
@@ -48,11 +51,16 @@ while [ $# -gt 0 ]; do
 	--out) out=${2:?}; shift 2 ;;
 	--image) image=${2:?}; shift 2 ;;
 	--no-volumes) volumes=0; shift ;;
+	--keep) keep=${2:?}; shift 2 ;;
 	-h | --help) usage ;;
 	*) printf 'spool-backup: unknown argument %s\n' "$1" >&2; usage ;;
 	esac
 done
 
+case $keep in
+"") ;;
+0* | *[!0-9]*) die "--keep takes a count of backups, 1 or more (got $keep)" ;;
+esac
 [ -f "$data_dir/spool.db" ] || die "no spool.db in $data_dir — is --data-dir right?"
 [ -d "$out" ] || die "--out $out is not a directory"
 data_dir=$(cd "$data_dir" && pwd)
@@ -81,6 +89,8 @@ pids=$(holders "$data_dir/spool.db")
 
 umask 077
 ts=$(date -u +%Y%m%dT%H%M%SZ)
+# the shape of ts, for --keep to know this script's files by
+stamp='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
 stage=$(mktemp -d "$out/.spool-backup.XXXXXX")
 restart=()
 cleanup() {
@@ -191,6 +201,34 @@ if [ ${#keys[@]} -gt 0 ]; then
 fi
 [ -f "$data_dir/hub.key" ] ||
 	printf 'spool-backup: warning: %s has no hub.key; a sealed spool.db cannot be opened without the one it was sealed under\n' "$data_dir" >&2
+
+
+# --keep N: once this backup is written, delete every older backup in --out
+# beyond the newest N, by its timestamp (#1600). A backup is the data, keys
+# and volumes files that share one, any of them missing, as a --no-volumes
+# run's or an upgrade's are. Only names this script writes are read, so no
+# other file in --out is touched, and the one just written always stays.
+# What is deleted goes to stderr: the upgrade reads this script's stdout for
+# the files it wrote.
+if [ -n "$keep" ]; then
+	stamps=
+	for f in "$out"/spool-data-*.tar.gz "$out"/spool-volumes-*.tar.gz "$out"/spool-keys-*.tar; do
+		[ -f "$f" ] || continue
+		case ${f##*/} in
+		spool-data-$stamp.tar.gz | spool-volumes-$stamp.tar.gz | spool-keys-$stamp.tar) ;;
+		*) continue ;;
+		esac
+		stamp_of=${f##*/}
+		stamp_of=${stamp_of#spool-*-}
+		stamps="$stamps${stamp_of%%.*}
+"
+	done
+	printf '%s' "$stamps" | sort -ru | sed "1,${keep}d" | while read -r old; do
+		[ "$old" != "$ts" ] || continue
+		rm -f "$out/spool-data-$old.tar.gz" "$out/spool-volumes-$old.tar.gz" "$out/spool-keys-$old.tar"
+		printf 'spool-backup: deleted the backup of %s (--keep %s)\n' "$old" "$keep" >&2
+	done
+fi
 
 printf '%s\n' "$data_out"
 [ -z "$volumes_out" ] || printf '%s\n' "$volumes_out"
