@@ -133,3 +133,58 @@ func TestDismissRefusesWhatItCannotResolve(t *testing.T) {
 		}
 	}
 }
+
+// A resend that fails stands for the send it resent: the loop's next note
+// names only the resend, so dismissing it is the loop dealing with the
+// words. The first failure goes with it, as dismissed by the loop. Left
+// open, nothing would ever name it to the loop again, and it would go on
+// alerting the owner after every acknowledgement (#1586).
+func TestDismissingAFailedResendDismissesWhatItResent(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 15860, First: "Operator", Username: "operator"}
+	workspace := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the build is stuck"}`+"\n"+
+		`!send {"destination":"channel:fleet","text":"@beta the build is stuck (again)","resends":"$ref"}`+"\n"+
+		`!send {"destination":"channel:fleet","dismiss":"$ref"}`+"\n"+
+		"!echo\n")
+	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
+
+	tg.failNextSends(-1)
+	hub.message("alpha", "say it")
+	first := hub.waitUndelivered(1, 60*time.Second)[0]
+	hub.waitState("alpha", "asleep", 60*time.Second)
+
+	// The resend, into the same outage.
+	hub.message("alpha", "anything new")
+	var resend undeliveredRow
+	for _, row := range hub.waitUndelivered(2, 60*time.Second) {
+		if row.ID != first.ID {
+			resend = row
+		}
+	}
+	if !strings.Contains(resend.Text, "(again)") {
+		t.Fatalf("the second failure is not the resend: %s", dump(resend))
+	}
+	hub.waitState("alpha", "asleep", 60*time.Second)
+
+	// This turn's note names the resend alone, and the loop dismisses it.
+	hub.message("alpha", "and now")
+	if got := hub.waitUndelivered(0, 60*time.Second); len(got) != 0 {
+		t.Fatalf("dismissing the resend left a failure behind: %s", dump(got))
+	}
+	if count := hub.loop("alpha").Undelivered; count != 0 {
+		t.Fatalf("the badge still counts %d after the loop dismissed the resend", count)
+	}
+	byID := map[int64]activityMessage{}
+	for _, message := range hub.activity() {
+		byID[message.ID] = message
+	}
+	for _, id := range []int64{first.ID, resend.ID} {
+		if got := byID[id].SendResolution; got != "dismissed_by_loop" {
+			t.Errorf("message %d resolved as %q, want dismissed_by_loop", id, got)
+		}
+		if byID[id].SendResentAs != 0 {
+			t.Errorf("message %d names %d as its resend, though nothing arrived", id, byID[id].SendResentAs)
+		}
+	}
+}

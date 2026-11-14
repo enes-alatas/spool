@@ -334,7 +334,7 @@ func (messages *settleMessages) ResolveSend(ctx context.Context, _, _ int64, _ s
 	return false, ctx.Err()
 }
 
-func (messages *settleMessages) ResolveResends(ctx context.Context, _, _ int64) (int, error) {
+func (messages *settleMessages) ResolveResends(ctx context.Context, _, _ int64, _ string) (int, error) {
 	return 0, ctx.Err()
 }
 
