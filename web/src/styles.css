@@ -4708,6 +4708,19 @@ textarea {
   color: var(--text-muted);
   white-space: nowrap;
 }
+/* The channel a room carries, and the channels an unbound one could, link
+   to their pages, where the chat is bound (ADR-0070): dotted as the
+   panel's other links are. */
+.side-panel a.room-carries,
+.side-panel .chans-note a {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.side-panel a.room-carries:hover,
+.side-panel .chans-note a:hover {
+  color: var(--text);
+}
 .side-panel .room-forget {
   margin-left: auto;
 }
@@ -4715,16 +4728,6 @@ textarea {
   font-family: var(--mono);
   font-size: var(--fs-meta);
   color: var(--text-muted);
-}
-.side-panel .chan-actions {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-top: 4px;
-}
-.side-panel .chan-actions .panel-select {
-  flex: 1;
-  min-width: 0;
 }
 /* What the loop's session reached through MCP, under the runtime row (#519):
    a server per line, its status in the state colours, and the session the
@@ -5846,12 +5849,9 @@ textarea {
   background: var(--active-wash);
 }
 
-/* Adding a loop's bot to a Telegram group (#1319): the button that opens
-   the steps, and the live wait for the group in their dialog. The dot
-   breathes in the attention colour while the hub has heard of nothing. */
-.surface-rooms .group-add {
-  margin: 2px 0 10px;
-}
+/* The live wait for a chat in a channel's add dialog (#1319, #1509). The
+   dot breathes in the attention colour while the hub has heard of
+   nothing. */
 .group-wait {
   display: flex;
   flex-wrap: wrap;
@@ -5881,16 +5881,14 @@ textarea {
 }
 /* An unbound group is what asks for the operator: it sits in a warning
    wash, not only in the warning colour. */
-.side-panel .chan-room:has(.room-name.unbound),
-.group-dialog .chan-room:has(.room-name.unbound) {
+.side-panel .chan-room:has(.room-name.unbound) {
   padding: 8px 10px;
   border: 1px solid var(--active-line);
   border-radius: 6px;
   background: var(--active-wash);
 }
-.group-dialog .chan-actions {
-  display: flex;
-  gap: 6px;
+/* where to bind it, inside the wash so it reads as this room's (#1510) */
+.side-panel .chan-room .chans-note {
   margin-top: 6px;
 }
 /* A channel's Telegram group or Slack channel, between its title and its
