@@ -10,6 +10,7 @@ func TestContextLimit(t *testing.T) {
 		{"claude-opus-5", 1_000_000},
 		{"claude-opus-5-5", 1_000_000},
 		{"claude-fable-5-1", 1_000_000},
+		{"claude-fable-5-2", 1_000_000}, // the operator's figure, listed in its own right
 		{"claude-sonnet-5", 1_000_000},
 		{"claude-haiku-4-5", 200_000},
 		{"claude-haiku-4-5-20251001", 200_000}, // dated snapshot of a known id
@@ -17,7 +18,7 @@ func TestContextLimit(t *testing.T) {
 		{"CLAUDE-OPUS-5", 1_000_000},           // case is the CLI's business
 		{"opus", 1_000_000},                    // alias, matched exactly
 		{"haiku", 1_000_000},                   // alias resolves to claude-haiku-5-5 on 2.1.322
-		{"fable", 0},                           // alias resolves to claude-fable-5-2, window unstated
+		{"fable", 1_000_000},                   // alias resolves to claude-fable-5-2 on 2.1.322
 		{"", 0},                                // "whatever the CLI resolves to"
 		{"fakeclaude", 0},                      // unknown: say so, don't guess
 		{"some-other-vendor-model", 0},
