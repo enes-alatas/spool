@@ -1003,6 +1003,10 @@ export interface Settings {
   // or dismissal resolving it, before it opens a send_failed problem
   // (#1144), 0 to 1440; 0 turns that symptom off, and 2 is the default.
   health_send_grace_minutes: number
+  // Minutes acknowledging a loop's send_failed alert silences the failures
+  // it covered (#1588), 0 to 1440; 60 by default. Unlike the others, 0 is
+  // not off: it holds until each is delivered, resent or dismissed.
+  health_send_ack_minutes: number
 }
 
 // The session's user (#582, #675). A session made with the operator token
@@ -1714,12 +1718,14 @@ export const api = {
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsages>('/api/plan-usage'),
   // The health check's settings in one write, as the rotation pair goes; a
-  // field left out stays as it is, and 0 is off (ADR-0053).
+  // field left out stays as it is, and 0 is off (ADR-0053), but for
+  // health_send_ack_minutes, whose 0 is until resolved.
   setHealthCheck: (body: {
     health_error_turns?: number
     health_turn_minutes?: number
     health_wake_grace_minutes?: number
     health_send_grace_minutes?: number
+    health_send_ack_minutes?: number
   }) => req<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
   setPlanCaps: (fiveHour: number, sevenDay: number) =>

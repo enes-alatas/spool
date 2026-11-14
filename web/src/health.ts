@@ -168,6 +168,9 @@ export const ERROR_TURN_STOPS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 50, 100]
 export const TURN_MINUTE_STOPS = [0, 5, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1440]
 export const WAKE_MINUTE_STOPS = [0, 1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 1440]
 export const SEND_MINUTE_STOPS = [0, 1, 2, 3, 5, 10, 15, 30, 60, 120, 240, 1440]
+// How long acknowledging a failed send keeps it quiet (#1596): 0 first,
+// which is until resolved, not off.
+export const SEND_ACK_MINUTE_STOPS = [0, 5, 15, 30, 60, 120, 240, 480, 720, 1440]
 
 // Where a value sits on its slider: the last step at or below it, so a
 // typed value between two steps puts the thumb on the lower one.
@@ -197,9 +200,10 @@ export function minutesNote(minutes: number): string {
   return rest ? `${hours}h ${rest}m` : `${hours}h`
 }
 
-// A step's label under the slider: "off", "15m", "2h", "1d", or a count.
-export function stopLabel(stop: number, minutes: boolean): string {
-  if (stop === 0) return 'off'
+// A step's label under the slider: "off" (or what the setting's 0 is
+// called), "15m", "2h", "1d", or a count.
+export function stopLabel(stop: number, minutes: boolean, zero = 'off'): string {
+  if (stop === 0) return zero
   if (!minutes) return String(stop)
   return minutesNote(stop) || `${stop}m`
 }

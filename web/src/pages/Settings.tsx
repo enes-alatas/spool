@@ -20,6 +20,7 @@ import {
   TURN_MINUTE_STOPS,
   WAKE_MINUTE_STOPS,
   SEND_MINUTE_STOPS,
+  SEND_ACK_MINUTE_STOPS,
   errorTurnsField,
   errorTurnsValue,
   minutesField,
@@ -267,7 +268,11 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
 // Settings shows and reads each one: the slider's steps and the ones it
 // labels, and the number field's largest value.
 type HealthKey =
-  'health_error_turns' | 'health_turn_minutes' | 'health_wake_grace_minutes' | 'health_send_grace_minutes'
+  | 'health_error_turns'
+  | 'health_turn_minutes'
+  | 'health_wake_grace_minutes'
+  | 'health_send_grace_minutes'
+  | 'health_send_ack_minutes'
 
 const HEALTH_FIELDS: {
   key: HealthKey
@@ -281,6 +286,9 @@ const HEALTH_FIELDS: {
   ticks: number[]
   field: (stored: number) => string
   value: (field: string) => number | undefined
+  // What 0 is called when it is a value and not off (#1596); absent, 0 is
+  // off.
+  zero?: string
 }[] = [
   {
     key: 'health_error_turns',
@@ -334,12 +342,30 @@ const HEALTH_FIELDS: {
     field: minutesField,
     value: minutesValue,
   },
+  {
+    key: 'health_send_ack_minutes',
+    id: 'health-send-ack-minutes',
+    label: 'Quiet after acknowledging',
+    unit: 'min',
+    hint: 'Acknowledging a failed send quiets it this long.',
+    minutes: true,
+    max: 1440,
+    stops: SEND_ACK_MINUTE_STOPS,
+    ticks: [0, 60, 240, 1440],
+    // 0 is a value here, so the number shows it as one rather than leaving
+    // the field empty as an off does.
+    field: String,
+    value: minutesValue,
+    zero: 'until resolved',
+  },
 ]
 
 // The health check's settings (ADR-0053): how many errored turns in a row
 // open a problem with a loop, how many minutes one turn runs before it does
 // (#1142), how many a wake the loop owes waits for a turn (#1143), and how
-// many a message it sent stays undelivered (#1144). A workstation down past
+// many a message it sent stays undelivered (#1144), and how many
+// acknowledging one keeps it quiet (#1596), whose 0 is until resolved, not
+// off. A workstation down past
 // its grace period opens one whatever these say.
 //
 // Each is a line saying its value and what it watches; Edit opens it in
@@ -347,7 +373,7 @@ const HEALTH_FIELDS: {
 // exact one (#1146): dragging snaps to steps, ←/→ on the slider move one
 // step, and ↑/↓ in the number move it by one. One line is open at a time,
 // and a closed line shows its draft, so Save sends every edit made.
-function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
+export function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   // As the other sections: the stored values are the truth, a draft overlays.
   // Each field has its own, so editing one leaves the others on the stored value.
@@ -404,8 +430,14 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
         {HEALTH_FIELDS.map((f) => {
           const shown = drafts[f.key] ?? (settings ? f.field(settings[f.key]) : null)
           const value = shown === null ? undefined : f.value(shown)
-          const off = value === 0
-          const note = f.minutes && value !== undefined ? minutesNote(value) : ''
+          // 0 is off, but for a setting whose 0 is a value of its own.
+          const zero = f.zero ?? 'off'
+          const off = value === 0 && !f.zero
+          // Such a 0 reads as a number, its name the small note beside it,
+          // as an hour is beside 60.
+          const note =
+            value === 0 && f.zero ? f.zero : f.minutes && value !== undefined ? minutesNote(value) : ''
+          const placeholder = f.zero ? '0' : 'off'
           const last = f.stops.length - 1
           if (open !== f.key)
             return (
@@ -445,7 +477,7 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
                   // opened by Edit, so the number takes the keys at once
                   autoFocus
                   inputMode="numeric"
-                  placeholder="off"
+                  placeholder={placeholder}
                   value={shown ?? ''}
                   disabled={shown === null || busy}
                   aria-invalid={value === undefined && shown !== null}
@@ -456,8 +488,9 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
                     e.preventDefault()
                     draft(f.key, stepField(shown ?? '', e.key === 'ArrowUp' ? 1 : -1, f.max))
                   }}
-                  // as wide as what it holds, so the unit sits beside the number
-                  style={{ width: `${Math.max((shown || 'off').length, 2) + 1}ch` }}
+                  // as wide as what it holds and half a character either side,
+                  // the number centred, so the box sits close around it
+                  style={{ width: `${(shown || placeholder).length + 1}ch` }}
                 />
                 {!off && <span className="health-limit-unit">{f.unit}</span>}
                 {note && <span className="health-limit-note">{note}</span>}
@@ -470,14 +503,20 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
                 value={stopIndex(f.stops, value ?? 0)}
                 disabled={shown === null || busy}
                 aria-label={`${f.label}, in steps`}
-                aria-valuetext={value ? `${value} ${f.unit}` : 'off'}
+                aria-valuetext={value ? `${value} ${f.unit}` : zero}
                 style={{ '--lit': `${(stopIndex(f.stops, value ?? 0) / last) * 100}%` } as CSSProperties}
                 onChange={(e) => draft(f.key, f.field(f.stops[Number(e.target.value)]))}
               />
               <div className="health-limit-ticks" aria-hidden="true">
                 {f.ticks.map((tick) => (
-                  <span key={tick} style={{ left: `${(stopIndex(f.stops, tick) / last) * 100}%` }}>
-                    {stopLabel(tick, f.minutes)}
+                  <span
+                    key={tick}
+                    // a 0 with a long name starts at the track's start rather
+                    // than centred on it, where half of it would be cut off
+                    className={tick === 0 && f.zero ? 'from-start' : undefined}
+                    style={{ left: `${(stopIndex(f.stops, tick) / last) * 100}%` }}
+                  >
+                    {stopLabel(tick, f.minutes, zero)}
                   </span>
                 ))}
               </div>

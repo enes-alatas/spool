@@ -16,6 +16,7 @@ import {
   stopIndex,
   stopLabel,
   SEND_MINUTE_STOPS,
+  SEND_ACK_MINUTE_STOPS,
   TURN_MINUTE_STOPS,
   WAKE_MINUTE_STOPS,
 } from './health'
@@ -191,7 +192,13 @@ describe('the health limit controls', () => {
   })
 
   it('every step list starts at off and climbs', () => {
-    for (const stops of [ERROR_TURN_STOPS, TURN_MINUTE_STOPS, WAKE_MINUTE_STOPS, SEND_MINUTE_STOPS]) {
+    for (const stops of [
+      ERROR_TURN_STOPS,
+      TURN_MINUTE_STOPS,
+      WAKE_MINUTE_STOPS,
+      SEND_MINUTE_STOPS,
+      SEND_ACK_MINUTE_STOPS,
+    ]) {
       expect(stops[0]).toBe(0)
       expect([...stops].sort((a, b) => a - b)).toEqual(stops)
     }
@@ -218,5 +225,7 @@ describe('the health limit controls', () => {
     expect(stopLabel(15, true)).toBe('15m')
     expect(stopLabel(240, true)).toBe('4h')
     expect(stopLabel(20, false)).toBe('20')
+    // a setting whose 0 is a value, not off (#1596)
+    expect(stopLabel(0, true, 'until resolved')).toBe('until resolved')
   })
 })
