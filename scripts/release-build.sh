@@ -74,6 +74,10 @@ for platform in $platforms; do
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch "$go" build -trimpath \
 		-o "$stage/$name/spool-github" ./cmd/spool-github
 	cp LICENSE NOTICE README.md "$stage/$name/"
+	# the scripts spool upgrade installs, out of the top level that the
+	# README's install copies spool* from (#1583)
+	install -d "$stage/$name/scripts"
+	install -m 0755 scripts/spool-backup.sh scripts/spool-restore.sh "$stage/$name/scripts/"
 	tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime="@$epoch" -cf - "$name" | gzip -n -9 > "$out/$name.tar.gz"
 done
