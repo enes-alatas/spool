@@ -5893,6 +5893,175 @@ textarea {
   gap: 6px;
   margin-top: 6px;
 }
+/* A channel's Telegram group or Slack channel, between its title and its
+   conversation (ADR-0070, #1509): the chat's surface, name and id on one
+   line, and under it each member loop with its status in the state
+   colours and what gets it carrying. A pasted chat no bot is in yet is
+   named in the attention colour, with a warning under it. */
+.chan-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+  margin: -4px 0 22px;
+}
+.chan-chat-none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+.chan-chat-withheld {
+  flex-basis: 100%;
+}
+.chan-chat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.chan-chat-surface {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+.chan-chat-title {
+  overflow-wrap: anywhere;
+}
+.chan-chat-title.unseen {
+  color: var(--active);
+}
+.chan-chat-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+.chan-chat-head .btn {
+  margin-left: auto;
+}
+.chan-chat-warn {
+  padding: 8px 10px;
+  border: 1px solid var(--active-line);
+  border-radius: 6px;
+  background: var(--active-wash);
+  font-size: var(--fs-small);
+}
+.chat-members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--hairline);
+}
+.chat-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 2.5rem;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--fs-small);
+}
+.chat-member-loop {
+  min-width: 8.5rem;
+  font-family: var(--mono);
+}
+.chat-member-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-member-status::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chat-member-status.carrying {
+  color: var(--ready);
+}
+.chat-member-status.not_in_chat,
+.chat-member-status.unbound {
+  color: var(--active);
+}
+.chat-member-status.no_bot {
+  color: var(--danger);
+}
+.chat-member-act {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.chat-member-hint {
+  color: var(--text-muted);
+}
+.chat-member-act .btn svg,
+.chat-dialog .btn svg {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+/* The add dialog: the first loop's pick and add link under step one, the
+   chats its members' bots found, each in the warning wash an unbound group
+   has, and the pasted id as the fallback. */
+.chat-dialog-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.chat-dialog-pick .panel-select {
+  flex: 1;
+  min-width: 0;
+}
+.chat-found {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.chat-found li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--active-line);
+  border-radius: 6px;
+  background: var(--active-wash);
+}
+.chat-found-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chat-found-by {
+  display: block;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+.chat-paste label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+.chat-paste-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.chat-paste-row input {
+  flex: 1;
+  min-width: 0;
+}
 
 /* A shared connection's loops, chosen on the Connections page (#1321): the
    chips of Channels, ending the row; and in the create form, the pick-list

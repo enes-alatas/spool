@@ -520,6 +520,54 @@ export interface Channel {
   team: string
 }
 
+// One channel as its page reads it (ADR-0070): the list's view, its chat
+// on a surface, and the surfaces a chat may be added on. Mirrors
+// channelDetail in internal/httpapi/channels.go.
+export interface ChannelDetail extends Channel {
+  // null while the channel has none.
+  chat: ChannelChat | null
+  // The surfaces every member has a bot on, sorted: the adds the page offers.
+  surfaces: string[]
+}
+
+// A channel's Telegram group or Slack channel, bound once for all its
+// members (ADR-0070). Mirrors chatView in internal/httpapi/channel_chat.go.
+export interface ChannelChat {
+  surface: string
+  chat_id: string
+  // The chat's name as the surface last reported it; "" until a member's
+  // bot has been in it.
+  title: string
+  bound_at: number
+  // When a member's bot was first in the chat; null for a pasted id none
+  // has been in yet, which the page shows as not seen yet.
+  seen_at: number | null
+  // Every member loop, by name.
+  members: ChatMember[]
+}
+
+// A member loop's place in its channel's chat. `status` is `carrying`,
+// `not_in_chat`, `no_bot` or `unbound`; a status this build doesn't know
+// reads as not carrying. Mirrors chatMemberView.
+export interface ChatMember {
+  loop: string
+  status: string
+  // A not_in_chat member's Telegram startgroup link; absent on Slack and
+  // for a bot whose name the hub doesn't know.
+  add_link?: string
+}
+
+// A chat a member's bot is in that is no channel's chat yet, for the
+// operator to confirm (ADR-0070). Mirrors foundChatView.
+export interface FoundChat {
+  surface: string
+  chat_id: string
+  title: string
+  first_seen_at: number
+  // The member loops whose bots are in it, by name, sorted.
+  found_by: string[]
+}
+
 // A chat on a surface that the loop's bot is in: for now a Telegram group
 // (#514). It carries one of the loop's channels, or none until the operator
 // binds it. Mirrors roomView in internal/httpapi/rooms.go.
@@ -1770,6 +1818,19 @@ export const api = {
   patchChannel: (name: string, body: { description?: string; team?: string }) =>
     req<Channel>(`/api/channels/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteChannel: (name: string) => req<void>(`/api/channels/${name}`, { method: 'DELETE' }),
+  // One channel with its chat and the surfaces a chat may be added on.
+  channel: (name: string) => req<ChannelDetail>(`/api/channels/${name}`),
+  // The chats its members' bots are in that are no channel's chat yet.
+  foundChats: (name: string) => req<FoundChat[]>(`/api/channels/${name}/chats/found`),
+  // Binds a chat to the channel. Refused 409 `members_not_on_surface`,
+  // `channel_has_chat` or `room_in_use`, or 400 `room_id_invalid`.
+  putChat: (name: string, body: { surface: string; chat_id: string }) =>
+    req<ChannelChat>(`/api/channels/${name}/chat`, { method: 'PUT', body: JSON.stringify(body) }),
+  // Unbinds the chat: every member stops carrying it there.
+  deleteChat: (name: string) => req<void>(`/api/channels/${name}/chat`, { method: 'DELETE' }),
+  // Binds an unbound member's room for the chat.
+  bindChatMember: (name: string, loop: string) =>
+    req<void>(`/api/channels/${name}/chat/members/${loop}`, { method: 'PUT' }),
   // Both idempotent.
   addChannelLoop: (channel: string, loop: string) =>
     req<void>(`/api/channels/${channel}/loops/${loop}`, { method: 'PUT' }),
