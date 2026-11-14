@@ -138,12 +138,17 @@ check "backup refuses without docker unless --no-volumes" '[ $? -ne 0 ] && grep 
 bash scripts/spool-backup.sh --data-dir "$src" --out "$src/files" >/dev/null 2>&1
 check "backup refuses an --out inside the data directory" '[ $? -ne 0 ]'
 
+env -u HOME bash scripts/spool-backup.sh --out "$out" >/dev/null 2>"$work/err"
+check "with no --data-dir and no HOME, backup refuses and says so" '[ $? -ne 0 ] && grep -q "no HOME" "$work/err" && [ -z "$(ls -A "$out")" ]'
+env -u HOME bash scripts/spool-restore.sh --data "$src/spool.db" >/dev/null 2>"$work/err"
+check "with no --data-dir and no HOME, restore refuses and says so" '[ $? -ne 0 ] && grep -q "no HOME" "$work/err"'
+
 STUB_RUN_FAIL=1 bash scripts/spool-backup.sh --data-dir "$src" --out "$out" >/dev/null 2>"$work/err"
 check "a backup cut short leaves no half-written file in --out (#1089)" '[ $? -ne 0 ] && [ -z "$(ls -A "$out")" ] && grep -qx "start spool-ws-a" "$STUB/log"'
 
 : >"$STUB/log"
-bash scripts/spool-backup.sh --data-dir "$src" --out "$out" >"$work/stdout" 2>"$work/err"
-check "backup succeeds on a stopped hub" '[ $? -eq 0 ]'
+env -u HOME bash scripts/spool-backup.sh --data-dir "$src" --out "$out" >"$work/stdout" 2>"$work/err"
+check "backup succeeds on a stopped hub, with no HOME as under a system unit (#1601)" '[ $? -eq 0 ]'
 data=$(ls "$out"/spool-data-*.tar.gz)
 vols=$(ls "$out"/spool-volumes-*.tar.gz)
 keys=$(ls "$out"/spool-keys-*.tar)
@@ -163,8 +168,8 @@ check "the volumes file holds each volume as a directory" '[ "$(tar -xzOf "$vols
 mv "$STUB/volumes" "$work/old-volumes"
 mkdir "$STUB/volumes"
 dst=$work/dst
-bash scripts/spool-restore.sh --data "$data" --volumes "$vols" --keys "$keys" --data-dir "$dst" >/dev/null 2>"$work/err"
-check "restore succeeds onto a fresh host" '[ $? -eq 0 ]'
+env -u HOME bash scripts/spool-restore.sh --data "$data" --volumes "$vols" --keys "$keys" --data-dir "$dst" >/dev/null 2>"$work/err"
+check "restore succeeds onto a fresh host, with no HOME (#1601)" '[ $? -eq 0 ]'
 check "the data directory round-trips" 'diff -r "$src" "$dst" >"$work/diff"; [ "$(sort "$work/diff" | tr "\n" " ")" = "Only in $src: cloud-sign-in Only in $src: hub.key.123 " ]'
 check "a symlink keeps its target" '[ "$(readlink "$dst/link")" = ./files/0011223344556677-a.txt ]'
 check "the restored directory is 0700 and its keys 0600" '[ "$(stat -c %a "$dst")" = 700 ] && [ "$(stat -c %a "$dst/hub.key" "$dst/operator-token" | sort -u)" = 600 ]'

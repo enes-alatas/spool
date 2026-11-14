@@ -23,7 +23,8 @@
 # operator-token is minted afresh at the next start.
 set -euo pipefail
 
-data_dir=${SPOOL_DATA_DIR:-$HOME/.spool}
+# A system unit sets no HOME (#1601), so the default needs one.
+data_dir=${SPOOL_DATA_DIR:-${HOME:+$HOME/.spool}}
 archive=
 volumes_file=
 keys=
@@ -47,6 +48,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$archive" ] || usage
+[ -n "$data_dir" ] || die "no --data-dir, and no HOME to default it from"
 [ -f "$archive" ] || die "no such file: $archive"
 [ -z "$volumes_file" ] || [ -f "$volumes_file" ] || die "no such file: $volumes_file"
 [ -z "$keys" ] || [ -f "$keys" ] || die "no such file: $keys"

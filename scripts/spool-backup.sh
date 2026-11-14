@@ -27,7 +27,8 @@
 # root, with ownership kept numeric.
 set -euo pipefail
 
-data_dir=${SPOOL_DATA_DIR:-$HOME/.spool}
+# A system unit sets no HOME (#1601), so the default needs one.
+data_dir=${SPOOL_DATA_DIR:-${HOME:+$HOME/.spool}}
 out=.
 image=spool-workstation
 volumes=1
@@ -61,6 +62,7 @@ case $keep in
 "") ;;
 0* | *[!0-9]*) die "--keep takes a count of backups, 1 or more (got $keep)" ;;
 esac
+[ -n "$data_dir" ] || die "no --data-dir, and no HOME to default it from"
 [ -f "$data_dir/spool.db" ] || die "no spool.db in $data_dir — is --data-dir right?"
 [ -d "$out" ] || die "--out $out is not a directory"
 data_dir=$(cd "$data_dir" && pwd)
