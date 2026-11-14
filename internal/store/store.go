@@ -361,6 +361,12 @@ const SettingHealthWakeGraceMinutes = "health_wake_grace_minutes"
 // loop.DefaultHealthSendGraceMinutes.
 const SettingHealthSendGraceMinutes = "health_send_grace_minutes"
 
+// SettingHealthSendAckMinutes is how many minutes the operator's
+// acknowledgement of a send_failed alert silences the failures it covered
+// (ADR-0053, #1588), an integer; 0 silences them until each is resolved.
+// Unset means loop.DefaultHealthSendAckMinutes.
+const SettingHealthSendAckMinutes = "health_send_ack_minutes"
+
 // SettingLangfuse holds the operator's Langfuse settings (ADR-0064), a
 // Langfuse as JSON. It carries two keys, so the whole value is sealed
 // under the hub key (ADR-0046). Write-only through the API as to its
@@ -786,6 +792,11 @@ type Message struct {
 	// and SendLeftByLoop, which is what the count comes to.
 	SendFailureToldAt   int64 `json:"-"`
 	SendFailureTellings int   `json:"-"`
+	// SendAckUntil is until when the operator's acknowledgement of the
+	// loop's send_failed alert silences this failure, in Unix ms (#1588):
+	// math.MaxInt64 for until it is resolved, 0 while no acknowledgement
+	// covers it. Engine bookkeeping like the two above.
+	SendAckUntil int64 `json:"-"`
 	// SendLeftByLoop says the loop was told of this failure and reminded
 	// of it as often as it will be, and neither resent nor dismissed it: it
 	// left it for the operator (#561). Only an unresolved failure is left;
@@ -1428,6 +1439,10 @@ type MessageStore interface {
 	// is UnresolvedSendFailures' own scope, so the badge and the list it
 	// opens cannot disagree about what they are counting (#263, #281).
 	Undelivered(ctx context.Context, loopID string) ([]*Message, error)
+	// AcknowledgeSendFailures silences the loop's failures unresolved now
+	// until the given Unix ms, math.MaxInt64 for until each is resolved
+	// (#1588). A failure after it is not covered.
+	AcknowledgeSendFailures(ctx context.Context, loopID string, until int64) error
 	// ResolveSend marks a failure dealt with, at the given time, and
 	// reports whether there was one to mark. Called when a retry of the row
 	// gets through, and when the operator or the loop dismisses it; the row

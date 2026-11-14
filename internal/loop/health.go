@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -87,6 +88,23 @@ func HealthSendGraceMinutes(ctx context.Context, settings store.SettingsStore, l
 	return healthSetting(ctx, settings, log, store.SettingHealthSendGraceMinutes, DefaultHealthSendGraceMinutes, ValidHealthSendGraceMinutes)
 }
 
+// DefaultHealthSendAckMinutes is how many minutes an acknowledgement of
+// send_failed silences the failures unresolved when it was given, while
+// the setting is unset (#1588): long enough that "I know" is heard as
+// that, short enough that a failure nobody dealt with comes back the same
+// day.
+const DefaultHealthSendAckMinutes = 60
+
+// ValidHealthSendAckMinutes reports whether minutes is a usable silence: 1
+// to a day, or 0 for until each failure is resolved.
+func ValidHealthSendAckMinutes(minutes int) bool { return minutes >= 0 && minutes <= 24*60 }
+
+// HealthSendAckMinutes reads the send_failed acknowledgement's silence,
+// the default while unset or unusable.
+func HealthSendAckMinutes(ctx context.Context, settings store.SettingsStore, log *slog.Logger) int {
+	return healthSetting(ctx, settings, log, store.SettingHealthSendAckMinutes, DefaultHealthSendAckMinutes, ValidHealthSendAckMinutes)
+}
+
 // healthSetting reads the health check's setting key as a whole number,
 // fallback while it is unset or isn't one valid takes.
 func healthSetting(ctx context.Context, settings store.SettingsStore, log *slog.Logger, key string, fallback int, valid func(int) bool) int {
@@ -120,9 +138,11 @@ func (actor *Actor) Problems() []store.Problem {
 // Acknowledge clears the loop's open problem for symptom as the operator's
 // doing, and reports whether there was one. The symptom's watch starts over:
 // a workstation still down is a problem again after another grace period,
-// and a loop still failing after as many errored turns again. A missed wake
-// and a turn past its limit are acknowledged outside the actor, by
-// AcknowledgeMissedWake and AcknowledgeStuckTurn.
+// and a loop still failing after as many errored turns again. Undelivered
+// sends are the exception: those unresolved now are silenced for
+// health_send_ack_minutes (#1588). A missed wake and a turn past its limit
+// are acknowledged outside the actor, by AcknowledgeMissedWake and
+// AcknowledgeStuckTurn.
 func (actor *Actor) Acknowledge(symptom string) bool {
 	reply := make(chan bool, 1)
 	if !actor.send(cmd{kind: "acknowledge", symptom: symptom, cleared: reply}) {
@@ -138,10 +158,18 @@ func (actor *Actor) Acknowledge(symptom string) bool {
 
 func (actor *Actor) acknowledge(symptom string) bool {
 	if symptom == store.SymptomSendFailed {
-		// the failures still unresolved are owed a new grace from now, and
-		// a problem whose notice an outage held clears without a word
-		cleared := actor.clearProblemTelling(symptom, store.ClearedByOperator, !actor.sendHeld)
-		actor.sendWoken, actor.sendHeld, actor.sendAckAt = false, false, now()
+		// the failures still unresolved are silenced for the setting's
+		// minutes, or until each is resolved, and a problem whose notice an
+		// outage held clears without a word
+		until := int64(math.MaxInt64)
+		if minutes := HealthSendAckMinutes(context.Background(), actor.deps.Store.Settings(), actor.log()); minutes > 0 {
+			until = now() + (time.Duration(minutes) * time.Minute).Milliseconds()
+		}
+		if err := actor.deps.Store.Messages().AcknowledgeSendFailures(context.Background(), actor.loop.ID, until); err != nil {
+			actor.log().Error("acknowledge undelivered sends", "err", err)
+		}
+		cleared := actor.clearProblemNotice(surface.ProblemNotice{Symptom: symptom, QuietUntil: until}, store.ClearedByOperator, !actor.sendHeld)
+		actor.sendWoken, actor.sendHeld = false, false
 		actor.watchSends()
 		return cleared
 	}
@@ -498,7 +526,7 @@ func (actor *Actor) watchSends() {
 	if len(undelivered) == 0 {
 		actor.sendTimer.Stop()
 		actor.clearProblemTelling(store.SymptomSendFailed, store.ClearedByRecovery, !actor.sendHeld)
-		actor.sendWoken, actor.sendHeld, actor.sendAckAt = false, false, 0
+		actor.sendWoken, actor.sendHeld = false, false
 		return
 	}
 	minutes := HealthSendGraceMinutes(ctx, actor.deps.Store.Settings(), actor.log())
@@ -506,13 +534,35 @@ func (actor *Actor) watchSends() {
 		actor.sendTimer.Stop()
 		return
 	}
-	since := undelivered[0].SendFailedAt
+	// a failure is due once past the grace and past any acknowledgement's
+	// silence over it; the problem is dated from the earliest due one
+	grace := (time.Duration(minutes) * time.Minute).Milliseconds()
+	current := now()
+	since, next, allSilenced := int64(0), int64(math.MaxInt64), true
 	for _, message := range undelivered {
-		since = min(since, message.SendFailedAt)
+		due := max(message.SendFailedAt+grace, message.SendAckUntil)
+		allSilenced = allSilenced && message.SendAckUntil > current
+		if due > current {
+			next = min(next, due)
+		} else if since == 0 || message.SendFailedAt < since {
+			since = message.SendFailedAt
+		}
 	}
-	due := max(since, actor.sendAckAt) + (time.Duration(minutes) * time.Minute).Milliseconds()
-	if wait := due - now(); wait > 0 {
-		actor.sendTimer.Reset(time.Duration(wait) * time.Millisecond)
+	if since == 0 {
+		// a problem a later failure opened, now resolved, leaves only
+		// silenced ones: it clears without a word, since the owner did
+		// hear of these and "none left" would be untrue, and opens again
+		// when their silence ends. A failure merely in its grace keeps the
+		// problem as it is, as before #1588.
+		if allSilenced {
+			actor.clearProblemTelling(store.SymptomSendFailed, store.ClearedByRecovery, false)
+			actor.sendWoken, actor.sendHeld = false, false
+		}
+		if next == math.MaxInt64 {
+			actor.sendTimer.Stop()
+		} else {
+			actor.sendTimer.Reset(time.Duration(next-current) * time.Millisecond)
+		}
 		return
 	}
 	held := actor.deps.SendOutage != nil && actor.deps.SendOutage(actor.loop.ID)
@@ -600,6 +650,13 @@ func (actor *Actor) clearProblem(symptom, by string) bool {
 // clearProblemTelling is clearProblem, telling the owner only when tell is
 // true: a problem they were never told of clears without a word.
 func (actor *Actor) clearProblemTelling(symptom, by string, tell bool) bool {
+	return actor.clearProblemNotice(surface.ProblemNotice{Symptom: symptom}, by, tell)
+}
+
+// clearProblemNotice is clearProblemTelling for a notice that says more
+// than its symptom, as an acknowledged send_failed says how long it is quiet.
+func (actor *Actor) clearProblemNotice(notice surface.ProblemNotice, by string, tell bool) bool {
+	symptom := notice.Symptom
 	var open *store.Problem
 	for _, problem := range actor.Problems() {
 		if problem.Symptom == symptom {
@@ -619,7 +676,8 @@ func (actor *Actor) clearProblemTelling(symptom, by string, tell bool) bool {
 	}
 	actor.log().Info("problem cleared", "symptom", symptom, "by", by)
 	actor.storeSpoolEvent("problem_cleared", fmt.Sprintf(`{"symptom":%q,"by":%q}`, symptom, by))
-	actor.problemsChanged(surface.ProblemNotice{Symptom: symptom, Since: open.Since, ByOperator: by == store.ClearedByOperator}, tell)
+	notice.Since, notice.ByOperator = open.Since, by == store.ClearedByOperator
+	actor.problemsChanged(notice, tell)
 	return true
 }
 

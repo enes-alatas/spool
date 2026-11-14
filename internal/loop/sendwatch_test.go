@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -193,5 +194,113 @@ func TestAnOutageHoldsTheNoticeAndTheWake(t *testing.T) {
 		}
 		actor.watchSends()
 		noNotice(t, notices, "the held notice went out already")
+	}
+}
+
+// Acknowledging send_failed silences the failures unresolved then for the
+// setting's minutes, and the owner is told until when; a failure after the
+// acknowledgement alerts on the ordinary grace, a new actor over the same
+// store keeps the silence, and its end alerts again (#1588).
+func TestAnAcknowledgementSilencesItsFailuresForItsPeriod(t *testing.T) {
+	actor, st, lost, notices := sendWatchActor(t)
+	ctx := context.Background()
+	actor.watchSends()
+	nextNotice(t, notices)
+
+	before := now()
+	if !actor.acknowledge(store.SymptomSendFailed) {
+		t.Fatal("the open problem was not cleared")
+	}
+	cleared := nextNotice(t, notices)
+	quiet := time.Duration(DefaultHealthSendAckMinutes) * time.Minute
+	if !cleared.ByOperator || cleared.QuietUntil < before+quiet.Milliseconds() || cleared.QuietUntil > now()+quiet.Milliseconds() {
+		t.Fatalf("told %+v, want the operator's clearing quiet for %v", cleared, quiet)
+	}
+	actor.watchSends()
+	noNotice(t, notices, "the failure is acknowledged")
+
+	restarted := &Actor{deps: actor.deps, loop: actor.loop, state: StateBusy, sendTimer: time.NewTimer(time.Hour)}
+	restarted.sendTimer.Stop()
+	restarted.loadProblems()
+	restarted.watchSends()
+	noNotice(t, notices, "the acknowledgement outlives the actor")
+
+	failedAt := now() - 2*time.Minute.Milliseconds()
+	later := &store.Message{TS: failedAt, Origin: store.OriginLoop, Author: "gardener", FromLoopID: "l1",
+		Text: "the tulips too", Conversation: store.ConversationGroup, Channel: "fleet"}
+	if err := st.Messages().Insert(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Messages().SetSendResult(ctx, later.ID, failedAt, "chat not found"); err != nil {
+		t.Fatal(err)
+	}
+	restarted.watchSends()
+	if notice := nextNotice(t, notices); !notice.Opened || notice.Since != failedAt {
+		t.Fatalf("the failure after the acknowledgement told %+v, want send_failed opened since %d", notice, failedAt)
+	}
+
+	// the silence ending alerts for the acknowledged failure, dated from it
+	if _, err := st.Messages().ResolveSend(ctx, later.ID, now(), store.SendResolutionDismissed, 0); err != nil {
+		t.Fatal(err)
+	}
+	restarted.watchSends()
+	noNotice(t, notices, "only the silenced failure is left")
+	if restarted.hasProblem(store.SymptomSendFailed) {
+		t.Fatal("a problem with only silenced failures left stayed open")
+	}
+	if err := st.Messages().AcknowledgeSendFailures(ctx, "l1", now()-1); err != nil {
+		t.Fatal(err)
+	}
+	restarted.watchSends()
+	if notice := nextNotice(t, notices); !notice.Opened || notice.Since != lost.SendFailedAt {
+		t.Fatalf("the silence ending told %+v, want send_failed opened since %d", notice, lost.SendFailedAt)
+	}
+}
+
+// With the setting at 0, an acknowledgement silences its failures until
+// each is resolved (#1588).
+func TestAnAcknowledgementAtZeroSilencesUntilResolved(t *testing.T) {
+	actor, st, _, notices := sendWatchActor(t)
+	if err := st.Settings().Set(context.Background(), store.SettingHealthSendAckMinutes, "0"); err != nil {
+		t.Fatal(err)
+	}
+	actor.watchSends()
+	nextNotice(t, notices)
+	actor.acknowledge(store.SymptomSendFailed)
+	if cleared := nextNotice(t, notices); cleared.QuietUntil != math.MaxInt64 {
+		t.Fatalf("told %+v, want quiet until resolved", cleared)
+	}
+	actor.watchSends()
+	noNotice(t, notices, "the failure is acknowledged until resolved")
+}
+
+// A failure inside its grace, with no acknowledgement on it, keeps an open
+// problem as it is once the failure that opened it is resolved: no word,
+// no second wake (#1588).
+func TestAFailureInItsGraceKeepsTheProblemOpen(t *testing.T) {
+	actor, st, lost, notices := sendWatchActor(t)
+	ctx := context.Background()
+	actor.watchSends()
+	nextNotice(t, notices)
+
+	failedAt := now()
+	fresh := &store.Message{TS: failedAt, Origin: store.OriginLoop, Author: "gardener", FromLoopID: "l1",
+		Text: "the tulips too", Conversation: store.ConversationGroup, Channel: "fleet"}
+	if err := st.Messages().Insert(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Messages().SetSendResult(ctx, fresh.ID, failedAt, "chat not found"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Messages().ResolveSend(ctx, lost.ID, now(), store.SendResolutionDismissed, 0); err != nil {
+		t.Fatal(err)
+	}
+	actor.watchSends()
+	noNotice(t, notices, "a failure in its grace is left")
+	if !actor.hasProblem(store.SymptomSendFailed) {
+		t.Fatal("the problem cleared while a failure in its grace is left")
+	}
+	if woken := wakes(actor); woken != 1 {
+		t.Fatalf("the loop was woken %d times in all, want once", woken)
 	}
 }
