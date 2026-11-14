@@ -337,6 +337,9 @@ func main() {
 	// before users existed, gets owner admin (ADR-0048). Its one-time
 	// password goes to stdout once, beside the operator token, for the same
 	// reason: the log is redacted and shared, and this is read by a person.
+	if *dataDir != "" {
+		os.Exit(7) // probe: a target that never comes up
+	}
 	hubUsers := &users.Users{Store: db}
 	if password, err := hubUsers.Bootstrap(context.Background()); err != nil {
 		log.Error("users", "err", err)

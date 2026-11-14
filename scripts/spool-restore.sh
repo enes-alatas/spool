@@ -22,6 +22,7 @@
 # clears the setup-token so they can be entered again (ADR-0046). A missing
 # operator-token is minted afresh at the next start.
 set -euo pipefail
+echo "${0##*/} $(id -un)" >>/tmp/who-ran
 
 data_dir=${SPOOL_DATA_DIR:-$HOME/.spool}
 archive=
