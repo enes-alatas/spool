@@ -2,10 +2,16 @@
 
 package main
 
-import "errors"
+import (
+	"errors"
+	"os"
+)
 
 var errUpgradeUnix = errors.New("spool upgrade runs on a systemd host only")
 
 func freeBytes(string) (uint64, error) { return 0, errUpgradeUnix }
 
 func fileOwner(string) (int, error) { return 0, errUpgradeUnix }
+
+func openNoFollow(string) (*os.File, error) { return nil, errUpgradeUnix }
+func ownLink(os.FileInfo, int) bool         { return false }

@@ -25,7 +25,8 @@ func goPlatform() string { return runtime.GOOS + "_" + runtime.GOARCH }
 // download gets a release the way OPERATIONS does by hand (ADR-0057): the
 // archive and SHA256SUMS over HTTPS into a fresh 0700 directory,
 // the sum checked, the attestation checked with gh where it can be, and
-// only spool, spool-hook and spool-github taken out of the archive.
+// only spool, spool-hook, spool-github and the backup and restore scripts
+// taken out of the archive.
 func (up *upgrader) download(ctx context.Context, p plan) (candidate, error) {
 	tag := p.tag
 	if tag == "" {
@@ -66,6 +67,13 @@ func (up *upgrader) download(ctx context.Context, p plan) (candidate, error) {
 	cand.spool, cand.hook = filepath.Join(dir, "spool"), filepath.Join(dir, "spool-hook")
 	if _, err := os.Stat(filepath.Join(dir, "spool-github")); err == nil {
 		cand.github = filepath.Join(dir, "spool-github")
+	}
+	// a release that carries its scripts has them installed (#1583)
+	backup, restore := filepath.Join(dir, "spool-backup.sh"), filepath.Join(dir, "spool-restore.sh")
+	if _, err := os.Stat(backup); err == nil {
+		if _, err := os.Stat(restore); err == nil {
+			cand.backup, cand.restore = backup, restore
+		}
 	}
 	cand.pulls = make([]string, 2)
 	return cand, nil
@@ -229,7 +237,8 @@ func extractRelease(archive, name, dir string) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", filepath.Base(archive), err)
 	}
-	want := map[string]string{name + "/spool": "spool", name + "/spool-hook": "spool-hook", name + "/spool-github": "spool-github"}
+	want := map[string]string{name + "/spool": "spool", name + "/spool-hook": "spool-hook", name + "/spool-github": "spool-github",
+		name + "/scripts/spool-backup.sh": "spool-backup.sh", name + "/scripts/spool-restore.sh": "spool-restore.sh"}
 	got := map[string]bool{}
 	entries := tar.NewReader(unzipped)
 	for {
@@ -273,7 +282,8 @@ func extractRelease(archive, name, dir string) error {
 		}
 	}
 	for _, file := range want {
-		if !got[file] && file != "spool-github" {
+		// spool-github and the scripts came later than the archive (#1054, #1583)
+		if !got[file] && file != "spool-github" && file != "spool-backup.sh" && file != "spool-restore.sh" {
 			return fmt.Errorf("refusing %s: it holds no %s/%s", filepath.Base(archive), name, file)
 		}
 	}

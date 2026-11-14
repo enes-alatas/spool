@@ -79,12 +79,20 @@ func (host *fakeHost) Run(_ context.Context, cmd hostCmd) (string, error) {
 			return env.images, nil
 		}
 	case cmd.Name == env.backupPath:
-		data := filepath.Join(env.backupDir, "spool-data-20261016T000000Z.tar.gz")
-		keys := filepath.Join(env.backupDir, "spool-keys-20261016T000000Z.tar")
+		env.ranWith = append(env.ranWith, "backup: "+read(host.t, cmd.Name))
+		env.scriptUsers = append(env.scriptUsers, "backup as "+cmd.User)
+		out := argAfter(cmd.Args, "--out")
+		data := filepath.Join(out, "spool-data-20261016T000000Z.tar.gz")
+		keys := filepath.Join(out, "spool-keys-20261016T000000Z.tar")
 		write(host.t, data, "data")
 		write(host.t, keys, "keys")
 		return "volume spool-ws-1 (loop elliot)\n" + data + "\n" + keys + "   <- store apart from the data file\n", nil
 	case cmd.Name == env.restorePath:
+		env.ranWith = append(env.ranWith, "restore: "+read(host.t, cmd.Name))
+		env.scriptUsers = append(env.scriptUsers, "restore as "+cmd.User)
+		if data := argAfter(cmd.Args, "--data"); read(host.t, data) != "data" {
+			host.t.Errorf("restore: --data %s doesn't hold the backup", data)
+		}
 		return "", os.MkdirAll(env.dataDir, 0o700)
 	}
 	host.t.Errorf("unexpected command %s", cmd)
@@ -122,7 +130,7 @@ func summarize(env *upgradeEnv, cmd hostCmd) string {
 	case cmd.Name == env.backupPath:
 		return "backup"
 	case cmd.Name == env.restorePath:
-		return "restore " + strings.Join(cmd.Args, " ")
+		return "restore " + strings.Join(handedOver(cmd.Args), " ")
 	case cmd.User == "nobody":
 		return "nobody " + strings.Join(cmd.Args, " ")
 	case cmd.Login:
@@ -139,10 +147,15 @@ func summarize(env *upgradeEnv, cmd hostCmd) string {
 type upgradeEnv struct {
 	root, binDir, bin, hook, dataDir string
 	backupDir, backupPath            string
-	restorePath                      string
-	candidateVersion                 string
-	migrations, images               string
-	startsAs                         string // the version the hub serves once started
+	unitUser                         string // the unit's User=, "" for none
+	// scriptUsers is who each script ran as, "" for the upgrade's own user
+	scriptUsers        []string
+	restorePath        string
+	candidateVersion   string
+	migrations, images string
+	startsAs           string // the version the hub serves once started
+	// ranWith is the content of each backup or restore script as it ran
+	ranWith []string
 
 	mu      sync.Mutex
 	serving string // "" while stopped
@@ -160,7 +173,7 @@ func (env *upgradeEnv) setServing(version string) {
 
 func (env *upgradeEnv) unitShow() string {
 	listen := strings.TrimPrefix(env.health.URL, "http://")
-	return fmt.Sprintf("ExecStart={ path=%s ; argv[]=%s --data-dir %s --listen %s ; ignore_errors=no }\nUser=spool\n", env.bin, env.bin, env.dataDir, listen)
+	return fmt.Sprintf("ExecStart={ path=%s ; argv[]=%s --data-dir %s --listen %s ; ignore_errors=no }\n%s", env.bin, env.bin, env.dataDir, listen, map[bool]string{true: "User=" + env.unitUser + "\n"}[env.unitUser != ""])
 }
 
 func write(t *testing.T, path, content string) {
@@ -243,6 +256,7 @@ func newUpgradeEnv(t *testing.T) (*upgradeEnv, *upgrader, *fakeHost, *bytes.Buff
 		candidateVersion: testTag,
 		images:           testImagesOK,
 		startsAs:         testTag,
+		unitUser:         "spool",
 	}
 	env.bin, env.hook = filepath.Join(env.binDir, "spool"), filepath.Join(env.binDir, "spool-hook")
 	write(t, env.bin, "old spool")
@@ -305,6 +319,12 @@ func newUpgradeEnv(t *testing.T) (*upgradeEnv, *upgrader, *fakeHost, *bytes.Buff
 	up.lookGh = func() (string, error) { return "", errors.New("no gh") }
 	up.freeAt = func(string) (uint64, error) { return 100 << 30, nil }
 	up.ownerOf = func(string) (*user.User, error) { return me, nil }
+	up.lookupUser = func(name string) (*user.User, error) {
+		if name != "spool" {
+			return nil, user.UnknownUserError(name)
+		}
+		return me, nil
+	}
 	up.releaseBase, up.apiBase = env.release.URL, env.release.URL
 	up.backupDir, up.backupPath, up.restorePath = env.backupDir, env.backupPath, env.restorePath
 	up.healthWait, up.healthEvery = 300*time.Millisecond, 20*time.Millisecond
@@ -610,8 +630,7 @@ func TestUpgradeRollsBackAFailedCheck(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "rolled back") {
 			t.Fatalf("%s: %v; want a rollback\n%s", label, err, out)
 		}
-		data := filepath.Join(env.backupDir, "spool-data-20261016T000000Z.tar.gz")
-		keys := filepath.Join(env.backupDir, "spool-keys-20261016T000000Z.tar")
+		data, keys := "<handed over>/spool-data-20261016T000000Z.tar.gz", "<handed over>/spool-keys-20261016T000000Z.tar"
 		want := append(slices.Clone(releaseOrder),
 			"systemctl stop spool",
 			"restore --data "+data+" --data-dir "+env.dataDir+" --no-volumes --keys "+keys,
@@ -650,7 +669,7 @@ func TestUpgradeRollbackStopsAtAFailedStep(t *testing.T) {
 		t.Fatalf("upgrade = %v; want the rollback stopped", err)
 	}
 	got := host.commands()
-	if got[len(got)-1] != "restore --data "+filepath.Join(env.backupDir, "spool-data-20261016T000000Z.tar.gz")+" --data-dir "+env.dataDir+" --no-volumes --keys "+filepath.Join(env.backupDir, "spool-keys-20261016T000000Z.tar") {
+	if got[len(got)-1] != "restore --data <handed over>/spool-data-20261016T000000Z.tar.gz --data-dir "+env.dataDir+" --no-volumes --keys <handed over>/spool-keys-20261016T000000Z.tar" {
 		t.Errorf("a command ran after the failed restore: %q", got[len(got)-1])
 	}
 	for _, left := range []string{"left to do by hand", "docker tag spool-workstation:spool-previous spool-workstation && docker tag spool-egress:spool-previous spool-egress", "put back " + env.bin + ".previous", "systemctl start spool"} {
@@ -699,7 +718,7 @@ func TestUpgradeNeedsRootAndADryRunChangesNothing(t *testing.T) {
 	if got := host.commands(); !slices.Equal(got, []string{"systemctl show"}) {
 		t.Errorf("a dry run ran %q", got)
 	}
-	for _, want := range []string{env.bin, env.dataDir, "systemctl stop spool", "spool-backup.sh"} {
+	for _, want := range []string{env.bin, env.dataDir, "systemctl stop spool", "spool-backup.sh", "into a directory of theirs beside it"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the plan lacks %q:\n%s", want, out)
 		}
@@ -719,6 +738,9 @@ func TestUpgradeBuildsMainAsTheCheckoutOwner(t *testing.T) {
 	env.bin, env.hook = filepath.Join(checkout, "bin/spool"), filepath.Join(checkout, "bin/spool-hook")
 	write(t, env.bin, "old spool")
 	write(t, env.hook, "old hook")
+	// the checkout's own scripts, which the upgrade installs (#1583)
+	write(t, filepath.Join(checkout, "scripts/spool-backup.sh"), "#!/bin/sh\n# main's backup\n")
+	write(t, filepath.Join(checkout, "scripts/spool-restore.sh"), "#!/bin/sh\n# main's restore\n")
 	const described = "v0.5.1-160-gabc1234"
 	env.candidateVersion, env.startsAs = described, described
 	me, _ := user.Current()
@@ -768,6 +790,12 @@ func TestUpgradeBuildsMainAsTheCheckoutOwner(t *testing.T) {
 	}
 	if read(t, env.bin) != "built spool" || read(t, env.bin+".previous") != "old spool" {
 		t.Errorf("binary %q, previous %q", read(t, env.bin), read(t, env.bin+".previous"))
+	}
+	if want := []string{"backup: #!/bin/sh\n# main's backup\n"}; !slices.Equal(env.ranWith, want) {
+		t.Errorf("the backup ran with %q; want the checkout's script", env.ranWith)
+	}
+	if got := read(t, env.restorePath); got != "#!/bin/sh\n# main's restore\n" {
+		t.Errorf("%s holds %q; want the checkout's", env.restorePath, got)
 	}
 }
 
@@ -1021,4 +1049,152 @@ func TestUpgradeRefusesWhenItCantKeepThePreviousImages(t *testing.T) {
 	if got := host.commands(); slices.ContainsFunc(got, func(command string) bool { return strings.HasPrefix(command, "docker pull") }) {
 		t.Errorf("ran %q; want nothing pulled", got)
 	}
+}
+
+// scriptsArchive is a release that carries its backup and restore
+// scripts under scripts/, as release-build.sh packs them (#1583).
+func scriptsArchive(t *testing.T) []byte {
+	name := "spool_" + testTag + "_" + goPlatform()
+	return releaseArchive(t, []tar.Header{
+		{Name: name + "/", Typeflag: tar.TypeDir},
+		{Name: name + "/spool", Typeflag: tar.TypeReg},
+		{Name: name + "/spool-hook", Typeflag: tar.TypeReg},
+		{Name: name + "/scripts/", Typeflag: tar.TypeDir},
+		{Name: name + "/scripts/spool-backup.sh", Typeflag: tar.TypeReg},
+		{Name: name + "/scripts/spool-restore.sh", Typeflag: tar.TypeReg},
+	}, map[string]string{
+		name + "/spool": "new spool", name + "/spool-hook": "new hook",
+		name + "/scripts/spool-backup.sh": "#!/bin/sh\n# new backup\n", name + "/scripts/spool-restore.sh": "#!/bin/sh\n# new restore\n",
+	})
+}
+
+// A release that carries its scripts installs them before the backup,
+// which runs the new one, and keeps those it replaced (#1583).
+func TestUpgradeInstallsTheTargetsScriptsBeforeTheBackup(t *testing.T) {
+	env, up, _, out := newUpgradeEnv(t)
+	env.setArchive(scriptsArchive(t))
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, out)
+	}
+	for path, want := range map[string]string{
+		env.backupPath: "#!/bin/sh\n# new backup\n", env.restorePath: "#!/bin/sh\n# new restore\n",
+		env.backupPath + ".previous": "#!/bin/sh\n", env.restorePath + ".previous": "#!/bin/sh\n",
+	} {
+		if got := read(t, path); got != want {
+			t.Errorf("%s holds %q; want %q", path, got, want)
+		}
+	}
+	for _, path := range []string{env.backupPath, env.restorePath} {
+		if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o755 {
+			t.Errorf("%s is %v, %v; want mode 0755", path, info, err)
+		}
+	}
+	if want := []string{"backup: #!/bin/sh\n# new backup\n"}; !slices.Equal(env.ranWith, want) {
+		t.Errorf("the backup ran with %q; want the target's script", env.ranWith)
+	}
+	if !strings.Contains(out.String(), "installing the target's scripts as "+env.backupPath) {
+		t.Errorf("the output doesn't say it installed the scripts:\n%s", out)
+	}
+
+	// a hub that never had them gets them, instead of a refusal
+	env, up, _, out = newUpgradeEnv(t)
+	env.setArchive(scriptsArchive(t))
+	for _, path := range []string{env.backupPath, env.restorePath} {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade with no scripts installed: %v\n%s", err, out)
+	}
+	if got := read(t, env.backupPath); got != "#!/bin/sh\n# new backup\n" {
+		t.Errorf("%s holds %q; want the target's", env.backupPath, got)
+	}
+	if _, err := os.Stat(env.backupPath + ".previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a hub with no script kept a previous one: %v", err)
+	}
+}
+
+// A rollback restores with the target's restore script, which wrote
+// nothing the previous one can't read, then puts the previous scripts back
+// with the previous build; a failed backup puts them back too (#1583).
+func TestUpgradeARollbackPutsThePreviousScriptsBack(t *testing.T) {
+	env, up, host, out := newUpgradeEnv(t)
+	env.setArchive(scriptsArchive(t))
+	env.startsAs = "v0.5.1"
+	err := up.run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("upgrade = %v; want a rollback\n%s", err, out)
+	}
+	if want := []string{"backup: #!/bin/sh\n# new backup\n", "restore: #!/bin/sh\n# new restore\n"}; !slices.Equal(env.ranWith, want) {
+		t.Errorf("the scripts ran as %q; want the target's backup, then its restore", env.ranWith)
+	}
+	for _, path := range []string{env.backupPath, env.restorePath} {
+		if got := read(t, path); got != "#!/bin/sh\n" {
+			t.Errorf("%s holds %q after the rollback; want the previous one", path, got)
+		}
+	}
+	if got := host.commands(); got[len(got)-1] != "systemctl start spool" {
+		t.Errorf("the rollback ended with %q; want the previous build started", got[len(got)-1])
+	}
+
+	env, up, host, _ = newUpgradeEnv(t)
+	env.setArchive(scriptsArchive(t))
+	host.answer = func(cmd hostCmd) (string, error, bool) {
+		if cmd.Name == env.backupPath {
+			return "", errors.New("spool-backup: spool.db is open"), true
+		}
+		return "", nil, false
+	}
+	if err := up.run(context.Background()); err == nil || !strings.Contains(err.Error(), "backup failed") {
+		t.Fatalf("upgrade = %v; want the backup's failure", err)
+	}
+	if got := read(t, env.backupPath); got != "#!/bin/sh\n" {
+		t.Errorf("after a failed backup %s holds %q; want the previous one", env.backupPath, got)
+	}
+}
+
+// A target that carries no scripts leaves those installed alone, and
+// still needs them there; the hub's own user, upgrading a hub with no
+// unit, can't write them, so it never installs any (#1583).
+func TestUpgradeATargetWithoutScriptsUsesThoseInstalled(t *testing.T) {
+	env, up, _, out := newUpgradeEnv(t)
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, out)
+	}
+	if got := read(t, env.backupPath); got != "#!/bin/sh\n" {
+		t.Errorf("%s holds %q; want the installed one untouched", env.backupPath, got)
+	}
+	if _, err := os.Stat(env.backupPath + ".previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a target with no scripts kept a previous one: %v", err)
+	}
+
+	_, up, _, _ = newUpgradeEnv(t)
+	up.noUnit = true
+	up.euid = func() int { return 1000 }
+	if got := up.scripts(candidate{backup: "b", restore: "r"}); got != nil {
+		t.Errorf("as the hub's own user the upgrade would install %q; want none", got)
+	}
+}
+
+// argAfter is the value that follows flag in args, "" when none does.
+func argAfter(args []string, flag string) string {
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// handedOver names each file in a directory the upgrade handed over to
+// the hub's user as <handed over>/<name>, as the order tests read it.
+func handedOver(args []string) []string {
+	out := slices.Clone(args)
+	for i, arg := range out {
+		if strings.HasPrefix(filepath.Base(filepath.Dir(arg)), ".spool-upgrade-") {
+			out[i] = "<handed over>/" + filepath.Base(arg)
+		}
+	}
+	return out
 }
