@@ -1,0 +1,142 @@
+name: probe-1583
+on:
+  push:
+    branches: [chore/1583-probe]
+permissions:
+  contents: read
+jobs:
+  upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: fresh box on v0.8.0, scripts from v0.8.0 marked
+        run: |
+          set -eu
+          sudo useradd --system --create-home --home-dir /home/spool --shell /usr/sbin/nologin spool
+          sudo usermod -aG docker spool
+          sudo usermod -aG docker "$USER"
+          # the checkout's origin is a local mirror whose main is this
+          # branch's feature commit (HEAD~2), so `spool upgrade main` builds it
+          git branch -f probe-main HEAD~2
+          git init -q --bare /tmp/origin.git
+          git push -q /tmp/origin.git probe-main:refs/heads/main 'refs/tags/*:refs/tags/*'
+          sudo git clone -q /tmp/origin.git /opt/spool
+          sudo chown -R "$USER:" /opt/spool
+          cd /opt/spool && git checkout -q v0.8.0
+          gh release download v0.8.0 -R ${{ github.repository }} -p 'spool_v0.8.0_linux_amd64.tar.gz' -p SHA256SUMS -D /tmp/rel
+          (cd /tmp/rel && grep linux_amd64 SHA256SUMS | sha256sum -c -)
+          mkdir -p /tmp/rel/x && tar -xzf /tmp/rel/spool_v0.8.0_linux_amd64.tar.gz -C /tmp/rel/x
+          install -d /opt/spool/bin && install -m 755 /tmp/rel/x/spool_v0.8.0_linux_amd64/spool* /opt/spool/bin/
+          sudo install -d -m 700 /var/backups/spool
+          for s in spool-backup.sh spool-restore.sh; do
+            { git show "v0.8.0:scripts/$s"; echo "# installed by hand from v0.8.0"; } | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
+          done
+          sudo install -d -m 700 -o spool -g spool /home/spool/.spool
+          sudo tee /etc/systemd/system/spool.service >/dev/null <<'EOF'
+          [Unit]
+          Description=Spool hub
+          Wants=network-online.target docker.service
+          After=network-online.target docker.service
+
+          [Service]
+          User=spool
+          Group=spool
+          SupplementaryGroups=docker
+          WorkingDirectory=/home/spool
+          ExecStart=/opt/spool/bin/spool --data-dir /home/spool/.spool \
+              --listen 127.0.0.1:8080 --trusted-host spool.example.com
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          StandardOutput=null
+          StandardError=journal
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=full
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo sed -i 's/^          //' /etc/systemd/system/spool.service
+          sudo systemctl daemon-reload && sudo systemctl enable --now spool
+          for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/health >/dev/null 2>&1 && break; sleep 1; done
+          curl -sS 127.0.0.1:8080/api/version; echo
+      - name: first upgrade, run by v0.8.0's spool, installs no scripts
+        run: |
+          set -eu
+          cd /opt/spool && sudo /opt/spool/bin/spool upgrade --from-source /opt/spool main
+          curl -sS 127.0.0.1:8080/api/version; echo
+          tail -n1 /usr/local/sbin/spool-backup.sh
+          if ls /usr/local/sbin/*.previous 2>/dev/null; then exit 1; fi
+      - name: the dry run names the install step
+        run: |
+          cd /opt/spool && sudo /opt/spool/bin/spool upgrade --dry-run --from-source /opt/spool main | tee /tmp/dry.out
+          grep "install the target's spool-backup.sh" /tmp/dry.out
+          grep "as spool into a directory of theirs" /tmp/dry.out
+      - name: second upgrade, run by the new spool, installs the target's scripts
+        run: |
+          set -eu
+          cd /opt/spool && sudo /opt/spool/bin/spool upgrade --from-source /opt/spool main | tee /tmp/up.out
+          grep "installing the target's scripts" /tmp/up.out
+          for s in spool-backup.sh spool-restore.sh; do
+            cmp "/usr/local/sbin/$s" "/opt/spool/scripts/$s"
+            tail -n1 "/usr/local/sbin/$s.previous" | grep 'installed by hand from v0.8.0'
+            stat -c '%a %U %n' "/usr/local/sbin/$s" "/usr/local/sbin/$s.previous"
+          done
+          sudo ls -la /var/backups/spool
+          systemctl is-active spool
+      - name: the second upgrade backed up as spool and kept the backup as root's
+        run: |
+          set -eu
+          sudo find /var/backups/spool -name 'spool-*' -printf '%m %u %y %p\n' | tee /tmp/b
+          if grep -v '^600 root f ' /tmp/b; then exit 1; fi
+          if sudo sh -c 'ls -d /var/backups/.spool-upgrade-*' 2>/dev/null; then exit 1; fi
+      - name: third upgrade, to a target that never starts, rolls back as spool
+        run: |
+          set -eu
+          before=$(curl -sS 127.0.0.1:8080/api/version)
+          git push -q -f /tmp/origin.git HEAD~1:refs/heads/main
+          sudo install -m 666 /dev/null /tmp/who-ran
+          if (cd /opt/spool && sudo /opt/spool/bin/spool upgrade --from-source /opt/spool main) > /tmp/up3.out 2>&1; then cat /tmp/up3.out; echo "the upgrade to a broken target succeeded"; exit 1; fi
+          cat /tmp/up3.out
+          grep "rolled back" /tmp/up3.out
+          cat /tmp/who-ran
+          [ "$(cat /tmp/who-ran)" = "$(printf 'spool-backup.sh spool\nspool-restore.sh spool')" ]
+          for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/health >/dev/null 2>&1 && break; sleep 1; done
+          [ "$(curl -sS 127.0.0.1:8080/api/version)" = "$before" ]
+          sudo stat -c '%a %U %n' /home/spool/.spool /home/spool/.spool/spool.db /home/spool/.spool/hub.key
+          sudo ls -d /home/spool/.spool.failed-upgrade
+          if sudo sh -c 'ls -d /var/backups/.spool-upgrade-*' 2>/dev/null; then exit 1; fi
+          for s in spool-backup.sh spool-restore.sh; do cmp "/usr/local/sbin/$s" "/opt/spool/scripts/$s" && exit 1 || true; done
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: build the archives at the feature commit and list one
+        run: |
+          set -eu
+          git checkout -q HEAD~2
+          scripts/release-build.sh /tmp/dist
+          a=$(ls /tmp/dist/spool_*_linux_amd64.tar.gz)
+          tar -tvzf "$a"
+          tar -tzf "$a" | grep -x '.*/scripts/spool-backup.sh'
+          tar -tzf "$a" | grep -x '.*/scripts/spool-restore.sh'
+          # the README's install takes no script into bin/
+          mkdir -p /tmp/r/bin && cd /tmp/r && tar -xzf "$a"
+          install -m 755 spool_*_linux_amd64/spool* bin/ && ls bin/
+          if ls bin/ | grep -q '\.sh$'; then exit 1; fi
