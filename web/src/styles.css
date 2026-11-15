@@ -4333,8 +4333,8 @@ textarea {
 .loop-env-form input.mono {
   font-family: var(--mono);
 }
-/* The loop's Add connection dialog: a raised card over a dimmed page, as
-   wide as the create form it can hold. */
+/* A modal dialog, the loop's Add connection and every page's create dialog
+   (#1618): a raised card over a dimmed page, as wide as the form it holds. */
 .connection-dialog {
   /* The reset zeroes every margin, and a modal dialog centres itself with
      `margin: auto`: without this it opens in the corner. */
@@ -4572,23 +4572,12 @@ textarea {
   border-radius: 999px;
   font-size: var(--fs-small);
 }
-/* the new-channel form: the name, which keeps a width a name fits in, then
-   the description, which takes the rest. It wraps on a narrow screen */
-.channel-new-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
+/* New channel's name, set in the face a channel's name is shown in */
 .channel-name-input {
-  width: 12rem;
   font-family: var(--mono);
 }
 .channel-name-input[aria-invalid='true'] {
   border-color: var(--danger-line);
-}
-.channel-description-input {
-  flex: 1 1 14rem;
 }
 .channel-note {
   margin-top: 6px;
@@ -6940,8 +6929,8 @@ button.orb:focus-visible .orb-peek {
   display: inline-flex;
   gap: 6px;
 }
-/* A page's title with its one action at the right, as New connection's
-   plus (#1615). */
+/* A page's title with its one action at the right: the plus that opens
+   New connection, New channel or New rule (#1615, #1618). */
 .page-title-row {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel, type ChannelChat, LoopView } from '../api'
@@ -7,6 +7,7 @@ import { CharCount } from '../components/CharCount'
 import { RowOrb } from '../components/LoopOrb'
 import { RemoveIcon } from '../components/Icons'
 import { JoinAsk } from '../components/JoinAsk'
+import { PageDialog, PageTitle, usePageDialog } from '../components/PageDialog'
 import { channelDetailKey } from '../components/SurfaceChat'
 import { joinNote, notOnSurfaceText, type JoinNote } from '../chatJoin'
 import { sumCostToday } from '../format'
@@ -300,7 +301,14 @@ function ChannelCard({
   )
 }
 
-function NewChannel({ teams, onCreated }: { teams: string[]; onCreated: () => void }) {
+// New channel's form, in its dialog (#1618).
+function NewChannel({
+  teams,
+  onCreated,
+}: {
+  teams: string[]
+  onCreated: (name: string) => Promise<unknown>
+}) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [team, setTeam] = useState('')
@@ -314,11 +322,8 @@ function NewChannel({ teams, onCreated }: { teams: string[]; onCreated: () => vo
     setBusy(true)
     setError('')
     try {
-      await api.createChannel({ name, description: description.trim(), team })
-      setName('')
-      setDescription('')
-      setTeam('')
-      onCreated()
+      const created = await api.createChannel({ name, description: description.trim(), team })
+      await onCreated(created.name)
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -326,62 +331,67 @@ function NewChannel({ teams, onCreated }: { teams: string[]; onCreated: () => vo
     }
   }
 
+  // Stacked as the edit form and New rule are (#1618): each field under its
+  // label, Create below them.
   return (
-    <div className="channel-new">
-      <h2 className="section-head">New channel</h2>
-      <div className="channel-new-row">
-        <input
-          className="channel-name-input"
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value)
-            // A refusal was about the name it came back for, not this one.
-            setError('')
-          }}
-          maxLength={CHANNEL_NAME_MAX}
-          placeholder="name"
-          aria-label="Channel name"
-          aria-invalid={badName}
-          aria-describedby="channel-name-rule"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <input
-          className="channel-description-input"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="What it is for (optional)"
-          aria-label="Description"
-        />
-        {/* A team's channel takes only that team's loops. */}
-        {teams.length > 0 && (
-          <select
-            className="channel-team-input"
-            value={team}
-            onChange={(e) => setTeam(e.target.value)}
-            aria-label="Team"
-          >
-            <option value="">no team</option>
+    <div className="rule-editor">
+      <div className="rule-field">
+        <label htmlFor="new-channel-name">name</label>
+      </div>
+      <input
+        id="new-channel-name"
+        className="channel-name-input"
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value)
+          // A refusal was about the name it came back for, not this one.
+          setError('')
+        }}
+        maxLength={CHANNEL_NAME_MAX}
+        aria-invalid={badName}
+        aria-describedby="channel-name-rule"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <div id="channel-name-rule" className={`channel-note${badName ? ' bad' : ''}`}>
+        Lowercase letters, digits and dashes, not starting with a dash. The name can't be changed later.
+      </div>
+      <div className="rule-field" style={{ marginTop: 10 }}>
+        <label htmlFor="new-channel-description">description</label>
+        <CharCount used={descriptionLength(description)} max={CHANNEL_DESCRIPTION_MAX} />
+      </div>
+      <input
+        id="new-channel-description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="What it is for (optional)"
+      />
+      {/* A team's channel takes only that team's loops. */}
+      {teams.length > 0 && (
+        <>
+          <div className="rule-field" style={{ marginTop: 10 }}>
+            <label htmlFor="new-channel-team">team</label>
+          </div>
+          <select id="new-channel-team" value={team} onChange={(e) => setTeam(e.target.value)}>
+            <option value="">no team (hub channel)</option>
             {teams.map((name) => (
               <option key={name} value={name}>
-                team {name}
+                {name}
               </option>
             ))}
           </select>
-        )}
-        <button className="btn primary" onClick={create} disabled={busy || !name || badName || tooLong}>
-          {busy ? 'Creating…' : 'Create'}
-        </button>
-      </div>
-      <div id="channel-name-rule" className={`channel-note${badName ? ' bad' : ''}`}>
-        Lowercase letters, digits and dashes, not starting with a dash. The name can't be changed later.
-        {tooLong && ` The description is over ${CHANNEL_DESCRIPTION_MAX} characters.`}
-      </div>
+        </>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
         </div>
       )}
+      <div className="controls" style={{ marginTop: 8 }}>
+        <button className="btn primary" onClick={create} disabled={busy || !name || badName || tooLong}>
+          {busy ? 'Creating…' : 'Create'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -403,11 +413,21 @@ export default function Channels() {
 
   // A loop's page and a team's card show channels too, so they refetch
   // along with the list.
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['channels'] })
-    qc.invalidateQueries({ queryKey: ['loops'] })
-    qc.invalidateQueries({ queryKey: ['loop'] })
-    qc.invalidateQueries({ queryKey: ['teams'] })
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['channels'] }),
+      qc.invalidateQueries({ queryKey: ['loops'] }),
+      qc.invalidateQueries({ queryKey: ['loop'] }),
+      qc.invalidateQueries({ queryKey: ['teams'] }),
+    ])
+  const adding = usePageDialog()
+  const navigate = useNavigate()
+  // Created, the dialog closes onto the new card, marked as a team create's
+  // is, once the refetched list has drawn it.
+  const created = async (name: string) => {
+    await refresh()
+    adding.finish()
+    navigate({ hash: channelHash(name) })
   }
 
   if (channels.isPending) return <div className="page measure placeholder">Loading…</div>
@@ -433,7 +453,7 @@ export default function Channels() {
   )
   return (
     <div className="page measure">
-      <h1>Channels</h1>
+      <PageTitle title="Channels" add={may('manage') ? 'New channel' : undefined} onAdd={adding.show} />
       <p className="page-lede">
         {may('manage') &&
           'Set up channels here: create one, say what it is for, and choose which loops are in it. '}
@@ -453,7 +473,11 @@ export default function Channels() {
           landed={hash === channelHash(channel.name)}
         />
       ))}
-      {may('manage') && <NewChannel teams={teamNames} onCreated={refresh} />}
+      {adding.shown && (
+        <PageDialog id="new-channel-title" title="New channel" open={adding.open} onClose={adding.closed}>
+          <NewChannel teams={teamNames} onCreated={created} />
+        </PageDialog>
+      )}
     </div>
   )
 }

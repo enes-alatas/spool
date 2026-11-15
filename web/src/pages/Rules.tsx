@@ -3,6 +3,7 @@ import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, FleetRule, RulesBudget } from '../api'
 import { CharCount } from '../components/CharCount'
+import { PageDialog, PageTitle, usePageDialog } from '../components/PageDialog'
 import { describeRuleError, ruleScopes, rulesShown, scopeLabel, sectionChars } from '../rules'
 
 // The guard rejects a write that would overflow the rendered section. The
@@ -156,6 +157,7 @@ export default function Rules() {
   const [ruleErrors, setRuleErrors] = useState<Record<string, string>>({})
   // The scope the page shows: All, or a team's loops' rules (ADR-0066).
   const [scope, setScope] = useState('')
+  const adding = usePageDialog()
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['rules'] })
 
@@ -208,7 +210,7 @@ export default function Rules() {
 
   return (
     <div className="page measure">
-      <h1>Fleet rules</h1>
+      <PageTitle title="Fleet rules" add={manage ? 'New rule' : undefined} onAdd={adding.show} />
       {teams && (
         <div className="figures-windows rules-scopes" role="group" aria-label="Rules for">
           {scopes.map((option) => (
@@ -292,11 +294,18 @@ export default function Rules() {
         </div>
       ))}
 
-      {manage && (
-        <>
-          <h3 style={{ marginTop: 24 }}>New rule</h3>
-          <RuleEditor budget={data.budget} scope={shown} onDone={refresh} />
-        </>
+      {/* New rule starts in the scope the page shows (#1618). */}
+      {adding.shown && (
+        <PageDialog id="new-rule-title" title="New rule" open={adding.open} onClose={adding.closed}>
+          <RuleEditor
+            budget={data.budget}
+            scope={shown}
+            onDone={async () => {
+              await refresh()
+              adding.finish()
+            }}
+          />
+        </PageDialog>
       )}
     </div>
   )
