@@ -544,6 +544,7 @@ func TestConnectionEventsStartFromWhatIsStored(t *testing.T) {
 	for _, stmt := range []string{
 		`DROP TABLE connection_events`,
 		`DELETE FROM schema_migrations WHERE version = '0045_connection_events.sql'`,
+		`DELETE FROM schema_migrations WHERE version = '0087_connection_event_team.sql'`,
 	} {
 		if _, err := db.db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

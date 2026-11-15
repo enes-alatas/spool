@@ -28,7 +28,10 @@ func (table connections) List(ctx context.Context) ([]*store.Connection, error) 
 
 func (table connections) ListByLoop(ctx context.Context, loopID string) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections
-		WHERE name IN (SELECT connection FROM connection_loops WHERE loop_id=?) ORDER BY name`, loopID)
+		WHERE name IN (SELECT connection FROM connection_loops WHERE loop_id=?1)
+		   OR name IN (SELECT team_connections.connection FROM team_connections JOIN loops ON loops.team = team_connections.team
+			WHERE loops.id=?1)
+		ORDER BY name`, loopID)
 }
 
 func (table connections) list(ctx context.Context, query string, args ...any) ([]*store.Connection, error) {
@@ -50,7 +53,7 @@ func (table connections) list(ctx context.Context, query string, args ...any) ([
 		return nil, err
 	}
 	for _, connection := range out {
-		if connection.LoopIDs, err = table.loopIDs(ctx, connection.Name); err != nil {
+		if err := table.fill(ctx, connection); err != nil {
 			return nil, err
 		}
 	}
@@ -65,14 +68,36 @@ func (table connections) Get(ctx context.Context, name string) (*store.Connectio
 	if err != nil {
 		return nil, err
 	}
-	if connection.LoopIDs, err = table.loopIDs(ctx, name); err != nil {
+	if err := table.fill(ctx, connection); err != nil {
 		return nil, err
 	}
 	return connection, nil
 }
 
-func (table connections) loopIDs(ctx context.Context, name string) ([]string, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT loop_id FROM connection_loops WHERE connection=? ORDER BY loop_id`, name)
+// fill reads who holds a connection: the loops it is attached to, the teams
+// it is attached to, and every loop holding it either way.
+func (table connections) fill(ctx context.Context, connection *store.Connection) error {
+	var err error
+	if connection.LoopIDs, err = table.names(ctx, `SELECT loop_id FROM connection_loops WHERE connection=? ORDER BY loop_id`, connection.Name); err != nil {
+		return err
+	}
+	if connection.Teams, err = table.names(ctx, `SELECT team FROM team_connections WHERE connection=? ORDER BY team`, connection.Name); err != nil {
+		return err
+	}
+	connection.HolderIDs, err = table.names(ctx, holdersQuery, connection.Name)
+	return err
+}
+
+// holdersQuery is the ids of every loop holding the connection ?1, directly
+// or through its team, sorted.
+const holdersQuery = `SELECT loop_id FROM connection_loops WHERE connection=?1
+	UNION SELECT loops.id FROM loops JOIN team_connections ON team_connections.team = loops.team
+		WHERE team_connections.connection=?1
+	ORDER BY 1`
+
+// names runs a one-column query about one connection, [] for no rows.
+func (table connections) names(ctx context.Context, query, name string) ([]string, error) {
+	rows, err := table.db.QueryContext(ctx, query, name)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +138,7 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 	if err := recordEvent(ctx, tx, store.ConnectionEventCreate, connection.Name, "", connection.CreatedAt); err != nil {
 		return err
 	}
-	connection.LoopIDs = []string{}
+	connection.LoopIDs, connection.Teams, connection.HolderIDs = []string{}, []string{}, []string{}
 	if connection.OwnerLoopID != "" {
 		_, err = tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)`,
 			connection.Name, connection.OwnerLoopID, connection.CreatedAt)
@@ -126,7 +151,7 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 		if err := recordEvent(ctx, tx, store.ConnectionEventAttach, connection.Name, connection.OwnerLoopID, connection.CreatedAt); err != nil {
 			return err
 		}
-		connection.LoopIDs = []string{connection.OwnerLoopID}
+		connection.LoopIDs, connection.HolderIDs = []string{connection.OwnerLoopID}, []string{connection.OwnerLoopID}
 	}
 	return tx.Commit()
 }
@@ -142,7 +167,8 @@ func (table connections) Delete(ctx context.Context, name string, at int64) erro
 		return err
 	}
 	var attached bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM connection_loops WHERE connection=? AND loop_id<>?)`,
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM connection_loops WHERE connection=?1 AND loop_id<>?2)
+		OR EXISTS (SELECT 1 FROM team_connections WHERE connection=?1)`,
 		name, owner).Scan(&attached); err != nil {
 		return err
 	}
@@ -305,12 +331,27 @@ func (table connections) Revoke(ctx context.Context, name string, at int64) ([]s
 	if err != nil {
 		return nil, err
 	}
+	// every loop that held it, through a team too, ends the session that ran
+	// with its value
+	holders, err := idsIn(ctx, tx, holdersQuery, name)
+	if err != nil {
+		return nil, err
+	}
 	loopIDs, err := attachedLoops(ctx, tx, name)
 	if err != nil {
 		return nil, err
 	}
 	for _, loopID := range loopIDs {
 		if err := detachRecorded(ctx, tx, name, loopID, at); err != nil {
+			return nil, err
+		}
+	}
+	teams, err := idsIn(ctx, tx, `SELECT team FROM team_connections WHERE connection=?1 ORDER BY team`, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, team := range teams {
+		if err := detachTeamRecorded(ctx, tx, name, team, at); err != nil {
 			return nil, err
 		}
 	}
@@ -325,13 +366,19 @@ func (table connections) Revoke(ctx context.Context, name string, at int64) ([]s
 	if err := recordEvent(ctx, tx, store.ConnectionEventRevoke, name, owner, at); err != nil {
 		return nil, err
 	}
-	return loopIDs, tx.Commit()
+	return holders, tx.Commit()
 }
 
-// attachedLoops is the ids of the loops holding a connection, read inside
-// tx: the store has one connection, so a read outside it would wait on it.
+// attachedLoops is the ids of the loops a connection is attached to,
+// read inside tx: the store has one connection, so a read outside it
+// would wait on it.
 func attachedLoops(ctx context.Context, tx *sql.Tx, name string) ([]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT loop_id FROM connection_loops WHERE connection=? ORDER BY loop_id`, name)
+	return idsIn(ctx, tx, `SELECT loop_id FROM connection_loops WHERE connection=?1 ORDER BY loop_id`, name)
+}
+
+// idsIn runs a one-column query about one connection inside tx.
+func idsIn(ctx context.Context, tx *sql.Tx, query, name string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, query, name)
 	if err != nil {
 		return nil, err
 	}
@@ -360,6 +407,27 @@ func detachRecorded(ctx context.Context, tx *sql.Tx, name, loopID string, at int
 	return recordEvent(ctx, tx, store.ConnectionEventDetach, name, loopID, at)
 }
 
+// detachTeamRecorded takes the connection from a team, recording it if it
+// was attached.
+func detachTeamRecorded(ctx context.Context, tx *sql.Tx, name, team string, at int64) error {
+	res, err := tx.ExecContext(ctx, `DELETE FROM team_connections WHERE connection=? AND team=?`, name, team)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil
+	}
+	return recordTeamEvent(ctx, tx, store.ConnectionEventDetach, name, team, at)
+}
+
+// recordTeamEvent appends a team attach or detach to the connection's
+// record (#1610).
+func recordTeamEvent(ctx context.Context, tx *sql.Tx, action, connection, team string, at int64) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO connection_events (action, connection, loop_id, loop_name, team, at)
+		VALUES (?, ?, '', '', ?, ?)`, action, connection, team, at)
+	return err
+}
+
 // recordEvent appends a change to the connection's record, with the loop's
 // name as it is now. loopID is "" for a change no loop is part of.
 func recordEvent(ctx context.Context, tx *sql.Tx, action, connection, loopID string, at int64) error {
@@ -369,7 +437,7 @@ func recordEvent(ctx context.Context, tx *sql.Tx, action, connection, loopID str
 }
 
 func (table connections) Events(ctx context.Context, filter store.ConnectionEventFilter) ([]*store.ConnectionEvent, error) {
-	query := `SELECT id, action, connection, loop_id, loop_name, at FROM connection_events WHERE 1=1`
+	query := `SELECT id, action, connection, loop_id, loop_name, team, at FROM connection_events WHERE 1=1`
 	var args []any
 	for column, value := range map[string]string{"connection": filter.Connection, "loop_id": filter.LoopID, "loop_name": filter.LoopName} {
 		if value != "" {
@@ -385,7 +453,7 @@ func (table connections) Events(ctx context.Context, filter store.ConnectionEven
 	events := []*store.ConnectionEvent{}
 	for rows.Next() {
 		var event store.ConnectionEvent
-		if err := rows.Scan(&event.ID, &event.Action, &event.Connection, &event.LoopID, &event.LoopName, &event.At); err != nil {
+		if err := rows.Scan(&event.ID, &event.Action, &event.Connection, &event.LoopID, &event.LoopName, &event.Team, &event.At); err != nil {
 			return nil, err
 		}
 		events = append(events, &event)
@@ -484,4 +552,49 @@ func nullable(value string) any {
 		return nil
 	}
 	return value
+}
+
+func (table connections) AttachTeam(ctx context.Context, name, team string, at int64) error {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	owner, err := liveConnectionOwner(ctx, tx, name)
+	if err != nil {
+		return err
+	}
+	if owner != "" {
+		return store.ErrConnectionPrivate
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO team_connections (team, connection, attached_at) VALUES (?,?,?)
+		ON CONFLICT (team, connection) DO NOTHING`, team, name, at)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound // no team by that name
+	}
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil // attached already
+	}
+	if err := recordTeamEvent(ctx, tx, store.ConnectionEventAttach, name, team, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (table connections) DetachTeam(ctx context.Context, name, team string, at int64) error {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := connectionOwner(ctx, tx, name); err != nil {
+		return err
+	}
+	if err := detachTeamRecorded(ctx, tx, name, team, at); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

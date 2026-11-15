@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -328,6 +329,16 @@ func (table teams) Delete(ctx context.Context, name string) error {
 		return store.ErrNotFound
 	case loops > 0:
 		return store.ErrTeamHasLoops
+	}
+	// Its connections go with it, each on the record as detached (#1610).
+	attached, err := idsIn(ctx, tx, `SELECT connection FROM team_connections WHERE team=?1 ORDER BY connection`, name)
+	if err != nil {
+		return err
+	}
+	for _, connection := range attached {
+		if err := detachTeamRecorded(ctx, tx, connection, name, time.Now().UnixMilli()); err != nil {
+			return err
+		}
 	}
 	// Its channels go as a deleted channel does: membership with them,
 	// rooms unbound, messages keeping the name.

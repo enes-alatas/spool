@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -551,4 +552,52 @@ func teamOrderRefusal(order []string) *requestError {
 		return refusalf(400, codeTeamOrderInvalid, `the order has no place for No team; give it as ""`)
 	}
 	return nil
+}
+
+// teamConnectionsRefusal refuses putting a loop in a team whose
+// connections it couldn't hold beside its own, by the rule a loop's attach
+// follows (attachConflict), naming the connection (#1610). Leaving a team
+// is never refused. The caller holds attachMu to the move, so no attach
+// lands between the check and the loop joining.
+func (server *Server) teamConnectionsRefusal(ctx context.Context, team string, loopRecord *store.Loop) *requestError {
+	if team == "" {
+		return nil
+	}
+	connections, err := server.Store.Connections().List(ctx)
+	if err != nil {
+		return refusalf(500, "", "%v", err)
+	}
+	var held, given []*store.Connection
+	for _, connection := range connections {
+		if loopRecord.ID != "" && slices.Contains(connection.LoopIDs, loopRecord.ID) {
+			held = append(held, connection)
+		}
+		if slices.Contains(connection.Teams, team) {
+			given = append(given, connection)
+		}
+	}
+	for _, connection := range given {
+		if code, problem := attachConflict(connection, loopRecord, append(held, given...)); problem != "" {
+			return refusalf(409, code, "team %q gives its loops %s, and %s", team, connection.Name, problem)
+		}
+	}
+	return nil
+}
+
+// teamConnectionsChanged tells a loop that joined or left a team that the
+// env its team gives it changed, as an attach or detach would.
+func (server *Server) teamConnectionsChanged(ctx context.Context, loopID string, teams ...string) {
+	connections, err := server.Store.Connections().List(ctx)
+	if err != nil {
+		server.Log.Warn("list connections for a team move", "err", err)
+		return
+	}
+	for _, connection := range connections {
+		for _, team := range teams {
+			if team != "" && slices.Contains(connection.Teams, team) {
+				server.envChanged(connection, loopID)
+				break
+			}
+		}
+	}
 }

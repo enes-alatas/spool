@@ -275,6 +275,8 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/loops/{name}/connection-events", server.handleLoopConnectionEvents)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
 	mux.HandleFunc("DELETE /api/loops/{name}/connections/{connection}", server.handleLoopConnection(false))
+	mux.HandleFunc("PUT /api/teams/{team}/connections/{connection}", server.handleTeamConnection(true))
+	mux.HandleFunc("DELETE /api/teams/{team}/connections/{connection}", server.handleTeamConnection(false))
 	mux.HandleFunc("GET /api/channels", server.handleListChannels)
 	mux.HandleFunc("POST /api/channels", server.handleCreateChannel)
 	mux.HandleFunc("GET /api/channels/{name}", server.handleGetChannel)
@@ -612,6 +614,9 @@ type loopView struct {
 type loopConnectionView struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	// Team is the team the loop holds it through, "" for a connection
+	// attached to the loop itself, even one its team holds too (#1610).
+	Team string `json:"team,omitempty"`
 }
 
 // mcpServerView is one MCP server as the session's init reported it.
@@ -649,7 +654,11 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	if connections, err := server.Store.Connections().ListByLoop(ctx, loopRecord.ID); err == nil {
 		for _, connection := range connections {
-			out.Connections = append(out.Connections, loopConnectionView{Name: connection.Name, Kind: connection.Kind})
+			entry := loopConnectionView{Name: connection.Name, Kind: connection.Kind}
+			if !slices.Contains(connection.LoopIDs, loopRecord.ID) {
+				entry.Team = loopRecord.Team
+			}
+			out.Connections = append(out.Connections, entry)
 		}
 	}
 	if loopRecord.OwnerTGUserID != 0 {
@@ -1082,8 +1091,15 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 	return loopRecord, nil
 }
 
-// storeLoop stores a loop prepareLoop built, under its Claude login.
+// storeLoop stores a loop prepareLoop built, under its Claude login. A
+// loop made into a team is checked against the team's connections here,
+// under attachMu to the create, so no team attach lands in between.
 func (server *Server) storeLoop(ctx context.Context, loopRecord *store.Loop) *requestError {
+	server.attachMu.Lock()
+	defer server.attachMu.Unlock()
+	if refusal := server.teamConnectionsRefusal(ctx, loopRecord.Team, loopRecord); refusal != nil {
+		return refusal
+	}
 	refusal, err := server.putOnLogin(ctx, loopRecord.ClaudeLogin, func() error {
 		return server.Store.Loops().Create(ctx, loopRecord)
 	})
@@ -1313,6 +1329,15 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			server.refuse(w, refusal)
 			return
 		}
+		// held to the edit, so no attach lands between the check and the move
+		server.attachMu.Lock()
+		defer server.attachMu.Unlock()
+		if *req.Team != loopRecord.Team {
+			if refusal := server.teamConnectionsRefusal(r.Context(), *req.Team, loopRecord); refusal != nil {
+				server.refuse(w, refusal)
+				return
+			}
+		}
 		edit.Team = req.Team
 	}
 	if req.given() && loopRecord.Runtime != store.RuntimeCloud {
@@ -1429,6 +1454,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	// leaving a team unbinds the loop's rooms in the team's channels
 	if updated.Team != loopRecord.Team {
 		server.roomsChanged(r, updated.ID)
+		server.teamConnectionsChanged(r.Context(), updated.ID, loopRecord.Team, updated.Team)
 	}
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.

@@ -148,7 +148,7 @@ func (server *Server) handleCheckConnection(w http.ResponseWriter, r *http.Reque
 // its secret, and whether the hub can check it at all (checkReach).
 func (server *Server) checkSendsSecret(ctx context.Context, connection *store.Connection) (sendSecret, checkable bool, err error) {
 	var loops []*store.Loop
-	if len(connection.LoopIDs) > 0 {
+	if len(connection.HolderIDs) > 0 {
 		if loops, err = server.Store.Loops().List(ctx); err != nil {
 			return false, false, err
 		}
@@ -166,7 +166,7 @@ func (server *Server) checkSendsSecret(ctx context.Context, connection *store.Co
 func checkReach(connection *store.Connection, loops []*store.Loop) (sendSecret, checkable bool) {
 	for _, loopRecord := range loops {
 		if loopRecord.Runtime == store.RuntimeCloud || loopRecord.Status == store.StatusArchived ||
-			!slices.Contains(connection.LoopIDs, loopRecord.ID) {
+			!slices.Contains(connection.HolderIDs, loopRecord.ID) {
 			continue
 		}
 		if connection.Brokered(loopRecord.Runtime) {

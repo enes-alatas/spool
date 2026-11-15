@@ -79,6 +79,7 @@ var adminRoutes = []string{
 	"PUT /api/loops/{name}/owner", "PUT /api/loops/{name}/rooms",
 	"DELETE /api/loops/{name}/rooms/{surface}/{room}",
 	"PUT /api/loops/{name}/connections/{connection}", "DELETE /api/loops/{name}/connections/{connection}",
+	"PUT /api/teams/{team}/connections/{connection}", "DELETE /api/teams/{team}/connections/{connection}",
 	"POST /api/messages/{id}/retry", "POST /api/messages/{id}/dismiss",
 	"POST /api/connections", "DELETE /api/connections/{name}", "POST /api/connections/{name}/share",
 	"PUT /api/connections/{name}/secret", "POST /api/connections/{name}/revoke", "POST /api/connections/{name}/check",

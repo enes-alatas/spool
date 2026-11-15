@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"time"
 
@@ -48,8 +50,11 @@ type connectionView struct {
 	CreatedAt int64                   `json:"created_at"`
 	Loops     []string                `json:"loops"`
 	OwnerLoop string                  `json:"owner_loop,omitempty"`
-	RotatedAt int64                   `json:"rotated_at,omitempty"`
-	RevokedAt int64                   `json:"revoked_at,omitempty"`
+	// Teams are the teams it is attached to as a whole, sorted; Loops stays
+	// the loops it is attached to directly (#1610).
+	Teams     []string `json:"teams"`
+	RotatedAt int64    `json:"rotated_at,omitempty"`
+	RevokedAt int64    `json:"revoked_at,omitempty"`
 	// LastCheck is the last check of the value it holds, absent for none
 	// and for a reader who doesn't see Config: a check is about the address
 	// an admin set, and its reason is news about what the hub can reach
@@ -76,6 +81,7 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 			CreatedAt: connection.CreatedAt,
 			Loops:     []string{},
 			OwnerLoop: names[connection.OwnerLoopID],
+			Teams:     connection.Teams,
 			RotatedAt: connection.RotatedAt,
 			RevokedAt: connection.RevokedAt,
 		}
@@ -289,7 +295,7 @@ func (server *Server) rotateConnection(ctx context.Context, connection *store.Co
 	if appKey {
 		server.revokeGitHubToken(ctx, connection.Name)
 	}
-	for _, id := range connection.LoopIDs {
+	for _, id := range connection.HolderIDs {
 		server.loopChanged(ctx, id)
 		if actor, ok := server.Manager.Get(id); ok && !appKey {
 			_ = actor.Rotate(store.RotationReasonConnection) // an error is no session to end
@@ -332,7 +338,9 @@ type connectionEventView struct {
 	Action     string `json:"action"`
 	Connection string `json:"connection"`
 	Loop       string `json:"loop,omitempty"`
-	At         int64  `json:"at"`
+	// Team is the team of a team attach or detach (#1610).
+	Team string `json:"team,omitempty"`
+	At   int64  `json:"at"`
 }
 
 func (server *Server) writeConnectionEvents(w http.ResponseWriter, r *http.Request, filter store.ConnectionEventFilter) {
@@ -343,7 +351,7 @@ func (server *Server) writeConnectionEvents(w http.ResponseWriter, r *http.Reque
 	}
 	views := make([]connectionEventView, 0, len(events))
 	for _, event := range events {
-		views = append(views, connectionEventView{Action: event.Action, Connection: event.Connection, Loop: event.LoopName, At: event.At})
+		views = append(views, connectionEventView{Action: event.Action, Connection: event.Connection, Loop: event.LoopName, Team: event.Team, At: event.At})
 	}
 	writeJSON(w, 200, views)
 }
@@ -446,40 +454,78 @@ func (server *Server) attachable(w http.ResponseWriter, r *http.Request, name st
 // doesn't serve the token route.
 // The caller holds attachMu.
 func (server *Server) attachableTo(w http.ResponseWriter, r *http.Request, connection *store.Connection, loopRecord *store.Loop) bool {
-	if connection.Kind == store.ConnectionMCPServer {
-		return true
-	}
-	if connection.Kind == store.ConnectionGitHubApp && loopRecord.Runtime == store.RuntimeCloud {
-		server.jsonErrCode(w, 409, codeConnectionRuntime, "a cloud loop can't hold a github-app: its listener doesn't serve the token route")
-		return false
-	}
 	held, err := server.Store.Connections().ListByLoop(r.Context(), loopRecord.ID)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return false
 	}
-	for _, holder := range held {
-		if holder.Name == connection.Name {
+	if code, problem := attachConflict(connection, loopRecord, held); problem != "" {
+		server.jsonErrCode(w, 409, code, "%s", problem)
+		return false
+	}
+	return true
+}
+
+// attachConflict is attachableTo's rule over what the loop holds, as a
+// refusal code and its sentence, or "" when the loop may hold connection:
+// the one rule a loop's attach, a team's, and a loop joining a team use
+// (#1610).
+func attachConflict(connection *store.Connection, loopRecord *store.Loop, held []*store.Connection) (code, problem string) {
+	if connection.Kind == store.ConnectionGitHubApp && loopRecord.Runtime == store.RuntimeCloud {
+		return codeConnectionRuntime, fmt.Sprintf("loop %q is a cloud loop, and a cloud loop can't hold a github-app: its listener doesn't serve the token route", loopRecord.Name)
+	}
+	return heldConflict(connection, held, fmt.Sprintf("loop %q", loopRecord.Name))
+}
+
+// heldConflict is the part of attachConflict that reads only the
+// connections held, not who holds them, so it checks a team with no loops
+// yet too (#1610). holder names the holder in the sentence.
+func heldConflict(connection *store.Connection, held []*store.Connection, holder string) (code, problem string) {
+	if connection.Kind == store.ConnectionMCPServer {
+		return "", ""
+	}
+	for _, other := range held {
+		if other.Name == connection.Name {
 			continue
 		}
 		switch {
-		case connection.Kind == store.ConnectionEnvVar && holder.Kind == store.ConnectionEnvVar && holder.Config.Env == connection.Config.Env:
-			server.jsonErrCode(w, 409, codeConnectionEnvTaken, "%s already sets %s on loop %q; detach it first",
-				holder.Name, connection.Config.Env, loopRecord.Name)
-			return false
-		case githubIdentity(connection) && githubIdentity(holder):
-			server.jsonErrCode(w, 409, codeConnectionGitHubTaken, "%s already gives loop %q its GitHub identity; detach it first",
-				holder.Name, loopRecord.Name)
-			return false
-		case shadowsGitHubEnv(connection, holder) || shadowsGitHubEnv(holder, connection):
+		case connection.Kind == store.ConnectionEnvVar && other.Kind == store.ConnectionEnvVar && other.Config.Env == connection.Config.Env:
+			return codeConnectionEnvTaken, fmt.Sprintf("%s already sets %s on %s; detach it first",
+				other.Name, connection.Config.Env, holder)
+		case githubIdentity(connection) && githubIdentity(other):
+			return codeConnectionGitHubTaken, fmt.Sprintf("%s already gives %s its GitHub identity; detach it first",
+				other.Name, holder)
+		case shadowsGitHubEnv(connection, other) || shadowsGitHubEnv(other, connection):
 			envVar := connection
 			if envVar.Kind != store.ConnectionEnvVar {
-				envVar = holder
+				envVar = other
 			}
-			server.jsonErrCode(w, 409, codeConnectionGitHubEnv, "%s sets %s, which loop %q's github-app sets for its git and gh; detach it first",
-				envVar.Name, envVar.Config.Env, loopRecord.Name)
-			return false
+			return codeConnectionGitHubEnv, fmt.Sprintf("%s sets %s, which %s's github-app sets for its git and gh; detach it first",
+				envVar.Name, envVar.Config.Env, holder)
 		}
+	}
+	return "", ""
+}
+
+// teamCanHold refuses attaching connection to a team that already holds
+// one it clashes with, whether or not the team has loops yet: an empty
+// team would otherwise take both, then refuse every loop that joined it
+// (#1610). The caller holds attachMu.
+func (server *Server) teamCanHold(w http.ResponseWriter, r *http.Request, connection *store.Connection, team string) bool {
+	connections, err := server.Store.Connections().List(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return false
+	}
+	var given []*store.Connection
+	for _, other := range connections {
+		if slices.Contains(other.Teams, team) {
+			given = append(given, other)
+		}
+	}
+	if code, problem := heldConflict(connection, given, fmt.Sprintf("team %q's loops", team)); problem != "" {
+		server.jsonErrCode(w, 409, code, "%s", problem)
+		return false
 	}
 	return true
 }
@@ -614,5 +660,72 @@ func (server *Server) revokeGitHubToken(ctx context.Context, name string) {
 	}
 	if err := server.GitHubApps.Revoke(ctx, name); err != nil {
 		server.Log.Warn("github-app: the cached token lives out its hour", "connection", name, "err", err)
+	}
+}
+
+// handleTeamConnection attaches the connection to a team as a whole, or
+// detaches it (#1610): every loop in the team holds it, those that join
+// later included. Either is idempotent. A private or revoked connection is
+// refused, and so is one that clashes with a connection the team already
+// holds, members or none (teamCanHold), or one a member couldn't hold,
+// naming that member: the team's loops are checked one by one, as a
+// loop's own attach checks it.
+// Each member's env changes from its next turn, as on a loop's attach.
+func (server *Server) handleTeamConnection(attach bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		teamName, name := r.PathValue("team"), r.PathValue("connection")
+		// the members are read under the lock a loop joining the team holds
+		server.attachMu.Lock()
+		defer server.attachMu.Unlock()
+		team, err := server.Store.Teams().Get(r.Context(), teamName)
+		if err != nil {
+			server.teamErr(w, err, teamName)
+			return
+		}
+		if attach {
+			connection, err := server.Store.Connections().Get(r.Context(), name)
+			switch {
+			case err != nil:
+				server.connectionErr(w, r, err)
+				return
+			case connection.RevokedAt != 0:
+				server.connectionErr(w, r, store.ErrConnectionRevoked)
+				return
+			case connection.OwnerLoopID != "":
+				server.connectionErr(w, r, store.ErrConnectionPrivate)
+				return
+			}
+			if !server.teamCanHold(w, r, connection, teamName) {
+				return
+			}
+			for _, loopID := range team.LoopIDs {
+				member, err := server.Store.Loops().Get(r.Context(), loopID)
+				if err != nil {
+					server.jsonErr(w, 500, "%v", err)
+					return
+				}
+				if !server.attachableTo(w, r, connection, member) {
+					return
+				}
+			}
+			err = server.Store.Connections().AttachTeam(r.Context(), name, teamName, time.Now().UnixMilli())
+			if err != nil {
+				server.connectionErr(w, r, err)
+				return
+			}
+		} else if err := server.Store.Connections().DetachTeam(r.Context(), name, teamName, time.Now().UnixMilli()); err != nil {
+			server.connectionErr(w, r, err)
+			return
+		}
+		connection, err := server.Store.Connections().Get(r.Context(), name)
+		if err != nil {
+			server.connectionErr(w, r, err)
+			return
+		}
+		for _, loopID := range team.LoopIDs {
+			server.loopChanged(r.Context(), loopID)
+			server.envChanged(connection, loopID)
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

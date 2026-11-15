@@ -38,7 +38,7 @@ func (server *Server) brokerHandler() http.Handler {
 			server.Log.Error("mcp broker", "loop", caller.Name, "connection", name, "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
-		case !connection.Brokered(caller.Runtime) || connection.RevokedAt != 0 || !slices.Contains(connection.LoopIDs, caller.ID):
+		case !connection.Brokered(caller.Runtime) || connection.RevokedAt != 0 || !slices.Contains(connection.HolderIDs, caller.ID):
 			http.Error(w, "no such connection", http.StatusNotFound)
 			return
 		}

@@ -435,6 +435,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "SetSecret": false, "Delete": false, "Get": false, "List": false,
 			// Names, loop ids and a timestamp.
 			"Attach": false, "Detach": false, "ListByLoop": false, "Share": false, "Revoke": false,
+			"AttachTeam": false, "DetachTeam": false,
 			// A check's status, reason code and time: the hub's own words,
 			// never the server's (#1360).
 			"SetLastCheck": false,

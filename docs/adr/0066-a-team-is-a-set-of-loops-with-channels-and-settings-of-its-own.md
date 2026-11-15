@@ -1,6 +1,6 @@
 # ADR-0066: A team is a set of loops with channels and settings of its own
 
-Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397; superseded by ADR-0068: item 1's fleet channel bullet and item 4's `default` team) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411); 2026-11-09 (item 6: the Claude login by scope, #1440); 2026-11-11 (item 2: a team's loops are on its home channel's chat surface, ADR-0070, #1500); 2026-11-14 (item 6: the hub keeps one order of its teams, #1451)
+Date: 2026-11-07 · Status: accepted (the operator decided on 2026-11-03 that a team is a native entity, #1289; he accepted this ADR on 2026-11-07, in a direct message to Terra, with item 4 as he set it, recorded on #1397; superseded by ADR-0068: item 1's fleet channel bullet and item 4's `default` team) · Relates to: ADR-0024, ADR-0028, ADR-0032, ADR-0038, ADR-0043, ADR-0048, ADR-0060, ADR-0063 · Amended: 2026-11-09 (item 6: the routes and fields of slice 1, #1410); 2026-11-09 (item 6: the routes and fields of slice 2, #1430); 2026-11-09 (item 6: the fields of fleet rules by scope, #1436); 2026-11-09 (item 7: the control room's teams are on the Fleet page, #1411); 2026-11-09 (item 6: the Claude login by scope, #1440); 2026-11-11 (item 2: a team's loops are on its home channel's chat surface, ADR-0070, #1500); 2026-11-14 (item 6: the hub keeps one order of its teams, #1451); 2026-11-15 (items 3 and 6: a connection attached to a team, #1610)
 
 ## Context
 
@@ -296,6 +296,45 @@ channel, item 1 is amended with it.
      loops in no team last: it is last until an admin moves it.
    - **No team may be named `order`,** the route's name: 400
      `team_name_invalid`.
+
+   **Amendment (2026-11-15, #1610): a connection is attached to a team.**
+   The operator asked on 2026-11-15 for per-team secrets. He chose that
+   day that a team holds a connection the way a loop does, as one
+   attachment every loop in the team receives, not as a scope that
+   limits per-loop attaches (recorded on #1610). That replaces item 6's
+   "a shared connection gains a scope" for connections, and makes item
+   3's "those shared with its team" the connections attached to it.
+   - **`PUT` and `DELETE /api/teams/{team}/connections/{connection}`**
+     attach and detach, an admin's, idempotent, answering 204. A
+     private connection is 409 `connection_private`, and a revoked one
+     409 `connection_revoked`. Every loop in the team is checked as a
+     loop's own attach checks it, so one that couldn't hold the
+     connection refuses the attach with that check's 409, naming the
+     loop. The connection is checked against the team's own
+     connections too, whether or not it has loops yet, so an empty team
+     can't take two that clash and then refuse every loop that joins.
+   - **Every loop in the team holds it**, those that join later
+     included, and a loop leaving loses it. Its env changes from its
+     next turn, as on a loop's attach or detach. Joining a team whose
+     connections the loop couldn't hold beside its own is refused with
+     the same 409, naming the connection; leaving one never is.
+   - **The views.** A connection view carries `teams`, sorted, and
+     `loops` stays its direct attachments. A loop view's `connections`
+     lists all it holds, each with `team` for one it holds only through
+     its team. A connection event carries `team` for a team attach or
+     detach.
+   - **Lifecycle.** A connection a team holds is not deleted (409
+     `connection_attached`). A revoke detaches it from its teams too,
+     and every loop that held it, directly or through a team, rotates,
+     as on a rotation of its value. A deleted team takes its
+     attachments, each on the record as detached; a team with loops is
+     still not deleted. A rename carries them. Nothing changes on an
+     upgrade, since no team holds a connection yet.
+   - **What it replaces.** Item 6 refused deleting a team "while the
+     team has ... connections shared with it", and a loop's move "while
+     the loop holds a connection shared with its old team". Under a team
+     attachment neither holds: a deleted team takes its attachments, and
+     a loop that leaves loses them.
 
 7. **It ships in slices, as children of #1289,** in this order:
    1. the store and API know a team, and a loop's place in it;

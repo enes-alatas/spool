@@ -202,9 +202,9 @@ func TestCheckLimiter(t *testing.T) {
 // that doesn't hold it, and a loopback server only for a bare loop.
 func TestCheckReach(t *testing.T) {
 	remote := httpConnection("https://mcp.example.test/mcp", checkFixtureSecret)
-	remote.LoopIDs = []string{"l1"}
+	remote.HolderIDs = []string{"l1"}
 	local := httpConnection("http://127.0.0.1:8931/mcp", checkFixtureSecret)
-	local.LoopIDs = []string{"l1"}
+	local.HolderIDs = []string{"l1"}
 	loop := func(runtime, status string) []*store.Loop {
 		return []*store.Loop{{ID: "l1", Runtime: runtime, Status: status}, {ID: "l2", Runtime: store.RuntimeBare}}
 	}

@@ -2301,9 +2301,15 @@ type Connection struct {
 	// RevokedAt is when the connection was revoked, 0 for never. A revoked
 	// one holds no value and no loop.
 	RevokedAt int64
-	// LoopIDs are the loops the connection is attached to, in no promised
-	// order.
+	// LoopIDs are the loops the connection is attached to directly, in no
+	// promised order.
 	LoopIDs []string
+	// Teams are the teams it is attached to as a whole, name-sorted: every
+	// loop in one holds it (ADR-0066, #1610).
+	Teams []string
+	// HolderIDs are every loop that holds it, directly or through a team,
+	// sorted: who an injection, a rotation or the broker counts.
+	HolderIDs []string
 	// OwnerLoopID is the loop a private connection belongs to, and "" for
 	// one the fleet shares. A private one is attached to its owner when it
 	// is created, and to no other loop until it is shared.
@@ -2411,8 +2417,9 @@ type ConnectionStore interface {
 	// unknown owner.
 	Create(ctx context.Context, connection *Connection) error
 	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
-	// while any loop but a private one's owner holds it. A private one is
-	// detached from its owner in the same step. Its value is retired.
+	// while any loop but a private one's owner holds it, or a team does. A
+	// private one is detached from its owner in the same step. Its value is
+	// retired.
 	Delete(ctx context.Context, name string, at int64) error
 	// Share makes a private connection the fleet's, for good: its value may
 	// be in another loop's env from then on. Sharing a shared one changes
@@ -2440,14 +2447,22 @@ type ConnectionStore interface {
 	// Detach takes it away again; detaching what is not attached changes
 	// nothing. ErrNotFound for an unknown connection.
 	Detach(ctx context.Context, name, loopID string, at int64) error
-	// Revoke detaches the connection from every loop, retires its value,
-	// clears LastCheck, and stamps RevokedAt, in one step. It returns the
-	// loops it was detached from. ErrNotFound for an unknown name, and
+	// Revoke detaches the connection from every loop and team, retires its
+	// value, clears LastCheck, and stamps RevokedAt, in one step. It returns
+	// the loops that held it, directly or through a team. ErrNotFound for an unknown name, and
 	// ErrConnectionRevoked for one revoked already.
 	Revoke(ctx context.Context, name string, at int64) ([]string, error)
-	// ListByLoop returns the connections attached to one loop, name-sorted,
-	// secrets included for the injector.
+	// ListByLoop returns the connections one loop holds, attached to it or
+	// to its team, name-sorted, secrets included for the injector.
 	ListByLoop(ctx context.Context, loopID string) ([]*Connection, error)
+	// AttachTeam gives every loop in a team the connection, those that join
+	// later included; attaching it again changes nothing. ErrNotFound for an
+	// unknown connection or team, ErrConnectionPrivate for a private one,
+	// and ErrConnectionRevoked for a revoked one (#1610).
+	AttachTeam(ctx context.Context, name, team string, at int64) error
+	// DetachTeam takes it from the team again; detaching what is not
+	// attached changes nothing. ErrNotFound for an unknown connection.
+	DetachTeam(ctx context.Context, name, team string, at int64) error
 	// Events returns the record of changes the filter matches, newest
 	// first: in the order they were made, whatever their timestamps say.
 	// Every write above records its change in the same step, and one that
@@ -2489,7 +2504,10 @@ type ConnectionEvent struct {
 	Connection string
 	LoopID     string
 	LoopName   string
-	At         int64
+	// Team is the team of a team attach or detach, "" for every other
+	// change (#1610).
+	Team string
+	At   int64
 }
 
 // The changes a connection's record holds.

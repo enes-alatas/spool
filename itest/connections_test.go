@@ -30,6 +30,7 @@ type connectionJSON struct {
 type loopConnectionJSON struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	Team string `json:"team"`
 }
 
 // loopConnections is the loop view's connections field.
@@ -170,7 +171,7 @@ func TestConnectionAttachments(t *testing.T) {
 	if !reflect.DeepEqual(github.Loops, []string{"aster", "briar"}) {
 		t.Errorf("github's loops = %v, want [aster briar]", github.Loops)
 	}
-	want := []loopConnectionJSON{{"docs", "mcp-server"}, {"github", "env-var"}}
+	want := []loopConnectionJSON{{Name: "docs", Kind: "mcp-server"}, {Name: "github", Kind: "env-var"}}
 	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want) {
 		t.Errorf("aster's connections = %+v, want %+v", got, want)
 	}

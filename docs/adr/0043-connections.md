@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057); 2026-11-05 (item 2: a connection is checked from the hub, #1323); 2026-11-06 (item 2: a connection keeps its last check, #1360)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057); 2026-11-05 (item 2: a connection is checked from the hub, #1323); 2026-11-06 (item 2: a connection keeps its last check, #1360); 2026-11-15 (item 5: a team holds a connection, #1610)
 
 ## Context
 
@@ -412,6 +412,11 @@ follow in their own slice and amend this ADR.
    there as it would have, and the fresh session after it gets the new
    env. A loop with no process reads the env at its next wake, as before. An `mcp-server` still reaches the loop at its
    next spawn. Enes chose this over a copy-only fix on 2026-10-07.
+
+   **Amendment (2026-11-15, #1610): a team holds a connection.** A
+   shared connection can be attached to a team as a whole, and every loop
+   in the team holds it; a loop's connections are its own attachments
+   and its team's. ADR-0066 item 6 holds the routes and rules.
 
 ## Consequences
 
