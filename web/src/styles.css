@@ -6957,3 +6957,9 @@ button.orb:focus-visible .orb-peek {
   width: 1.625rem;
   padding: 0;
 }
+/* A team's chip (#1611): the whole team holds it, so it reads as a group,
+   filled, beside the single loops' outlined chips. */
+.connection-chips .team-chip {
+  background: var(--surface);
+  font-family: inherit;
+}

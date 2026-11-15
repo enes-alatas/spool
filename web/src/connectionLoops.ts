@@ -20,17 +20,22 @@ export function loopOptions(
   connections: readonly Connection[],
 ): LoopOption[] {
   const byName = new Map(connections.map((other) => [other.name, other]))
-  return loops.map((loop) => {
-    if (loop.runtime === 'cloud' && c.kind === 'github-app')
-      return { name: loop.name, refused: "a cloud loop can't hold a GitHub App" }
-    if (givesGitHubIdentity(c)) {
-      const identity = (loop.connections ?? []).find(
-        (a) => a.name !== c.name && givesGitHubIdentity(byName.get(a.name) ?? { kind: a.kind }),
-      )
-      if (identity) return { name: loop.name, refused: `has its GitHub identity from ${identity.name}` }
-    }
-    return { name: loop.name }
-  })
+  // A loop holding it through its team (#1611) is not offered: the team's
+  // chip on the row already says it has it, and is where it comes off.
+  const throughTeam = (loop: LoopView) => (loop.connections ?? []).some((a) => a.name === c.name && a.team)
+  return loops
+    .filter((loop) => !throughTeam(loop))
+    .map((loop) => {
+      if (loop.runtime === 'cloud' && c.kind === 'github-app')
+        return { name: loop.name, refused: "a cloud loop can't hold a GitHub App" }
+      if (givesGitHubIdentity(c)) {
+        const identity = (loop.connections ?? []).find(
+          (a) => a.name !== c.name && givesGitHubIdentity(byName.get(a.name) ?? { kind: a.kind }),
+        )
+        if (identity) return { name: loop.name, refused: `has its GitHub identity from ${identity.name}` }
+      }
+      return { name: loop.name }
+    })
 }
 
 // The calls that take a connection from the loops it is on to the loops

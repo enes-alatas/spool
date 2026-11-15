@@ -138,6 +138,9 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                 <span className="loop-connection-kind">
                   {kindLabel(a.kind)}
                   {mine && <span className="connection-private">private</span>}
+                  {/* Held through the loop's team (#1611): it comes off on
+                      the team, from the Connections page. */}
+                  {a.team && <span className="connection-private">through team {a.team}</span>}
                 </span>
                 {mine && manage && (
                   <span className="loop-connection-tools">
@@ -166,7 +169,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   />
                 )}
               </span>
-              {!manage ? null : mine ? (
+              {!manage || a.team ? null : mine ? (
                 <button
                   className="btn sm danger"
                   onClick={() => remove(c)}

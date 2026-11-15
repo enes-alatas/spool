@@ -174,6 +174,14 @@ describe('connectionEventLabel', () => {
       'value rotated',
     )
   })
+  it('names the team of a team attach or detach (#1611), which has no loop', () => {
+    expect(
+      connectionEventLabel({ action: 'attach', connection: 'github', team: 'backend', at }, 'connection'),
+    ).toBe('attached to team backend')
+    expect(
+      connectionEventLabel({ action: 'detach', connection: 'github', team: 'backend', at }, 'loop'),
+    ).toBe('github detached from team backend')
+  })
   it("names the connection on a loop's history", () => {
     expect(priv.slice(0, 2).map((e) => connectionEventLabel(e, 'loop'))).toEqual([
       'gardener-key-0f1a7e shared with the fleet',

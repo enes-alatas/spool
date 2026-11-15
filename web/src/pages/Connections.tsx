@@ -3,7 +3,7 @@ import { useMay } from '../components/Session'
 import { Link, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Connection, type LoopView } from '../api'
-import { connectionDetail, connectionKindLabel } from '../connections'
+import { connectionDetail, connectionKindLabel, teamRefusal } from '../connections'
 import { attachPlan, loopOptions } from '../connectionLoops'
 import { applyLoops, LoopChips } from '../components/ConnectionLoops'
 import { ConnectionForm } from '../components/ConnectionForm'
@@ -44,12 +44,14 @@ function ConnectionRow({
   cloudLoops,
   fleet,
   connections,
+  teams,
   onChanged,
 }: {
   c: Connection
   cloudLoops: Set<string>
   fleet: LoopView[]
   connections: Connection[]
+  teams: string[]
   onChanged: () => void
 }) {
   // Rotating, revoking, sharing and deleting are an admin's (#679); the
@@ -63,7 +65,12 @@ function ConnectionRow({
   const check = useConnectionCheck(c.name)
   // `?? []`: a hub from before attachments sends no `loops`.
   const loops = c.loops ?? []
-  const attached = loops.length > 0
+  // The teams it is on as a whole (#1611), each a chip of its own ahead of
+  // the loops it is on directly.
+  const onTeams = c.teams ?? []
+  const attached = loops.length > 0 || onTeams.length > 0
+  // What holds it, as a sentence names them: the teams, then the loops.
+  const holderNames = [...onTeams.map((team) => `team ${team}`), ...loops]
 
   const remove = async () => {
     if (
@@ -99,14 +106,30 @@ function ConnectionRow({
     if (refusals.length > 0) setError(`Not every loop took ${c.name}. ${refusals.join(' ')}`)
     onChanged()
   }
+  // A team's chip (#1611): one call for the whole team. A member the hub
+  // refuses fails it all, in the hub's words, which name the loop.
+  const saveTeam = async (team: string, on: boolean) => {
+    setBusy(true)
+    setError('')
+    try {
+      await (on ? api.attachConnectionToTeam(team, c.name) : api.detachConnectionFromTeam(team, c.name))
+    } catch (e) {
+      setError(teamRefusal(team, c.name, on, e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+      onChanged()
+    }
+  }
 
   const revoke = async () => {
     const holders =
-      loops.length === 0
-        ? ''
-        : loops.length === 1
-          ? ` Takes it from ${loops[0]} now and ends its session.`
-          : ` Takes it from ${loops.join(', ')} now and ends their sessions.`
+      onTeams.length > 0
+        ? ` Takes it from ${holderNames.join(', ')} now and ends the session of every loop holding it.`
+        : loops.length === 0
+          ? ''
+          : loops.length === 1
+            ? ` Takes it from ${loops[0]} now and ends its session.`
+            : ` Takes it from ${loops.join(', ')} now and ends their sessions.`
     if (
       !confirm(
         `Revoke "${c.name}"?${holders} It can never be attached, shared or given a new value again, and its value stays redacted. To replace it, create a new connection.`,
@@ -175,6 +198,10 @@ function ConnectionRow({
             label={c.name}
             onAdd={(loop) => saveLoops([...loops, loop])}
             onRemove={(loop) => saveLoops(loops.filter((l) => l !== loop))}
+            teams={teams}
+            pickedTeams={c.teams ?? []}
+            onAddTeam={(team) => saveTeam(team, true)}
+            onRemoveTeam={(team) => saveTeam(team, false)}
             renderLoop={(loop) => (
               <>
                 <Link to={`/loops/${loop}`}>@{loop}</Link>
@@ -185,9 +212,15 @@ function ConnectionRow({
         ) : attached ? (
           <>
             on{' '}
+            {onTeams.map((team, i) => (
+              <Fragment key={`team:${team}`}>
+                {i > 0 && ', '}
+                team {team}
+              </Fragment>
+            ))}
             {loops.map((loop, i) => (
               <Fragment key={loop}>
-                {i > 0 && ', '}
+                {(i > 0 || onTeams.length > 0) && ', '}
                 <Link to={`/loops/${loop}`}>{loop}</Link>
                 {cloudLoops.has(loop) && <CloudReach kind={c.kind} />}
               </Fragment>
@@ -239,7 +272,7 @@ function ConnectionRow({
           className="btn sm danger"
           onClick={remove}
           disabled={busy || attached}
-          title={attached ? `Attached to ${loops.join(', ')}: detach it first` : undefined}
+          title={attached ? `Attached to ${holderNames.join(', ')}: detach it first` : undefined}
         >
           {busy ? 'Deleting…' : 'Delete'}
         </button>
@@ -346,6 +379,7 @@ export default function Connections() {
   const may = useMay()
   const { data, isPending, error } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const { data: teams } = useQuery({ queryKey: ['teams'], queryFn: api.teams })
   const cloudLoops = new Set(
     (loops ?? []).filter((loop) => loop.runtime === 'cloud').map((loop) => loop.name),
   )
@@ -375,6 +409,7 @@ export default function Connections() {
       cloudLoops={cloudLoops}
       fleet={loops ?? []}
       connections={data ?? []}
+      teams={(teams ?? []).map((t) => t.name)}
       onChanged={refresh}
     />
   )

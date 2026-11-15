@@ -16,6 +16,10 @@ export function LoopChips({
   onAdd,
   onRemove,
   renderLoop = (loop) => `@${loop}`,
+  teams = [],
+  pickedTeams = [],
+  onAddTeam,
+  onRemoveTeam,
 }: {
   options: LoopOption[]
   picked: string[]
@@ -25,10 +29,30 @@ export function LoopChips({
   onRemove: (loop: string) => void
   // How a chip names its loop: on a row, a link to the loop's page.
   renderLoop?: (loop: string) => ReactNode
+  // The hub's teams (#1611): picking one attaches it to the whole team,
+  // one chip naming the team, and every loop in it holds it.
+  teams?: string[]
+  pickedTeams?: string[]
+  onAddTeam?: (team: string) => void
+  onRemoveTeam?: (team: string) => void
 }) {
   const addable = options.filter((o) => !picked.includes(o.name))
+  const addableTeams = teams.filter((t) => !pickedTeams.includes(t))
   return (
     <span className="channel-loops connection-chips">
+      {pickedTeams.map((team) => (
+        <span key={`team:${team}`} className="channel-loop team-chip">
+          team {team}
+          <button
+            aria-label={`Take ${label} off team ${team}`}
+            title={`Take ${label} off team ${team} and its loops`}
+            disabled={disabled}
+            onClick={() => onRemoveTeam?.(team)}
+          >
+            <RemoveIcon />
+          </button>
+        </span>
+      ))}
       {picked.map((loop) => (
         <span key={loop} className="channel-loop">
           {renderLoop(loop)}
@@ -42,17 +66,24 @@ export function LoopChips({
           </button>
         </span>
       ))}
-      {addable.length > 0 && (
+      {(addable.length > 0 || addableTeams.length > 0) && (
         <select
           className="channel-add"
           value=""
           disabled={disabled}
           aria-label={`Attach ${label} to a loop`}
-          onChange={(e) => onAdd(e.target.value)}
+          onChange={(e) =>
+            e.target.value.startsWith('team:') ? onAddTeam?.(e.target.value.slice(5)) : onAdd(e.target.value)
+          }
         >
           <option value="" disabled>
             + Attach to
           </option>
+          {addableTeams.map((team) => (
+            <option key={`team:${team}`} value={`team:${team}`}>
+              team {team}
+            </option>
+          ))}
           {addable.map(({ name, refused }) => (
             <option key={name} value={name} disabled={!!refused}>
               @{name}

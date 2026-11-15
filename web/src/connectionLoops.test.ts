@@ -37,6 +37,16 @@ describe('loopOptions', () => {
   })
 })
 
+describe('loopOptions and a team (#1611)', () => {
+  it('leaves out a loop that holds it through its team, whose chip says so', () => {
+    const loops = [
+      loop('scout', { connections: [{ name: 'SENTRY_DSN', kind: 'env-var', team: 'backend' }] }),
+      loop('quiet', { connections: [{ name: 'SENTRY_DSN', kind: 'env-var', team: '' }] }),
+    ]
+    expect(loopOptions(conn('SENTRY_DSN'), loops, [])).toEqual([{ name: 'quiet' }])
+  })
+})
+
 describe('attachPlan', () => {
   it('attaches the loops added and detaches the loops taken off', () => {
     expect(attachPlan(['a', 'b'], ['b', 'c'])).toEqual({ attach: ['c'], detach: ['a'] })

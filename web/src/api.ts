@@ -1219,6 +1219,11 @@ export interface Connection {
   // else is refused (`connection_private`) until it is shared, one way, and
   // deleting it detaches it from its owner in the same step.
   owner_loop?: string
+  // The teams it is attached to as a whole (#1610), by name, sorted: every
+  // loop in one holds it, a loop that joins later too, and one that leaves
+  // loses it. `loops` stays the loops it is attached to directly. Absent
+  // from a hub too old for it.
+  teams?: string[]
   // When its value was last replaced (#609), absent if never. The old value
   // is never readable again, and stays redacted.
   rotated_at?: number
@@ -1277,6 +1282,8 @@ export interface ConnectionEvent {
   action: ConnectionAction
   connection: string
   loop?: string
+  // The team of a team attach or detach (#1610), which names no loop.
+  team?: string
   at: number
 }
 
@@ -1297,6 +1304,10 @@ export interface CloudTurn {
 export interface LoopConnection {
   name: string
   kind: ConnectionKind
+  // The team it comes through (#1610), '' or absent for a direct
+  // attachment; one held both ways reads as direct. Only a direct one is
+  // detached from the loop: a team's is taken off the team.
+  team?: string
 }
 
 export interface CreateConnectionReq {
@@ -1774,6 +1785,14 @@ export const api = {
     req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'PUT' }),
   detachConnection: (loop: string, connection: string) =>
     req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'DELETE' }),
+  // A team's, as a whole (#1610): every loop in the team holds it, and the
+  // first member the hub refuses (a cloud loop and a GitHub App, a variable
+  // set twice, a second GitHub identity) fails the whole attach, naming the
+  // loop. Also 204 and idempotent.
+  attachConnectionToTeam: (team: string, connection: string) =>
+    req<void>(`/api/teams/${team}/connections/${connection}`, { method: 'PUT' }),
+  detachConnectionFromTeam: (team: string, connection: string) =>
+    req<void>(`/api/teams/${team}/connections/${connection}`, { method: 'DELETE' }),
   // One way: a shared value may already be in another loop's env (#600).
   shareConnection: (name: string) => req<Connection>(`/api/connections/${name}/share`, { method: 'POST' }),
   // Replaces the value (#609): every loop holding the connection ends its

@@ -177,8 +177,10 @@ export function connectionEventLabel(e: ConnectionEvent, from: 'connection' | 'l
   const subject = from === 'loop' ? `${e.connection} ` : ''
   switch (e.action) {
     case 'attach':
+      if (e.team) return `${subject}attached to team ${e.team}`
       return from === 'loop' ? `${subject}attached` : `attached to ${e.loop}`
     case 'detach':
+      if (e.team) return `${subject}detached from team ${e.team}`
       return from === 'loop' ? `${subject}detached` : `detached from ${e.loop}`
     case 'create':
       return `${subject}created`
@@ -226,4 +228,13 @@ export function attachErrorText(code: string, connection: string, loop: string):
   if (code === 'connection_runtime')
     return `${connection} is a GitHub App, which a cloud loop can't hold: its session has no way to fetch the app's tokens.`
   return undefined
+}
+
+// The row's error when the hub refuses a team's chip (#1611), worded by
+// direction: an attach the team "did not take", a detach that "did not come
+// off" it.
+export function teamRefusal(team: string, connection: string, on: boolean, reason: string): string {
+  return on
+    ? `Team ${team} did not take ${connection}: ${reason}`
+    : `${connection} did not come off team ${team}: ${reason}`
 }
