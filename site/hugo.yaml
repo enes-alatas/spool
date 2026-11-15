@@ -19,18 +19,6 @@ markup:
   highlight:
     noClasses: false
 
-menu:
-  main:
-    - name: Search
-      weight: 1
-      params:
-        type: search
-    - name: GitHub
-      weight: 2
-      url: https://github.com/enes-alatas/spool
-      params:
-        icon: github
-
 params:
   navbar:
     displayTitle: true

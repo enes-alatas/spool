@@ -324,17 +324,19 @@ deciding each area has nothing to do. The mapping:
 | `.claude/skills/` | no | no | no | no | no | yes | no |
 | `site/` | no | no | no | no | no | no | yes |
 | `docs/`, `README`, anything else | no | no | no | no | no | no | no |
-| `.github/workflows/` | yes | yes | yes | yes | yes | only `ci.yml` | only `ci.yml` |
+| `.github/workflows/` | yes | yes | yes | yes | yes | only `ci.yml` | only `ci.yml` and `site.yml` |
 
 The secret scans are in no row: they run on every pull request whatever it
 touched, because a credential can be added to any file.
 
 A change to `ci.yml` runs everything: the gates must prove themselves
 under the gates they are changing. A change to another workflow runs all
-but the skills gate, whose ~1 GB image only `ci.yml` pins, and the docs
-site's build. The docs site column is its build with the Hugo `site/hugo.pin`
-names, checked by SHA-256, and `scripts/site-origins.sh` failing on any load
-from another origin in the output (ADR-0071).
+but the skills gate, whose ~1 GB image only `ci.yml` pins, and, but for
+`site.yml`, the docs site's build. The docs site column is its build with
+the Hugo `site/hugo.pin` names, checked by SHA-256, and
+`scripts/site-origins.sh` failing on any load from another origin in the
+output, then `scripts/site-pages-test.sh` building both trees Pages serves
+as `site.yml` builds them (ADR-0071).
 
 `itest` is also skipped when the exact content it covers already passed it
 on the same PR (#314). A green run leaves an Actions cache marker keyed on

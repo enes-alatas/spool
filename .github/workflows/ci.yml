@@ -161,10 +161,10 @@ jobs:
           if echo "$files" | grep -qE '^(\.claude/skills/|scripts/skill-tier1-gate\.sh$|\.github/workflows/ci\.yml$)'; then
             skills=true
           fi
-          # The docs site (ADR-0071): its source, its build and origin check, and
-          # this workflow.
+          # The docs site (ADR-0071): its source, its build and origin check, the
+          # workflow that publishes it, and this one.
           site=false
-          if echo "$files" | grep -qE '^(site/|scripts/site-|\.github/workflows/ci\.yml$)'; then
+          if echo "$files" | grep -qE '^(site/|scripts/site-|\.github/workflows/(ci|site)\.yml$)'; then
             site=true
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\nskills=%s\nsite=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" "$skills" "$site" >> "$GITHUB_OUTPUT"
@@ -492,6 +492,11 @@ jobs:
       - name: the docs site builds, loading nothing from another origin
         if: needs.changes.outputs.site == 'true'
         run: bash scripts/gate-annotate.sh site-build -- bash scripts/site-build.sh
+      # What the site workflow deploys, each tree built as it builds them:
+      # with no release, a release carrying no site/, and one carrying it.
+      - name: the Pages trees build from a release and from main
+        if: needs.changes.outputs.site == 'true'
+        run: bash scripts/gate-annotate.sh site-pages-test -- bash scripts/site-pages-test.sh
 
       # The sentinel's step is inline YAML, so this harness extracts and runs
       # it; nothing else exercises it before it ships (#210).
