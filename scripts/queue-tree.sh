@@ -18,11 +18,23 @@ main() {
   if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
     git fetch --quiet --no-tags --unshallow origin
   fi
-  git fetch --quiet --no-tags origin "+refs/pull/$pr/head:refs/queue/head" main
-  fetched=$(git rev-parse refs/queue/head)
-  if [ "$fetched" != "$head" ]; then
-    echo "#$pr is at $fetched, not the $head the queue picked; a newer run tests it" >&2
-    exit 1
+  # GitHub has been seen to leave a PR with no refs/pull/N/head (#1619 had
+  # only its merge ref), and that fetch then dies with git's exit 128. The
+  # head SHA is what the queue picked and what its status lands on, so it
+  # is fetched by itself instead. The moved-head check needs the ref, so it
+  # is skipped on this path: a head that moved has no status from this run.
+  if git fetch --quiet --no-tags origin "+refs/pull/$pr/head:refs/queue/head" main; then
+    fetched=$(git rev-parse refs/queue/head)
+    if [ "$fetched" != "$head" ]; then
+      echo "#$pr is at $fetched, not the $head the queue picked; a newer run tests it" >&2
+      exit 1
+    fi
+  else
+    echo "::warning::GitHub has no refs/pull/$pr/head; testing $head, fetched by its SHA"
+    if ! git fetch --quiet --no-tags origin main "$head"; then
+      echo "#$pr: neither refs/pull/$pr/head nor $head can be fetched" >&2
+      exit 1
+    fi
   fi
   git cat-file -e "$base^{commit}"
 

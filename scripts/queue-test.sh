@@ -337,6 +337,19 @@ if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 "$head" "$base") > "$wor
 else
   fail 'the queued PR is tested rebased onto main'; sed 's/^/    /' "$work/tree"
 fi
+git -C "$origin" update-ref -d refs/pull/1/head
+if (cd "$clone" && git checkout -q --detach "$base" && bash "$root/scripts/queue-tree.sh" 1 "$head" "$base") > "$work/tree-noref" 2>&1 &&
+  [ "$(cat "$clone/f")" = $'A\nb\nC' ]; then
+  expect 'a PR GitHub left with no head ref is tested by its SHA, with a warning' "$work/tree-noref" "no refs/pull/1/head; testing $head"
+else
+  fail 'a PR GitHub left with no head ref is tested by its SHA, with a warning'; sed 's/^/    /' "$work/tree-noref"
+fi
+if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 0123456789abcdef0123456789abcdef01234567 "$base") > "$work/tree-nothing" 2>&1; then
+  fail 'with no head ref and no such commit, the tree fails, saying so'
+else
+  expect 'with no head ref and no such commit, the tree fails, saying so' "$work/tree-nothing" 'neither refs/pull/1/head nor'
+fi
+git -C "$origin" update-ref refs/pull/1/head "$head"
 if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 "$base" "$base") > "$work/tree-moved" 2>&1; then
   fail 'a PR whose head moved since the pick is refused'
 else
