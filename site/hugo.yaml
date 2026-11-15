@@ -1,0 +1,54 @@
+# Spool's docs site (ADR-0071). Built by scripts/site-build.sh with the Hugo
+# that hugo.pin names; the theme is vendored under themes/hextra.
+baseURL: https://enes-alatas.github.io/spool/
+title: Spool
+theme: hextra
+enableRobotsTXT: true
+disableKinds: [taxonomy, term]
+
+# Nothing is fetched at build time: a template that reaches for a remote
+# resource (a CDN script, a remote icon) fails the build instead.
+security:
+  http:
+    urls: ['^$']
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: false
+  highlight:
+    noClasses: false
+
+menu:
+  main:
+    - name: Search
+      weight: 1
+      params:
+        type: search
+    - name: GitHub
+      weight: 2
+      url: https://github.com/enes-alatas/spool
+      params:
+        icon: github
+
+params:
+  navbar:
+    displayTitle: true
+    displayLogo: false
+  theme:
+    default: system
+    displayToggle: true
+  footer:
+    displayCopyright: false
+    displayPoweredBy: false
+  # Search runs on an index built with the site, with FlexSearch served
+  # from the site itself (assets/lib/flexsearch), never a CDN.
+  search:
+    enable: true
+    type: flexsearch
+    flexsearch:
+      js: lib/flexsearch/flexsearch.bundle.min.js
+      index: content
+      tokenize: forward
+  page:
+    width: normal

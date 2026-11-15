@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke ui-align demo image image-multiarch clean
+.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke ui-align demo image image-multiarch site clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -140,6 +140,12 @@ ui:
 
 ui-dev:
 	cd web && npm run dev
+
+# The docs site (ADR-0071), built into site/public with the pinned Hugo and
+# checked to load nothing from another origin. `hugo server --source site`
+# serves it live, with the same Hugo on PATH.
+site:
+	bash scripts/site-build.sh
 
 # The control room's standard screenshot set, against a fixture store (#248).
 # A screenshot in a PR is fixture-driven, never the live fleet (CONVENTIONS.md

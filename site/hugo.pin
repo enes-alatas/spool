@@ -1,0 +1,6 @@
+# The Hugo that builds this site (ADR-0071): its version, and the SHA-256 of
+# each release archive scripts/site-build.sh may download, from the release's
+# hugo_<version>_checksums.txt. Hextra v0.13.0 is tested against 0.166.0.
+version=0.166.0
+linux-amd64=45228f5a52eb118b0ca168068f01d7df0447314a24056f1d29667ed9fc368308
+linux-arm64=0e15cbc595e799401698c11af39d2594b64292b39d9ec7a19665bd43e05fcb2c

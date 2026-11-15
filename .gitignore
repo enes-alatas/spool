@@ -28,3 +28,9 @@ web/dist/*
 # and the key pair the hub reads
 docker/langfuse/langfuse.env
 docker/langfuse/hub.env
+
+# The docs site's build output and Hugo's cache (scripts/site-build.sh)
+/site/public/
+/site/resources/
+/site/.hugo_build.lock
+/.cache/hugo/

@@ -316,21 +316,25 @@ the secret scans — before the fold they were the one job with no `needs:`.
 The rest of that job then fails fast rather than reading an empty filter and
 deciding each area has nothing to do. The mapping:
 
-| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | browser smoke | workflows | skills |
-|---|---|---|---|---|---|---|
-| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | only `cmd/uifixture/` | no | no |
-| `web/` | no | no | yes | yes | no | no |
-| `scripts/` | no | no | no | only `scripts/fixture-hub.sh` | yes | only `scripts/skill-tier1-gate.sh` |
-| `.claude/skills/` | no | no | no | no | no | yes |
-| `docs/`, `README`, anything else | no | no | no | no | no | no |
-| `.github/workflows/` | yes | yes | yes | yes | yes | only `ci.yml` |
+| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | browser smoke | workflows | skills | docs site |
+|---|---|---|---|---|---|---|---|
+| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | only `cmd/uifixture/` | no | no | no |
+| `web/` | no | no | yes | yes | no | no | no |
+| `scripts/` | no | no | no | only `scripts/fixture-hub.sh` | yes | only `scripts/skill-tier1-gate.sh` | only `scripts/site-*` |
+| `.claude/skills/` | no | no | no | no | no | yes | no |
+| `site/` | no | no | no | no | no | no | yes |
+| `docs/`, `README`, anything else | no | no | no | no | no | no | no |
+| `.github/workflows/` | yes | yes | yes | yes | yes | only `ci.yml` | only `ci.yml` |
 
 The secret scans are in no row: they run on every pull request whatever it
 touched, because a credential can be added to any file.
 
 A change to `ci.yml` runs everything: the gates must prove themselves
 under the gates they are changing. A change to another workflow runs all
-but the skills gate, whose ~1 GB image only `ci.yml` pins.
+but the skills gate, whose ~1 GB image only `ci.yml` pins, and the docs
+site's build. The docs site column is its build with the Hugo `site/hugo.pin`
+names, checked by SHA-256, and `scripts/site-origins.sh` failing on any load
+from another origin in the output (ADR-0071).
 
 `itest` is also skipped when the exact content it covers already passed it
 on the same PR (#314). A green run leaves an Actions cache marker keyed on

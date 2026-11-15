@@ -93,6 +93,7 @@ jobs:
       lockfile: ${{ steps.filter.outputs.lockfile }}
       workflows: ${{ steps.filter.outputs.workflows }}
       skills: ${{ steps.filter.outputs.skills }}
+      site: ${{ steps.filter.outputs.site }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" != pull_request ] && [ -z "$QUEUE_PR" ]; then
-            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\nskills=false\n' >> "$GITHUB_OUTPUT"
+            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\nskills=false\nsite=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -160,7 +161,13 @@ jobs:
           if echo "$files" | grep -qE '^(\.claude/skills/|scripts/skill-tier1-gate\.sh$|\.github/workflows/ci\.yml$)'; then
             skills=true
           fi
-          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\nskills=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" "$skills" >> "$GITHUB_OUTPUT"
+          # The docs site (ADR-0071): its source, its build and origin check, and
+          # this workflow.
+          site=false
+          if echo "$files" | grep -qE '^(site/|scripts/site-|\.github/workflows/ci\.yml$)'; then
+            site=true
+          fi
+          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\nskills=%s\nsite=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" "$skills" "$site" >> "$GITHUB_OUTPUT"
 
       # Lever 5. The content `itest` covers, as git already names it: the
       # tree id of each covered directory and the blob id of each covered
@@ -473,6 +480,18 @@ jobs:
             echo "::error title=skill tier 1 output::$(tail -n 5 "$log" | tr '\n' ' ' | cut -c1-900)"
             exit 1
           fi
+
+      # The docs site (ADR-0071): the check first, then the build it judges.
+      # The build downloads the Hugo site/hugo.pin names and checks its
+      # SHA-256 before running it; the vendored theme and search library
+      # mean nothing else is fetched, and Hugo's own security config refuses
+      # a remote resource if a template reaches for one.
+      - name: the origin check still catches what it claims to
+        if: needs.changes.outputs.site == 'true' || needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gate-annotate.sh site-origins-test -- bash scripts/site-origins-test.sh
+      - name: the docs site builds, loading nothing from another origin
+        if: needs.changes.outputs.site == 'true'
+        run: bash scripts/gate-annotate.sh site-build -- bash scripts/site-build.sh
 
       # The sentinel's step is inline YAML, so this harness extracts and runs
       # it; nothing else exercises it before it ships (#210).
