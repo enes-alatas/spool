@@ -21,6 +21,7 @@ import { ConnectionCheckLine, useConnectionCheck, useRunCheck } from '../compone
 import { checkable } from '../connectionCheck'
 import { messageTime } from '../components/MessageKnot'
 import { PlusIcon, RemoveIcon } from '../components/Icons'
+import { useBackdropClose } from '../backdrop'
 
 // The org's connections (ADR-0043, #506): env variables, MCP servers and
 // GitHub Apps (#887), each defined once under a name. A secret is typed into
@@ -319,6 +320,7 @@ function NewConnectionDialog({
   connections: Connection[]
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const backdrop = useBackdropClose(() => ref.current?.close())
   useEffect(() => {
     const dialog = ref.current
     if (dialog && !dialog.open) dialog.showModal()
@@ -329,8 +331,7 @@ function NewConnectionDialog({
       className="connection-dialog"
       aria-labelledby="new-connection-title"
       onClose={onClose}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+      {...backdrop}
     >
       <div className="panel-head">
         <h3 id="new-connection-title">New connection</h3>

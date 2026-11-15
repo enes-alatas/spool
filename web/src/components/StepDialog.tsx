@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode, type SyntheticEvent } from 'react'
 import { RemoveIcon } from './Icons'
+import { useBackdropClose } from '../backdrop'
 
 // The shell the first-run cards open their step in (#588, #589): a native
 // modal `<dialog>`, as Add connection is, so the backdrop, the focus trap
@@ -48,6 +49,7 @@ export function StepDialog({
   }, [])
 
   const close = () => ref.current?.close(CLOSED)
+  const backdrop = useBackdropClose(() => dismissible && !busy && close())
 
   // Preventing `cancel` is not enough to keep a dialog open: Chromium lets a
   // page refuse only the first Escape after the reader's last input, and
@@ -77,8 +79,7 @@ export function StepDialog({
       onClose={closed}
       // Escape: the browser cancels before it closes, when it lets the page.
       onCancel={(e) => e.target === e.currentTarget && (!dismissible || busy) && e.preventDefault()}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => dismissible && !busy && e.target === e.currentTarget && close()}
+      {...backdrop}
     >
       <div className="panel-head">
         <h3 id={titleId}>{title}</h3>

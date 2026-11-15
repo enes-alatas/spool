@@ -13,6 +13,7 @@ import { ConnectionForm } from './ConnectionForm'
 import { ConnectionEvents, RotateForm } from './ConnectionRecord'
 import { PlusIcon, RemoveIcon } from './Icons'
 import { useMay } from './Session'
+import { useBackdropClose } from '../backdrop'
 
 // The connections attached to one loop (#506): the list, and a + that opens
 // a dialog to attach a shared connection, create one and attach it, or add
@@ -323,6 +324,7 @@ function AddConnectionDialog({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const backdrop = useBackdropClose(() => ref.current?.close())
   const [tab, setTab] = useState<'attach' | 'create' | 'private'>(attachable.length > 0 ? 'attach' : 'create')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
@@ -367,8 +369,7 @@ function AddConnectionDialog({
       className="connection-dialog"
       aria-labelledby="add-connection-title"
       onClose={onClose}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+      {...backdrop}
     >
       <div className="panel-head">
         <h3 id="add-connection-title">Add a connection to {loop}</h3>
