@@ -4421,10 +4421,6 @@ textarea {
 .rotate-form .key-paste {
   flex: 1 1 100%;
 }
-.connection-new {
-  margin: 28px 0 12px;
-}
-
 .rules-note {
   font-size: var(--fs-small);
   color: var(--text-muted);
@@ -6943,4 +6939,21 @@ button.orb:focus-visible .orb-peek {
 .join-ask-actions {
   display: inline-flex;
   gap: 6px;
+}
+/* A page's title with its one action at the right, as New connection's
+   plus (#1615). */
+.page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.page-title-row h1 {
+  margin: 0;
+}
+/* square, a plus alone in a small button's outline */
+.page-title-row .btn.sm {
+  width: 1.625rem;
+  padding: 0;
 }

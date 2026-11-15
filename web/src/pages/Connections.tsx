@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useMay } from '../components/Session'
 import { Link, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,6 +20,7 @@ import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
 import { ConnectionCheckLine, useConnectionCheck, useRunCheck } from '../components/ConnectionCheck'
 import { checkable } from '../connectionCheck'
 import { messageTime } from '../components/MessageKnot'
+import { PlusIcon, RemoveIcon } from '../components/Icons'
 
 // The org's connections (ADR-0043, #506): env variables, MCP servers and
 // GitHub Apps (#887), each defined once under a name. A secret is typed into
@@ -270,6 +271,57 @@ function ConnectionRow({
   )
 }
 
+// New connection in a native modal `<dialog>` (#1615), as the loop page's
+// Add connection is: the backdrop, the focus trap and Escape come with it.
+// Created, it closes, and the new row is on the page behind it.
+function NewConnectionDialog({
+  onCreated,
+  onClose,
+  fleet,
+  connections,
+}: {
+  onCreated: (created: Connection) => Promise<unknown>
+  onClose: () => void
+  fleet: LoopView[]
+  connections: Connection[]
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = ref.current
+    if (dialog && !dialog.open) dialog.showModal()
+  }, [])
+  return (
+    <dialog
+      ref={ref}
+      className="connection-dialog"
+      aria-labelledby="new-connection-title"
+      onClose={onClose}
+      // A click on the backdrop lands on the dialog element itself.
+      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+    >
+      <div className="panel-head">
+        <h3 id="new-connection-title">New connection</h3>
+        <button
+          className="panel-action"
+          onClick={() => ref.current?.close()}
+          aria-label="Close"
+          title="Close"
+        >
+          <RemoveIcon size={14} />
+        </button>
+      </div>
+      <ConnectionForm
+        onCreated={async (created) => {
+          await onCreated(created)
+          ref.current?.close()
+        }}
+        fleet={fleet}
+        connections={connections}
+      />
+    </dialog>
+  )
+}
+
 // When a change to the connection reaches a cloud loop it is attached to.
 function CloudReach({ kind }: { kind: Connection['kind'] }) {
   // A cloud loop can't hold one, so no row names a cloud loop beside one.
@@ -308,6 +360,9 @@ export default function Connections() {
     ])
 
   const runCheck = useRunCheck()
+  // New connection opens over the page from the plus by its title (#1615),
+  // rather than waiting under the whole list.
+  const [adding, setAdding] = useState(false)
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
 
@@ -326,7 +381,19 @@ export default function Connections() {
 
   return (
     <div className="page measure">
-      <h1>Connections</h1>
+      <div className="page-title-row">
+        <h1>Connections</h1>
+        {may('manage') && data && (
+          <button
+            className="btn sm"
+            onClick={() => setAdding(true)}
+            aria-label="New connection"
+            title="New connection"
+          >
+            <PlusIcon />
+          </button>
+        )}
+      </div>
       <p className="page-lede">
         A connection is an env variable, an MCP server or a GitHub App, defined once for the whole fleet and
         attached to loops here or on their pages. A loop's secrets live here too: an env variable added on a
@@ -382,19 +449,17 @@ export default function Connections() {
               )}
             </>
           )}
-          {may('manage') && (
-            <>
-              <h3 className="connection-new">New connection</h3>
-              <ConnectionForm
-                onCreated={(created) => {
-                  // Whether it works, said on its row as the list redraws.
-                  runCheck(created.name)
-                  return refresh()
-                }}
-                fleet={loops ?? []}
-                connections={data}
-              />
-            </>
+          {adding && (
+            <NewConnectionDialog
+              onCreated={(created) => {
+                // Whether it works, said on its row as the list redraws.
+                runCheck(created.name)
+                return refresh()
+              }}
+              onClose={() => setAdding(false)}
+              fleet={loops ?? []}
+              connections={data}
+            />
           )}
         </>
       )}
