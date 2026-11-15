@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -154,5 +155,54 @@ func TestStopBeforeStartReturns(t *testing.T) {
 	adapter.Stop(ctx)
 	if ctx.Err() != nil {
 		t.Fatal("Stop on an adapter never started waited for its deadline")
+	}
+}
+
+// failingPosts answers every Web API call with the one way it is set to
+// fail, counting the chat.postMessage calls it was handed.
+type failingPosts struct {
+	status int // an HTTP status to answer with; 0 for err instead
+	err    error
+	body   string
+	posts  *int
+}
+
+func (answer failingPosts) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, "/chat.postMessage") {
+		*answer.posts++
+	}
+	if answer.status == 0 {
+		return nil, answer.err
+	}
+	return &http.Response{
+		StatusCode: answer.status,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(answer.body)),
+	}, nil
+}
+
+// A notice of the hub's own is posted at most once, whatever Slack answers:
+// a 502 or 504 from its edge, or no answer at all, can come back for a post
+// Slack made, and a copy of a notice reads to its owner as the thing
+// happening again. Only a loop's own words are retried (#1585, as #1584
+// for Telegram).
+func TestANoticeIsPostedAtMostOnce(t *testing.T) {
+	answers := map[string]failingPosts{
+		"502":           {status: http.StatusBadGateway},
+		"504":           {status: http.StatusGatewayTimeout},
+		"unanswered":    {err: errors.New("net/http: timeout awaiting response headers")},
+		"internalError": {status: http.StatusOK, body: `{"ok":false,"error":"internal_error"}`},
+	}
+	for name, answer := range answers {
+		t.Run(name, func(t *testing.T) {
+			adapter, _, _ := inboundFixture(t)
+			posts := 0
+			answer.posts = &posts
+			adapter.client.http = &http.Client{Transport: answer}
+			adapter.postNotice(context.Background(), "loop_terra", notice{channel: "D0OWNER", text: "Spool: terra's workstation is up again."})
+			if posts != 1 {
+				t.Fatalf("the notice was posted %d times, want once", posts)
+			}
+		})
 	}
 }

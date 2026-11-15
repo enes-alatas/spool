@@ -47,7 +47,9 @@ func (adapter *Adapter) notify(loopID string, queued notice) string {
 }
 
 // postNotice posts one notice. It is the hub's word, not a message, so no
-// row records it, and a failure is logged and not retried.
+// row records it, and a failure is logged and not retried: Slack may have
+// made a post it answered 502 or 504, or never answered, and a second copy
+// reads to its owner as the thing happening again (#1585, #1584).
 func (adapter *Adapter) postNotice(ctx context.Context, loopID string, queued notice) {
 	loopRecord, err := adapter.store.Loops().Get(ctx, loopID)
 	if err != nil {
