@@ -1,0 +1,10 @@
+Hextra, vendored for Spool's docs site (ADR-0071).
+
+tag:    v0.13.0
+commit: adf732f8d97cb8e149d4aba232a449d41cd9e38c
+source: https://github.com/imfing/hextra
+
+Copied as released, unchanged: assets/ data/ i18n/ layouts/ static/
+theme.toml hugo.toml LICENSE. Left out: the theme's own docs, examples,
+tests, images, and its npm and build files, none of which a site build
+reads. A bump replaces these files from the new tag and updates this note.
