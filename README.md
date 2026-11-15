@@ -80,6 +80,7 @@ tar -xzf "spool_${v}_${p}.tar.gz" && install -m 755 "spool_${v}_${p}"/spool* bin
 ./bin/spool images | sh
 ```
 
+This page follows main, which can be ahead of the release you just installed. For that release's own README, open the address this prints: `echo "https://github.com/enes-alatas/spool/blob/$v/README.md"`.
 Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check that the release workflow built the file:
 `gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool`. To upgrade later, see [OPERATIONS.md](docs/OPERATIONS.md#upgrade).
 
