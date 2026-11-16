@@ -16,6 +16,7 @@ import {
   perTurn,
   teamFigures,
   toolMix,
+  turnColumns,
   turnShares,
 } from '../figures'
 import { formatAgo, formatTokens, formatUsd, sumCostToday } from '../format'
@@ -209,7 +210,7 @@ function Card({
             {f.failed_turns > 0 && <span className="figures-failed"> · {f.failed_turns} failed</span>} ·{' '}
             {formatDuration(f.turn_duration_ms.p50)} median
           </span>
-          {f.per_turn.length > 0 && <Bars turns={f.per_turn} />}
+          {f.per_turn.length > 0 && <CardBars turns={f.per_turn} />}
         </>
       )}
     </button>
@@ -369,6 +370,21 @@ function Bars({
           onMouseEnter={onAt && (() => onAt(i))}
         >
           <span style={{ height: `${Math.max(shares[i] * 100, 3)}%` }} />
+        </span>
+      ))}
+    </span>
+  )
+}
+
+// A card's bars: few enough columns to fit the card, each a run of turns
+// once there are more turns than columns (#1637). The detail keeps a bar a
+// turn, where each is a hover target.
+function CardBars({ turns }: { turns: FiguresTurn[] }) {
+  return (
+    <span className="figures-turn-bars" aria-hidden="true">
+      {turnColumns(turns).map((column, i) => (
+        <span key={i} className={`figures-turn${column.failed ? ' failed' : ''}`}>
+          <span style={{ height: `${Math.max(column.share * 100, 3)}%` }} />
         </span>
       ))}
     </span>

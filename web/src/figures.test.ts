@@ -15,6 +15,7 @@ import {
   formatDuration,
   perTurn,
   toolMix,
+  turnColumns,
   turnShares,
 } from './figures'
 
@@ -93,6 +94,30 @@ describe('a loop with figures', () => {
       0.25, 1, 0.5,
     ])
     expect(turnShares([{ ...turn, ...rest, cost_usd: 0 }])).toEqual([0])
+  })
+  it("fits a card's bars in at most so many columns, a failure never lost (#1637)", () => {
+    const turn = { started_at: 0, duration_ms: 1, input_tokens: 0, output_tokens: 0 }
+    const rest = { cache_read_tokens: 0, cache_write_tokens: 0, tool_calls: 0 }
+    const of = (cost: number, failed = false) => ({ ...turn, ...rest, cost_usd: cost, failed })
+    // as few turns as columns: a column a turn, as turnShares draws them
+    expect(turnColumns([of(0.1), of(0.4, true)], 3)).toEqual([
+      { share: 0.25, failed: false },
+      { share: 1, failed: true },
+    ])
+    // five turns in two columns: runs of two and three, split evenly, each
+    // drawn at its mean, and the second failed for its one failed turn
+    expect(turnColumns([of(1), of(1), of(2), of(2, true), of(2)], 2)).toEqual([
+      { share: 0.5, failed: false },
+      { share: 1, failed: true },
+    ])
+    // 121 turns of one spend: the runs don't divide evenly, and the newest
+    // column is as high as every other
+    const flat = turnColumns(Array.from({ length: 121 }, () => of(1)))
+    expect(flat).toHaveLength(60)
+    expect(flat.every((c) => c.share === 1)).toBe(true)
+    // the most the figures carry, 200 turns, in the card's 60
+    expect(turnColumns(Array.from({ length: 200 }, () => of(0.1)))).toHaveLength(60)
+    expect(turnColumns([])).toEqual([])
   })
   it('shows them and says how old they are', () => {
     expect(figuresLine(served({}))).toBeNull()

@@ -108,6 +108,31 @@ export function turnShares(turns: FiguresTurn[]): number[] {
   return turns.map((t) => (top > 0 ? t.cost_usd / top : 0))
 }
 
+// A card's bars (#1637): at most max columns, so they fit the card whatever
+// the turn count. Past max turns, each column is a run of consecutive turns,
+// oldest first as the turns are, split evenly so runs differ by one turn at
+// most. A column is drawn at its run's mean spend, so its height doesn't
+// depend on how many turns it holds, against the highest column's. It is
+// failed if any of its turns failed, so a failure is never averaged away.
+export const CARD_BARS = 60
+
+export function turnColumns(turns: FiguresTurn[], max = CARD_BARS): { share: number; failed: boolean }[] {
+  const count = Math.min(turns.length, max)
+  const columns: { mean: number; failed: boolean }[] = []
+  for (let k = 0; k < count; k++) {
+    const run = turns.slice(
+      Math.floor((k * turns.length) / count),
+      Math.floor(((k + 1) * turns.length) / count),
+    )
+    columns.push({
+      mean: run.reduce((sum, t) => sum + t.cost_usd, 0) / run.length,
+      failed: run.some((t) => t.failed),
+    })
+  }
+  const top = Math.max(0, ...columns.map((c) => c.mean))
+  return columns.map((c) => ({ share: top > 0 ? c.mean / top : 0, failed: c.failed }))
+}
+
 // What the strip says in place of figures, or null when it has them.
 export function figuresLine(f: LoopFigures): string | null {
   switch (f.langfuse) {
