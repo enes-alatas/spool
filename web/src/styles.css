@@ -3840,9 +3840,15 @@ textarea {
   font-family: var(--sans);
   font-size: var(--fs-body);
 }
+/* The bars sit on the card's floor, so a wrapped line above them does not
+   move them: every card in a row draws its bars at the same height. */
+.figures-card .figures-sub {
+  margin-bottom: 6px;
+}
 .figures-card .figures-turn-bars {
+  flex: none;
   height: 2rem;
-  margin-top: 6px;
+  margin-top: auto;
 }
 /* Each turn's spend: a bar per turn, the whole column its hover target. */
 .figures-turns {
