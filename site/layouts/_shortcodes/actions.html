@@ -1,0 +1,10 @@
+{{- /* The home page's two actions: the primary in white, the second quiet,
+with an optional icon from the theme's set (assets/css/custom.css).
+@param primary, primaryLink, secondary, secondaryLink, secondaryIcon */ -}}
+<div class="spool-hero-actions">
+  <a class="spool-primary-button" href="{{ (.Get "primaryLink") | relURL }}">{{ .Get "primary" }}</a>
+  <a class="spool-quiet-button" href="{{ .Get "secondaryLink" }}">
+    {{- with .Get "secondaryIcon" }}{{ partial "utils/icon.html" (dict "name" . "attributes" "height=18 aria-hidden=true") }}{{ end -}}
+    <span>{{ .Get "secondary" }}</span>
+  </a>
+</div>
