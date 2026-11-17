@@ -19,25 +19,22 @@ markup:
   highlight:
     noClasses: false
 
-menu:
-  main:
-    - name: Search
-      weight: 1
-      params:
-        type: search
-    - name: GitHub
-      weight: 2
-      url: https://github.com/enes-alatas/spool
-      params:
-        icon: github
-
 params:
   navbar:
     displayTitle: true
-    displayLogo: false
+    displayLogo: true
+    # The control room's glyph and wordmark (ADR-0027); the wordmark's
+    # face and colours are assets/css/custom.css.
+    logo:
+      path: images/spool-glyph.svg
+      dark: images/spool-glyph.svg
+      width: 26
+      height: 26
+  # One near-black canvas, as the control room has (ADR-0027): no light
+  # theme to toggle to.
   theme:
-    default: system
-    displayToggle: true
+    default: dark
+    displayToggle: false
   footer:
     displayCopyright: false
     displayPoweredBy: false

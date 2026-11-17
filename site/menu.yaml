@@ -1,0 +1,15 @@
+# The navbar (ADR-0071). Its own file, passed after hugo.yaml, so that
+# scripts/site-build.sh can append the Versions menu: Hugo replaces a list
+# from another config file rather than merging it. Keep main the last key,
+# and its items at this indentation.
+menu:
+  main:
+    - name: Search
+      weight: 1
+      params:
+        type: search
+    - name: GitHub
+      weight: 2
+      url: https://github.com/enes-alatas/spool
+      params:
+        icon: github

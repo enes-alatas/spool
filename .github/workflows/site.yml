@@ -1,0 +1,114 @@
+# Publishes Spool's docs site on GitHub Pages (ADR-0071 items 3 and 4):
+# the root from the latest release's own site/, /next/ from main, each built
+# by scripts/site-pages.sh in a step of its own. Either failing stops the
+# deploy, and the live site stays as it was.
+#
+# Pages must be on in the repository's settings (Source: GitHub Actions);
+# that is the operator's, and until it is, the deploy is skipped.
+name: site
+
+on:
+  # A release is published at the end of the release workflow, whichever
+  # way it was cut. One that GitHub's own token publishes fires no
+  # `release` event in another workflow, so the site follows that
+  # workflow's run instead; the build job skips a failed run and a dry one.
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'scripts/site-*'
+      - '.github/workflows/site.yml'
+  # By hand, on main: the same build as either event. It takes no input,
+  # since all it reads is main and the repository's releases.
+  workflow_dispatch:
+
+# Every job names its own grant.
+permissions: {}
+
+# One deploy at a time, and none cut short: a cancelled deploy can leave
+# Pages between two sites.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read # whether Pages is on, and served from Actions
+    outputs:
+      pages: ${{ steps.pages.outputs.on }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      # Pages is the operator's to turn on (ADR-0071 item 3). Until it is on,
+      # with Source: GitHub Actions, the trees still build, so main's site is
+      # proven on every change, and the deploy is skipped with a notice
+      # rather than failing into ci-health.
+      - name: whether Pages is on
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if source=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2> "$RUNNER_TEMP/pages.err"); then
+            if [ "$source" = workflow ]; then
+              echo "on=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::Pages is on but builds from a branch ($source), not GitHub Actions; nothing is deployed"
+              echo "on=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/pages.err"; then
+            echo "::notice::Pages is off (Settings, Pages, Source: GitHub Actions); the site builds and nothing is deployed"
+            echo "on=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/pages.err" >&2
+            exit 1
+          fi
+      # The latest release first, then up to ten before it, newest first.
+      # scripts/site-pages.sh refuses anything but a vX.Y.Z tag.
+      - name: the releases
+        id: releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tags=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 11 \
+            --json tagName,isLatest --jq 'sort_by(.isLatest | not) | map(.tagName) | join(" ")')
+          echo "releases: ${tags:-none}"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - name: the root, from the latest release
+        env:
+          TAGS: ${{ steps.releases.outputs.tags }}
+        run: bash scripts/site-pages.sh root "$RUNNER_TEMP/pages" $TAGS
+      - name: /next/, from main
+        env:
+          TAGS: ${{ steps.releases.outputs.tags }}
+        run: bash scripts/site-pages.sh next "$RUNNER_TEMP/pages" $TAGS
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/pages
+
+  # The only job that can publish.
+  deploy:
+    needs: build
+    if: needs.build.outputs.pages == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

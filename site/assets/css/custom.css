@@ -1,0 +1,275 @@
+/* Spool's look on the docs site: the control room's tokens and rules
+   (ADR-0027, web/src/styles.css), mapped onto the Hextra theme. One
+   near-black canvas; white owns identity, links and selection; colour only
+   where something wants the reader's attention, which here is the banner on
+   pages describing unreleased work. Nothing is fetched: the wordmark's
+   Nunito is served from the site itself (ADR-0071). */
+
+:root {
+  --canvas: #050505;
+  --surface: #0c0c0e;
+  --hairline: #24242a;
+  --text: #f2f1ed;
+  --text-muted: #86868b;
+  --active: #ff8a1f;
+  --active-line: rgba(255, 138, 31, 0.38);
+  --active-wash: rgba(255, 138, 31, 0.07);
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --sans: 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --glass-edge: rgba(255, 255, 255, 0.09);
+  --glass-fill: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015) 60%);
+  --glass-blur: blur(18px) saturate(140%);
+  --glass-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  --glass-radius: 12px;
+
+  /* Hextra's primary is the theme's accent; Spool's is white (ADR-0027),
+     so it loses its hue and sits at the text colour's lightness. */
+  --primary-hue: 40deg;
+  --primary-saturation: 8%;
+  --primary-lightness: 94%;
+  /* the room's topbar: 52px with its 1px hairline inside, so 51px to
+     centre the wordmark in, which then sits on the same pixel row */
+  --hextra-navbar-height: 51px;
+  --hx-color-dark: var(--canvas);
+  --hx-color-neutral-800: var(--hairline);
+  --hx-color-neutral-900: var(--surface);
+  --hx-color-gray-100: var(--text);
+  --hx-color-gray-200: #d9d8d4;
+  --hx-color-gray-300: #b4b3b0;
+  --hx-color-gray-400: var(--text-muted);
+  --hx-color-gray-500: var(--text-muted);
+}
+
+/* The wordmark's face, as in the control room (ADR-0027, #456): for
+   the one word "spool", falling back to the sans stack. */
+@font-face {
+  font-family: 'Nunito';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../../fonts/nunito-latin-400.woff2') /* from css/compiled/ */ format('woff2');
+}
+
+html,
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+/* The glow behind the glass (ADR-0027): cool neutrals, never a state
+   hue, fixed to the canvas. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 50% at 18% 30%, rgba(150, 170, 210, 0.07), transparent 70%),
+    radial-gradient(35% 45% at 82% 65%, rgba(120, 130, 170, 0.08), transparent 70%),
+    radial-gradient(30% 40% at 55% 10%, rgba(220, 225, 235, 0.05), transparent 70%);
+  filter: blur(20px);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--mono);
+}
+
+/* The navbar: the glyph and the wordmark, on a canvas that blurs what
+   scrolls beneath it. */
+.hextra-nav-container .hextra-nav-container-blur {
+  background-color: rgba(5, 5, 5, 0.72) !important;
+  border-bottom: 1px solid var(--hairline);
+  box-shadow: none !important;
+}
+.hextra-nav-container nav > a:first-child span {
+  font-family: 'Nunito', var(--sans);
+  font-weight: 400;
+  font-size: 1.4375rem; /* off-scale: the wordmark keeps its own size (ADR-0027) */
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: lowercase;
+  color: var(--text);
+  /* Nunito's line box sits higher above the baseline than below it, so in
+     a centred row its lowercase letters sit about 1.5px low against the
+     glyph (#456, measured in the control room). A transform lifts them,
+     since a relative top snaps to whole pixels. */
+  display: inline-block;
+  transform: translateY(-0.065em);
+}
+/* The glyph as the room's topbar draws it: 26px, 10px from the word. */
+.hextra-nav-container nav > a:first-child img {
+  margin-right: 10px !important;
+  filter: drop-shadow(0 0 7px rgba(242, 241, 237, 0.2));
+}
+
+/* Hairlines, not shells: the sidebar, the table of contents, the footer. */
+.hextra-sidebar-container,
+.hextra-toc,
+.hextra-footer {
+  border-color: var(--hairline) !important;
+}
+.hextra-footer {
+  background: transparent !important;
+}
+
+/* Prose links are white and underlined: identity is white, and an
+   underline, not a hue, says it is a link. */
+.content a:not(.hextra-card):not(.not-prose) {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(242, 241, 237, 0.35);
+  text-underline-offset: 3px;
+}
+.content a:not(.hextra-card):hover {
+  text-decoration-color: var(--text);
+}
+.content code {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+}
+.content pre {
+  background: var(--surface) !important;
+  border: 1px solid var(--hairline);
+}
+
+/* A card is glass (ADR-0027): one edge on every side, never nested. */
+.hextra-card,
+.hextra-feature-card {
+  background: var(--glass-fill) !important;
+  border: 1px solid var(--glass-edge) !important;
+  border-radius: var(--glass-radius) !important;
+  box-shadow: var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur);
+}
+.hextra-card:hover,
+.hextra-feature-card:hover {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+.hextra-feature-card p,
+.hextra-card p {
+  color: var(--text-muted);
+}
+
+/* The banner on unreleased pages wants attention soon: the state orange, as a
+   line and a wash, with the text staying white. */
+.hextra-banner {
+  background: var(--active-wash) !important;
+  border-bottom: 1px solid var(--active-line);
+  color: var(--text) !important;
+}
+.hextra-banner a {
+  color: var(--active) !important;
+  text-decoration: underline;
+}
+
+/* Focus is a crisp outline, never a glow (ADR-0027). */
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* The home page's actions: the primary button is white with canvas text
+   (ADR-0027), the second is quiet, an outline in the hairline. Both are
+   about 48px tall where the room's buttons are 2rem: they are a landing
+   page's one call to action, so padding sets their height here, which no
+   button in the room does. */
+.spool-hero-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 3rem;
+}
+.spool-primary-button {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  background: var(--text) !important;
+  color: var(--canvas) !important;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.spool-quiet-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 500;
+}
+.spool-quiet-button:hover {
+  border-color: var(--text-muted);
+}
+
+/* The one label style (ADR-0027): mono caps, muted, spaced. */
+.spool-label {
+  margin-top: 3rem;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The home layout lays its blocks out in a column that shrinks each to its
+   content; the docs' cards take the full width, as the features above. */
+.hx\:items-start > .hextra-cards {
+  width: 100%;
+}
+
+/* The hero headline (only the home page has one): plain text at weight 500, no gradient, as
+   every title is (ADR-0027); the display size stays, it is a landing
+   page's one headline. */
+h1.hx\:bg-clip-text {
+  background: none !important;
+  -webkit-text-fill-color: var(--text);
+  color: var(--text);
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.15 !important;
+  max-width: 52rem;
+}
+h1.hx\:bg-clip-text + p {
+  margin-top: 1rem;
+  margin-bottom: 2rem;
+  max-width: 44rem;
+  color: var(--text-muted) !important;
+}
+
+/* The table of contents' sticky foot: Hextra fills it with its own #111
+   and a shadow, which reads as a box over the glow. It needs neither. */
+.hextra-toc .hx\:sticky.hx\:bottom-0 {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Tables divide by hairlines, with the header on the raised value. */
+.content table th,
+.content table td {
+  border-color: var(--hairline) !important;
+}
+.content table th {
+  background: var(--surface);
+  font-weight: 500;
+}
+.content table tr {
+  background: transparent !important;
+  border-color: var(--hairline) !important;
+}
+
+/* Titles are weight 500 (ADR-0027), the theme's are 700 and 800. */
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+article h1,
+.hextra-feature-card h3,
+.hextra-card span {
+  font-weight: 500 !important;
+}

@@ -8,3 +8,8 @@ Copied as released, unchanged: assets/ data/ i18n/ layouts/ static/
 theme.toml hugo.toml LICENSE. Left out: the theme's own docs, examples,
 tests, images, and its npm and build files, none of which a site build
 reads. A bump replaces these files from the new tag and updates this note.
+
+site/assets/css/custom.css styles Hextra's own classes (.hextra-nav-container,
+.hextra-card, .hextra-toc, .hx:bg-clip-text and others). A bump that renames
+one changes the look while the build stays green, so after a bump check the
+home page, a docs page and the navbar against the screenshots in PR 1642.
