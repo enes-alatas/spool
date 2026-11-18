@@ -42,7 +42,7 @@ too, though on a loop made before ADR-0061 the repo and environment go in
 one edit, as below.
 
 The list to paste into an environment's allowed domains is the hub's
-egress allowlist ([CONTAINMENT.md](https://github.com/enes-alatas/spool/blob/main/docs/CONTAINMENT.md)) as an environment
+egress allowlist ([What contains a loop](../../security/containment/)) as an environment
 spells it, with the public address's host first: without that host the
 session never loads the hub's MCP server. An entry an environment can't
 hold, such as a host with a port of its own, is named beside the list and

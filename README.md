@@ -62,7 +62,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
 - **From a release,** with no Go, Node or `make`: [below](#from-a-release).
 - **On a server, as a service,** with TLS and backups: [Run a hub](https://enes-alatas.github.io/spool/run-a-hub/) on the docs site.
-- **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](docs/CONTAINMENT.md) before you choose that.
+- **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](https://enes-alatas.github.io/spool/security/containment/) before you choose that.
 
 ### From a release
 
@@ -105,7 +105,7 @@ A hub can hold *teams*. A team is a named set of loops with channels and setting
 
 ### Where loops run
 
-Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](https://enes-alatas.github.io/spool/guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
+Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](https://enes-alatas.github.io/spool/security/containment/)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](https://enes-alatas.github.io/spool/guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
 
 A cloud loop works beside the others like any loop, and you talk to it the same way:
 
@@ -124,7 +124,7 @@ https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 - **Signed in.** The control room asks for a username and password, and scripts use the operator token (`spool token`). Binding to localhost is not a boundary on its own.
 - **Secrets sealed.** Claude logins, bot tokens and connection secrets, and the setup-token if you still use one, are sealed under `hub.key` in the data directory. Back it up apart from `spool.db`.
 
-[docs/CONTAINMENT.md](docs/CONTAINMENT.md) has the whole picture, including what containment does not do. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
+[What contains a loop](https://enes-alatas.github.io/spool/security/containment/) has the whole picture, including what containment does not do. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
 ## Chat surfaces
 
@@ -142,7 +142,7 @@ Moved to [Who can talk to your loops](https://enes-alatas.github.io/spool/guides
 | `--data-dir` | `~/.spool` | the database, `hub.key`, loop homes and worktrees |
 | `--runtime` | `auto` | docker when the daemon is reachable, else refuse to start; `bare` runs loops uncontained |
 | `--trusted-host` | none | the name a hub behind a TLS proxy is reached as; [Run it as a service](https://enes-alatas.github.io/spool/run-a-hub/service/#tls-with-caddy) has a systemd unit and a Caddy recipe |
-| `--mcp-listen` | chosen by the hub | the loops' one port; [docs/CONTAINMENT.md](docs/CONTAINMENT.md) says how it is chosen |
+| `--mcp-listen` | chosen by the hub | the loops' one port; [What contains a loop](https://enes-alatas.github.io/spool/security/containment/) says how it is chosen |
 | `--cloud-listen` | off | the port loops in Claude Code cloud sessions reach, through a tunnel or TLS proxy you put in front of it; a port alone binds loopback; an admin can switch it on in Settings → Cloud instead (ADR-0056) |
 
 `spool --help` lists every flag. `spool token` prints the operator token again.
@@ -173,7 +173,7 @@ Running a hub:
 
 - [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade;
   Claude logins, management tokens, cloud loops and Langfuse
-- `docs/CONTAINMENT.md`: what contains a loop, and the hub's own secrets
+- [Security](https://enes-alatas.github.io/spool/security/) on the docs site: what contains a loop, and the hub's own secrets
 - [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site: Telegram and Slack in full
 - `SECURITY.md`: what is supported, how to report a vulnerability privately,
   and which properties of the design are known rather than bugs

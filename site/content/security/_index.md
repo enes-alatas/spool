@@ -3,4 +3,4 @@ title: Security
 weight: 4
 ---
 
-Until these pages are written, [What contains a loop](https://github.com/enes-alatas/spool/blob/main/docs/CONTAINMENT.md) and the [README's Security in brief](https://github.com/enes-alatas/spool/blob/main/README.md#security-in-brief) cover it.
+[What contains a loop](containment/) in full, and [Security in brief](in-brief/), its short version. [SECURITY.md](https://github.com/enes-alatas/spool/blob/main/SECURITY.md) says how to report a vulnerability, and [THREAT-MODEL.md](https://github.com/enes-alatas/spool/blob/main/docs/THREAT-MODEL.md) what each boundary holds and does not.

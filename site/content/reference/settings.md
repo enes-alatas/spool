@@ -86,7 +86,7 @@ The hosts a docker loop's workstation can reach, on ports 80 and 443 unless an e
 - **Built-in hosts:** read-only, each group with why it is there.
 - **Your own hosts:** added and removed there.
 
-A change reaches every docker loop within a few seconds, with nothing restarted. Cloud loops don't use this list: each reaches what its environment on claude.ai allows. [What contains a loop](https://github.com/enes-alatas/spool/blob/main/docs/CONTAINMENT.md) explains the allowlist.
+A change reaches every docker loop within a few seconds, with nothing restarted. Cloud loops don't use this list: each reaches what its environment on claude.ai allows. [What contains a loop](../../security/containment/) explains the allowlist.
 
 ## Cloud
 
