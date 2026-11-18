@@ -98,6 +98,11 @@ export interface LoopView {
   // it is under. True for a loop in its turn too, which the cap takes at
   // the turn's end.
   daily_cap_reached?: boolean
+  // Whether a usage limit that refused one of the loop's turns holds it,
+  // apart from the plan cap (#1657). Its reset is in capped_until; one that
+  // named none leaves capped_until 0 and opens the usage_limit problem,
+  // whose Acknowledge continues the loop. Absent while none holds it.
+  usage_limited?: boolean
   tg_bot_username: string
   status: 'active' | 'paused' | 'archived'
   current_session_id: string

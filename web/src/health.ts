@@ -37,6 +37,9 @@ const SAID: Record<string, string> = {
   // without them (ADR-0059); said as what the loop lacks, a warning, as the
   // loop still runs
   cloud_connections: 'Running without its secrets',
+  // the plan's usage limit refused a turn and named no reset, so the loop
+  // is held until the operator continues it (#1649)
+  usage_limit: 'Held by the usage limit',
 }
 
 // What a symptom means and what to do, where the label alone leaves the
@@ -58,6 +61,10 @@ const MEANS: Record<string, string> = {
     'Its cloud session asked the hub for its secrets, the env variables attached to it on the ' +
     'Connections page (like GH_TOKEN), and was refused, so commands that need them may fail. ' +
     'Pause and resume the loop to hand them over again.',
+  usage_limit:
+    "Its Claude plan's usage limit refused a turn and did not say when it resets, so the loop waits " +
+    'with its messages in its inbox. Acknowledge continues it once the limit has reset; if it has not, ' +
+    'the next turn is refused and holds the loop again.',
 }
 
 export function problemMeaning(problem: Problem): string | undefined {
@@ -121,13 +128,14 @@ export function healthNote(problems: Problem[], now: number): string {
 
 // A problem's line takes its loop's colour: a workstation down, or a cloud
 // loop held by its public address or its own setup, stops the loop, so it
-// is the alarm, as is a wake that starts no turn, since the loop is doing
-// nothing; failing turns, or one running long, are a warning.
+// is the alarm, as is a wake that starts no turn, or a usage limit only the
+// operator lifts, since the loop is doing nothing; failing turns, or one
+// running long, are a warning.
 export function problemHealth(problem: Problem): Health {
   return HOLDS.includes(problem.symptom) ? 'failing' : 'warning'
 }
 
-const HOLDS = ['workstation_down', 'wake_missed', 'cloud_address', 'cloud_setup']
+const HOLDS = ['workstation_down', 'wake_missed', 'cloud_address', 'cloud_setup', 'usage_limit']
 
 // The error-turn threshold as Settings edits it: '' for off.
 export function errorTurnsField(turns: number): string {

@@ -120,6 +120,14 @@ describe('nextWake', () => {
     expect(nextWake({ next_tick_at: 1000, model_refusal: '', capped_until: 5000 })).toBe(5000)
     expect(nextWake({ next_tick_at: 1000, model_refusal: '', capped_until: 0 })).toBe(1000)
   })
+
+  // #1657: a usage limit that named no reset waits for the operator.
+  it('shows no wake while a usage limit with no reset holds the loop', () => {
+    const held = { next_tick_at: 1000, model_refusal: '', state: 'capped', usage_limited: true }
+    expect(nextWake({ ...held, capped_until: 0 })).toBe(0)
+    expect(nextWake({ ...held, capped_until: 5000 })).toBe(5000)
+    expect(nextWake({ ...held, state: 'paused', capped_until: 0 })).toBe(1000)
+  })
 })
 
 describe('inTurn', () => {

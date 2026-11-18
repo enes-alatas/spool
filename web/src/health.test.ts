@@ -70,6 +70,11 @@ describe('problemHealth', () => {
     expect(problemHealth({ symptom: 'cloud_setup', since: 0 })).toBe('failing')
     expect(problemLine({ symptom: 'cloud_setup', since: now - 40 * minute }, now)).toBe('Needs setup for 40m')
     expect(problemHealth({ symptom: 'turn_errors', since: 0 })).toBe('warning')
+    expect(problemHealth({ symptom: 'usage_limit', since: 0 })).toBe('failing')
+    expect(problemLine({ symptom: 'usage_limit', since: now - 40 * minute }, now)).toBe(
+      'Held by the usage limit for 40m',
+    )
+    expect(problemMeaning({ symptom: 'usage_limit', since: 0 })).toMatch(/Acknowledge continues it/)
     // a cloud session refused its connections still runs (ADR-0059)
     expect(problemHealth({ symptom: 'cloud_connections', since: 0 })).toBe('warning')
     expect(problemLine({ symptom: 'cloud_connections', since: now - 40 * minute }, now)).toBe(

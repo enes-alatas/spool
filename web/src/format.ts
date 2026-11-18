@@ -102,8 +102,13 @@ export function nextWake(loop: {
   next_tick_at: number
   model_refusal: string
   capped_until?: number
+  state?: string
+  usage_limited?: boolean
 }): number {
   if (loop.model_refusal) return 0
+  // A usage limit that named no reset holds the loop until the operator
+  // continues it (#1657): no wake is set, whatever its schedule says.
+  if (loop.state === 'capped' && loop.usage_limited && !loop.capped_until) return 0
   // A capped loop wakes when the plan cap lifts (#650), whatever its own
   // schedule said.
   return loop.capped_until || loop.next_tick_at

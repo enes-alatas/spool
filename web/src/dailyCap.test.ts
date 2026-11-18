@@ -86,6 +86,47 @@ describe('cappedNote', () => {
   })
 })
 
+describe('cappedNote under the usage limit', () => {
+  const soon = Date.now() + 3600000
+
+  it('names the usage limit, not the plan cap, when it holds the loop alone', () => {
+    const note = cappedNote({ usage_limited: true, capped_until: soon }, false)
+    expect(note).toBe(
+      "Capped: its Claude plan's usage limit refused a turn. It wakes when the limit resets; messages wait in its inbox.",
+    )
+    expect(note).not.toMatch(/plan cap/)
+  })
+
+  it('says it waits for the operator when the refusal named no reset', () => {
+    expect(cappedNote({ usage_limited: true, capped_until: 0 }, false)).toBe(
+      'Capped: its Claude plan\'s usage limit refused a turn without saying when it resets, so it waits for you. When your plan\'s usage is back, press Acknowledge on the "Held by the usage limit" line to continue it. Messages wait in its inbox.',
+    )
+  })
+
+  it('names the daily cap beside it', () => {
+    expect(
+      cappedNote(
+        { daily_cap_usd: 5, daily_cap_reached: true, usage_limited: true, capped_until: soon },
+        false,
+      ),
+    ).toBe(
+      "Capped: it reached its $5.00 daily cap, and its Claude plan's usage limit refused a turn. It wakes when both lift; messages wait in its inbox.",
+    )
+  })
+
+  it('names the plan cap beside it, and how to continue it with no reset', () => {
+    expect(cappedNote({ usage_limited: true }, true)).toBe(
+      "Capped: its login's plan cap holds it, and its Claude plan's usage limit refused a turn. It wakes when both lift; messages wait in its inbox. When your plan's usage is back, press Acknowledge on the \"Held by the usage limit\" line to continue it.",
+    )
+  })
+
+  it('names all three', () => {
+    expect(cappedNote({ daily_cap_reached: true, usage_limited: true, capped_until: soon }, true)).toBe(
+      "Capped: it reached its daily cap, its login's plan cap holds it, and its Claude plan's usage limit refused a turn. It wakes when all three lift; messages wait in its inbox.",
+    )
+  })
+})
+
 describe('thenCappedNote', () => {
   it('names the daily cap ahead of the plan cap', () => {
     expect(thenCappedNote(true, true)).toMatch(/reached its daily cap/)
@@ -99,5 +140,17 @@ describe('cappedBy', () => {
     expect(cappedBy({ daily_cap_reached: true }, false)).toBe('Capped by its daily cap')
     expect(cappedBy({ daily_cap_reached: true }, true)).toBe('Capped by its daily cap and the plan cap')
     expect(cappedBy({}, true)).toBe('Capped by the plan cap')
+    expect(cappedBy({}, false)).toBe('Capped by the plan cap')
+  })
+
+  it('names the usage limit, alone or beside the caps', () => {
+    expect(cappedBy({ usage_limited: true }, false)).toBe('Capped by the usage limit')
+    expect(cappedBy({ usage_limited: true, daily_cap_reached: true }, false)).toBe(
+      'Capped by its daily cap and the usage limit',
+    )
+    expect(cappedBy({ usage_limited: true }, true)).toBe('Capped by the plan cap and the usage limit')
+    expect(cappedBy({ usage_limited: true, daily_cap_reached: true }, true)).toBe(
+      'Capped by its daily cap, the plan cap, and the usage limit',
+    )
   })
 })

@@ -23,6 +23,7 @@ const SHORT: Record<string, string> = {
   turn_stuck: 'turn stuck',
   wake_missed: 'wake missed',
   send_failed: 'send failed',
+  usage_limit: 'usage limit',
 }
 
 function contextColor(pct: number): string {
