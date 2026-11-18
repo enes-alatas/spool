@@ -8,6 +8,7 @@ import type {
   CloudEnvironmentChoice,
   CloudSettings,
 } from './api'
+import { docsPage } from './docs'
 
 // The port the cloud listener serves on, from its address: what a tunnel
 // forwards to. '' while the listener is off.
@@ -100,8 +101,7 @@ export function privateRouteHint(address: string): string {
 // name on its tailnet address, where the proxy answers instead.
 const TAILSCALE_TLS_HINT =
   'The certificate is not valid for this name from this machine. If a proxy such as Caddy holds :443 here, it answers this machine’s requests for its ts.net name: give the proxy that name with Tailscale’s certificate.'
-export const FUNNEL_BESIDE_PROXY_DOCS =
-  'https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#a-tailscale-funnel-beside-caddy'
+export const FUNNEL_BESIDE_PROXY_DOCS = docsPage('run-a-hub/service/#a-tailscale-funnel-beside-caddy')
 
 // The check as rows: every stage before the one it stopped at passed, that
 // one failed, and the rest were never reached. `refused` stops before any

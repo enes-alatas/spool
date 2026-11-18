@@ -3,14 +3,14 @@
 
 import type { Figures, FiguresTurn, FiguresWindow, LoopFigures } from './api'
 import { formatAgo } from './format'
+import { docsPage } from './docs'
 
 export const FIGURES_WINDOWS: FiguresWindow[] = ['1h', '24h', '7d', '30d']
 export const DEFAULT_WINDOW: FiguresWindow = '24h'
 
 // Where an operator turns traces on: the control room holds no Langfuse
 // settings (#1298), the hub's env file does (#1388).
-export const LANGFUSE_DOCS =
-  'https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#langfuse-beside-the-hub'
+export const LANGFUSE_DOCS = docsPage('guides/langfuse/')
 
 // A window picked from the URL, or the default for anything else.
 export function figuresWindow(raw: string | null): FiguresWindow {

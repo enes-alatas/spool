@@ -295,7 +295,7 @@ export function CloudRepoFields({
   )
 }
 
-// The environment, in OPERATIONS.md's order: make it on claude.ai, paste
+// The environment, in the Cloud loops guide's order (docs site): make it on claude.ai, paste
 // the allowed domains and the setup script, pick it here, and confirm the
 // domains. The hub builds the domains on every read, and the confirm names
 // their digest, so a list changed since is refused.

@@ -5,6 +5,7 @@ import { api, type Channel, type LoopView, type Room } from '../api'
 import { channelLabel } from '../channels'
 import { loopSurface } from '../slack'
 import { useMay } from './Session'
+import { docsPage } from '../docs'
 
 // A channel as a pane of a loop's page shows it (#549): what the channel is
 // for, then each loop in it, this one first, with the room — a Telegram
@@ -175,7 +176,7 @@ function BindWhere({ loop, channels }: { loop: string; channels: string[] }) {
 // How Telegram groups, reactions and polls behave, said once in the docs
 // rather than under every loop's groups (#849): how a group shows up, and
 // the platform's limits on reactions (ADR-0040) and polls (ADR-0041).
-const TELEGRAM_DOCS = 'https://github.com/enes-alatas/spool/blob/main/docs/TELEGRAM.md'
+const TELEGRAM_DOCS = docsPage('start/chat-surfaces/telegram/')
 
 // A loop's rooms, for a loop with a surface; undefined for one without, and
 // on a hub from before rooms.

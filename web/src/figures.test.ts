@@ -146,8 +146,8 @@ describe('a loop without figures', () => {
     )
     expect(figuresLine(served({ langfuse: 'unsupported', figures: null }))).toMatch(/^A cloud loop/)
   })
-  it('points to the operations docs, not Settings', () => {
-    expect(LANGFUSE_DOCS).toMatch(/docs\/OPERATIONS\.md#langfuse-beside-the-hub$/)
+  it('points to the Langfuse guide on the docs site, not Settings', () => {
+    expect(LANGFUSE_DOCS).toBe('https://enes-alatas.github.io/spool/guides/langfuse/')
   })
 })
 
