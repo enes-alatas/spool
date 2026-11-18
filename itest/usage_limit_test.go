@@ -53,8 +53,9 @@ func TestAUsageLimitHoldsTheLoopUntilItResets(t *testing.T) {
 	hub.message("aster", "first")
 	hub.waitTurn("aster", 30*time.Second, func(tn turn) bool { return tn.IsError && tn.StartedAt >= sent })
 	hub.waitState("aster", "capped", 10*time.Second)
-	if until := hub.loop("aster").CappedUntil; until < sent+2000 || until > sent+10000 {
-		t.Fatalf("capped_until = %d, want the limit's reset about 4s after %d", until, sent)
+	if held := hub.loop("aster"); !held.UsageLimited || held.CappedUntil < sent+2000 || held.CappedUntil > sent+10000 {
+		t.Fatalf("usage_limited %v, capped_until %d; want held by the usage limit until its reset about 4s after %d",
+			held.UsageLimited, held.CappedUntil, sent)
 	}
 
 	// held: what it is told waits, and the instructions change again
@@ -78,6 +79,9 @@ func TestAUsageLimitHoldsTheLoopUntilItResets(t *testing.T) {
 	}
 	if notes := strings.Count(after.ResultText, standingNote); notes != 1 {
 		t.Errorf("the turn after the reset carries the note %d times, want once:\n%s", notes, after.ResultText)
+	}
+	if hub.loop("aster").UsageLimited {
+		t.Error("usage_limited after the reset, want false")
 	}
 
 	// a note the refused turn carried, with nothing changed since, is not
@@ -180,9 +184,9 @@ func TestAUsageLimitWithNoResetWaitsForTheOperator(t *testing.T) {
 	hub.waitTurn("aster", 30*time.Second, func(tn turn) bool { return tn.IsError && tn.StartedAt >= sent })
 	hub.waitState("aster", "capped", 10*time.Second)
 	held := hub.loop("aster")
-	if len(held.Problems) != 1 || held.Problems[0].Symptom != "usage_limit" || held.Health != "failing" || held.CappedUntil != 0 {
-		t.Fatalf("held: problems %+v, health %q, capped_until %d; want usage_limit alone, failing, and no reset",
-			held.Problems, held.Health, held.CappedUntil)
+	if len(held.Problems) != 1 || held.Problems[0].Symptom != "usage_limit" || held.Health != "failing" || held.CappedUntil != 0 || !held.UsageLimited {
+		t.Fatalf("held: problems %+v, health %q, capped_until %d, usage_limited %v; want usage_limit alone, failing, no reset, and held by the usage limit",
+			held.Problems, held.Health, held.CappedUntil, held.UsageLimited)
 	}
 
 	// the limit lifts, and nothing but the operator lets the loop go

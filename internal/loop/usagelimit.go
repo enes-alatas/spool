@@ -129,3 +129,8 @@ func (actor *Actor) usageLimitPassed() {
 func sameLogin(left, right string) bool {
 	return left == right || isDefaultLogin(left) && isDefaultLogin(right)
 }
+
+// UsageLimited reports whether a usage limit that refused a turn holds the
+// loop, until its reset or until the operator continues it, as last
+// published (safe from any goroutine).
+func (actor *Actor) UsageLimited() bool { return actor.limitedSnap.Load() }

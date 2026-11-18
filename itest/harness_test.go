@@ -413,6 +413,7 @@ type loopView struct {
 	ResolvedModel      string  `json:"resolved_model"`
 	CappedUntil        int64   `json:"capped_until"`
 	DailyCapReached    bool    `json:"daily_cap_reached"`
+	UsageLimited       bool    `json:"usage_limited"`
 	DailyCapUSD        float64 `json:"daily_cap_usd"`
 	ClaudeLogin        string  `json:"claude_login"`
 	EffectiveLogin     string  `json:"effective_claude_login"`

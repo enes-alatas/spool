@@ -551,15 +551,22 @@ type loopView struct {
 	// hub_unreachable (ADR-0021).
 	DownReason string `json:"down_reason"`
 	// CappedUntil is when a capped loop wakes: the latest reset among the
-	// plan windows over their thresholds (ADR-0047), or the next local day
-	// for a loop at its own daily cap (#652), whichever is later. 0 for a
-	// loop whose state is not capped, even while a cap holds, since a loop
-	// in its turn is still busy.
+	// plan windows over their thresholds (ADR-0047), the next local day for
+	// a loop at its own daily cap (#652), or the reset of a usage limit that
+	// refused its turn (#1649), whichever is later. 0 for a loop whose state
+	// is not capped, even while a cap holds, since a loop in its turn is
+	// still busy, and 0 while a usage limit that named no reset holds it,
+	// since only the operator lifts that.
 	CappedUntil int64 `json:"capped_until"`
 	// DailyCapReached is whether the loop's own daily cap holds, so a capped
 	// loop's page can say which cap it is under. It is true for a loop in
 	// its turn too, which a cap takes at the turn's end.
 	DailyCapReached bool `json:"daily_cap_reached"`
+	// UsageLimited is whether a usage limit that refused one of the loop's
+	// turns holds it, apart from the plan cap, so a capped loop's page can
+	// say so (#1657). Its reset is in CappedUntil; one with none named opens
+	// the usage_limit problem instead.
+	UsageLimited bool `json:"usage_limited,omitempty"`
 	// Problems are the open problems the health check found with the loop,
 	// oldest first, and Health sums them up for the Fleet row: ok with
 	// none, failing while the workstation is down, and otherwise warning
@@ -688,10 +695,12 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		}
 		dailyUntil := actor.DailyCapUntil()
 		out.DailyCapReached = dailyUntil > 0
-		if out.State == loop.StateCapped {
+		out.UsageLimited = actor.UsageLimited()
+		limitUntil := actor.UsageLimitUntil()
+		if out.State == loop.StateCapped && (!out.UsageLimited || limitUntil > 0) {
 			nowMS := time.Now().UnixMilli()
 			// a usage limit that refused a turn holds the loop as a cap does
-			out.CappedUntil = max(dailyUntil, actor.UsageLimitUntil())
+			out.CappedUntil = max(dailyUntil, limitUntil)
 			if server.PlanCap != nil {
 				if planCap := server.PlanCap.At(effectiveLogin(loopRecord), nowMS); planCap.Holds(nowMS) {
 					out.CappedUntil = max(out.CappedUntil, planCap.Until)

@@ -241,6 +241,7 @@ type Actor struct {
 	problemsSnap  atomic.Value  // []store.Problem; the open problems, for REST reads
 	dailyCapSnap  atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
 	limitSnap     atomic.Int64  // when the usage limit holding the loop resets, 0 when none does, for REST reads
+	limitedSnap   atomic.Bool   // a usage limit that refused a turn holds the loop, for REST reads
 	failSnap      atomic.Value  // string; how the loop's last try to run failed, "" for none, for REST reads
 	owedSnap      atomic.Int64  // since when queued work has waited for a turn, 0 for none, for the wake check
 	turnStartedAt atomic.Int64  // when the latest turn started, which answers every wake owed before it
@@ -3250,6 +3251,7 @@ func (actor *Actor) publishState() {
 	actor.stateSnap.Store(state)
 	actor.dailyCapSnap.Store(actor.dailyCapUntil())
 	actor.limitSnap.Store(actor.usageLimitUntil)
+	actor.limitedSnap.Store(actor.usageLimited())
 	rehoming := actor.rehomePending()
 	actor.rehomeSnap.Store(rehoming)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{

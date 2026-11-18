@@ -185,6 +185,9 @@ func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
 	if aster, bloom := hub.loop("aster").CappedUntil, hub.loop("bloom").CappedUntil; aster != 0 || bloom != ada.Cap.Until {
 		t.Fatalf("capped_until: aster %d, bloom %d; want 0 and ada's %d", aster, bloom, ada.Cap.Until)
 	}
+	if hub.loop("bloom").UsageLimited {
+		t.Fatal("bloom, under the plan cap alone, reads usage_limited")
+	}
 
 	hub.message("dahlia", "on the move")
 	hub.message("bloom", "while capped")
