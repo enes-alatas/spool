@@ -151,3 +151,40 @@ func TestPromptListsTheLoopsChannels(t *testing.T) {
 		t.Errorf("prompt lists a channel aster is not in:\n%s", prompt)
 	}
 }
+
+// A loop the operator paused stays on its teammates' rosters, marked
+// paused, in the catalog and under its channels: a pause holds it back and
+// takes it out of nothing, so its name never reads as reaching nobody
+// (#1648). An archived loop leaves the roster.
+func TestPromptListsAPausedTeammateMarked(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+	workspace := workspaceWithScript(t, "!sysprompt\n")
+	hub.createLoop("aster", map[string]any{"workspace_path": workspace, "workspace_mode": "dir"})
+	for _, name := range []string{"briar", "cedar", "dahlia"} {
+		hub.createLoop(name, nil)
+	}
+	hub.mustJSON("POST", "/api/channels", map[string]any{"name": "backend"}, nil)
+	for _, name := range []string{"aster", "briar", "cedar", "dahlia"} {
+		hub.wantRefusal("PUT", "/api/channels/backend/loops/"+name, nil, 204, "")
+	}
+	hub.mustJSON("POST", "/api/loops/briar/pause", nil, nil)
+	hub.mustJSON("DELETE", "/api/loops/dahlia", nil, nil)
+
+	at := time.Now().UnixMilli()
+	hub.message("aster", "who is here")
+	prompt := waitPromptAfterRotation(t, hub, "aster", waitPrompt(t, hub, "aster", at).SessionID)
+	for _, want := range []string{
+		"One marked (paused) is still in its channels",
+		"    @briar (paused) — ",
+		"    @cedar — ",
+		"    channel:backend\n      loops: @briar (paused), @cedar\n",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "dahlia") {
+		t.Errorf("prompt lists archived dahlia:\n%s", prompt)
+	}
+}

@@ -1155,11 +1155,14 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 			}
 		}
 	}
+	// a paused loop is listed, marked: a pause holds it back and takes it
+	// out of no channel, so a mention still reaches it (#1648)
 	for _, loopRecord := range loops {
-		if loopRecord.ID != self.ID && loopRecord.Status == store.StatusActive && shared[loopRecord.ID] {
+		if loopRecord.ID != self.ID && loopRecord.Status != store.StatusArchived && shared[loopRecord.ID] {
 			bot, onSurface := botOf(loopRecord)
 			cat.Peers = append(cat.Peers, loop.Peer{
 				Name: loopRecord.Name, Mission: loopRecord.Mission, BotUsername: bot, Surface: onSurface,
+				Paused: loopRecord.Status == store.StatusPaused,
 			})
 		}
 	}

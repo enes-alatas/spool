@@ -47,6 +47,9 @@ type Peer struct {
 	// Surface is where it posts ("telegram", "slack").
 	BotUsername string
 	Surface     string
+	// Paused reports that the operator paused the peer: it is still in its
+	// channels, and a mention waits for it until it is resumed (#1648).
+	Paused bool
 }
 
 // Person is a human Spool knows: an allowlisted sender on a surface.
@@ -144,9 +147,12 @@ type Team struct {
 type Channel struct {
 	Name        string
 	Description string
-	// Loops are the other active loops in it, by name: the ones a mention
-	// there reaches and the prompt can honestly list.
-	Loops []string
+	// Loops are the other loops in it that aren't archived, by name: the
+	// ones a mention there reaches. Paused are those of them the operator
+	// paused, listed and marked so, since a pause holds a loop back and
+	// takes it out of nothing (#1648).
+	Loops  []string
+	Paused []string
 	// Team is the team the channel belongs to, "" for a hub channel.
 	Team string
 	// Room reports that the loop's bot sits in a room bound to the
@@ -166,9 +172,11 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 		conversations.Surface = "Slack"
 	}
 	names := map[string]string{}
+	paused := map[string]bool{}
 	for _, other := range loops {
-		if other.ID != loopRecord.ID && other.Status == store.StatusActive {
+		if other.ID != loopRecord.ID && other.Status != store.StatusArchived {
 			names[other.ID] = other.Name
+			paused[other.ID] = other.Status == store.StatusPaused
 		}
 	}
 	for _, channel := range channels {
@@ -186,9 +194,13 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 		for _, id := range channel.LoopIDs {
 			if name, ok := names[id]; ok {
 				mine.Loops = append(mine.Loops, name)
+				if paused[id] {
+					mine.Paused = append(mine.Paused, name)
+				}
 			}
 		}
 		sort.Strings(mine.Loops)
+		sort.Strings(mine.Paused)
 		conversations.Channels = append(conversations.Channels, mine)
 	}
 	return conversations
@@ -361,9 +373,20 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	case len(cat.Peers) > 0:
 		text.WriteString("- The other loops in your channels, and what each is for — @mention one\n" +
 			"  in a channel it is in to reach it; a name not on this list reaches\n" +
-			"  nobody:\n")
+			"  nobody")
+		if slices.ContainsFunc(cat.Peers, func(peer Peer) bool { return peer.Paused }) {
+			// held back, not taken out: a mention waits for it (#1648)
+			text.WriteString(". One marked (paused) is still in its channels, held back by\n" +
+				"  the operator: a mention reaches it when it is resumed, and @all\n" +
+				"  leaves it out")
+		}
+		text.WriteString(":\n")
 		for _, peer := range cat.Peers {
-			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(firstLine(peer.Mission), 120))
+			name := peer.Name
+			if peer.Paused {
+				name += " (paused)"
+			}
+			fmt.Fprintf(&text, "    @%s — %s\n", name, truncate(firstLine(peer.Mission), 120))
 			if peer.BotUsername != "" && peer.Surface != "" {
 				fmt.Fprintf(&text, "      (posts as @%s in %s)\n", peer.BotUsername, peer.Surface)
 			}
@@ -413,7 +436,14 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 			case len(channel.Loops) == 0:
 				text.WriteString("\n      no other loop is in it yet, so nothing said there reaches anyone\n")
 			default:
-				fmt.Fprintf(&text, "\n      loops: @%s\n", strings.Join(channel.Loops, ", @"))
+				var names []string
+				for _, name := range channel.Loops {
+					if slices.Contains(channel.Paused, name) {
+						name += " (paused)"
+					}
+					names = append(names, name)
+				}
+				fmt.Fprintf(&text, "\n      loops: @%s\n", strings.Join(names, ", @"))
 			}
 			if channel.Room {
 				fmt.Fprintf(&text, "      its %s room carries it, so the people there read it\n", conv.Surface)

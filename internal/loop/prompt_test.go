@@ -457,6 +457,28 @@ func TestCatalogSection(t *testing.T) {
 			notWant: []string{"Your owner is"},
 		},
 		{
+			name: "a paused peer is listed and marked, never as reaching nobody",
+			cat: Catalog{
+				Peers: []Peer{{Name: "milo", Mission: "PO"}, {Name: "quinn", Mission: "QA", Paused: true}},
+				Conversations: Conversations{Surface: "Telegram", Channels: []Channel{
+					{Name: "fleet", Loops: []string{"milo", "quinn"}, Paused: []string{"quinn"}},
+				}},
+			},
+			want: []string{
+				"nobody. One marked (paused) is still in its channels, held back by\n" +
+					"  the operator: a mention reaches it when it is resumed, and @all\n  leaves it out:\n",
+				"    @milo — PO\n",
+				"    @quinn (paused) — QA\n",
+				"      loops: @milo, @quinn (paused)\n",
+			},
+		},
+		{
+			name:    "no paused peer, no word of pausing",
+			cat:     Catalog{Peers: []Peer{{Name: "milo", Mission: "PO"}}, Conversations: telegramInFleet},
+			want:    []string{"a name not on this list reaches\n  nobody:\n"},
+			notWant: []string{"paused"},
+		},
+		{
 			name:    "a lone loop",
 			cat:     Catalog{Owner: &enes, OwnerDMReady: true, Conversations: telegramInFleet},
 			want:    []string{"No other loop is in your channels right now"},
@@ -917,7 +939,7 @@ func TestConversationsOf(t *testing.T) {
 }
 
 // A loop's channels are the ones it is a member of, and each lists the
-// other active loops in it.
+// other loops in it that aren't archived, a paused one marked (#1648).
 func TestConversationsOfChannels(t *testing.T) {
 	self := &store.Loop{ID: "l1", Name: "terra", Status: store.StatusActive}
 	loops := []*store.Loop{
@@ -936,8 +958,9 @@ func TestConversationsOfChannels(t *testing.T) {
 		t.Errorf("destinations = %q", got)
 	}
 	backend, ok := conv.Channel("backend")
-	if !ok || backend.Description != "Go core" || strings.Join(backend.Loops, " ") != "milo quinn" {
-		t.Errorf("backend = %+v, %v; want its description and the other active loops by name", backend, ok)
+	if !ok || backend.Description != "Go core" || strings.Join(backend.Loops, " ") != "iris milo quinn" ||
+		strings.Join(backend.Paused, " ") != "iris" {
+		t.Errorf("backend = %+v, %v; want its description and the other loops by name, paused iris marked", backend, ok)
 	}
 	if release, _ := conv.Channel("release"); release.Team != "red" {
 		t.Errorf("release = %+v, want red's", release)

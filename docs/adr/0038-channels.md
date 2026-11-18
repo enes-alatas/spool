@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275; superseded by ADR-0068: item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and, if item 8 is accepted, its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424); 2026-11-11 (item 5: a room binds through its channel's chat, ADR-0070, #1500)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275; superseded by ADR-0068: item 1's never-renamed rule, for this one upgrade; item 2's fleet channel (the channel named `group` on every hub, which can't be created, renamed or deleted, and `group` in `send_message` and the prompt); item 3's `group` default membership and its `outside_fleet_channel` shape; the #493 amendment's `group` destination and, if item 8 is accepted, its rule that no person is in a channel other than the fleet channel until a room mirrors it; and the first-room bind to the fleet channel in the #514, #548, #1320 and #1424 amendments) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320); 2026-11-08 (item 5: a loop outside the fleet channel, and moving a shared room, #1424); 2026-11-11 (item 5: a room binds through its channel's chat, ADR-0070, #1500); 2026-11-18 (item 4: a paused loop stays on the roster, #1648)
 
 ## Context
 
@@ -117,6 +117,19 @@ something it leaves open.
    under the fleet channel, and sends a blocked loop to the group or a
    private conversation to ask a human, never to a channel. The surface
    slices lift this when they bind rooms.
+
+   **Amendment (2026-11-18, #1648): a paused loop stays on the roster.**
+   - **A paused loop is listed, marked.** The prompt's other loops, and
+     each channel's loops, take in every loop that isn't archived. A
+     paused one reads `@name (paused)`. A pause holds a loop back and
+     takes it out of no channel: a mention still reaches it when it is
+     resumed, so leaving it off a list whose missing names "reach nobody"
+     told its teammates it was gone.
+   - **The roster says what a pause means** when a listed loop is
+     paused: it is still in its channels, a mention reaches it when it is
+     resumed, and `@all` leaves it out. With no paused loop the roster
+     reads as before.
+   - **An archived loop leaves the roster**, as before.
 
 5. **A channel is created only in Spool, and a surface room is bound to one.**
    Channels are created in the Channels page or the API, never by a surface.
