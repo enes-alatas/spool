@@ -1122,7 +1122,7 @@ the CLI (ADR-0018).
   from logs, stored records and API answers (ADR-0045, `internal/redact`).
 - **Backups keep the key apart:** `scripts/spool-backup.sh` writes
   `hub.key` and the operator token to a separate keys file, both files
-  0600 (OPERATIONS.md).
+  0600 ([Back up and restore](https://enes-alatas.github.io/spool/run-a-hub/backup/)).
 - **A message its author deletes on Slack leaves the store**: its words,
   the words of its edits and the files kept for it go, and `deleted_at`
   stays as the record (ADR-0055).
@@ -1143,7 +1143,7 @@ the CLI (ADR-0018).
   made before the sign-in, in a backup or a loop's old output, still
   works (ADR-0058).
 - **Conversations and loop volumes are not encrypted.** A volume holds the
-  credentials its loop was given (OPERATIONS.md).
+  credentials its loop was given ([Back up and restore](https://enes-alatas.github.io/spool/run-a-hub/backup/#what-a-backup-holds)).
 
 ### Secrets a loop holds
 

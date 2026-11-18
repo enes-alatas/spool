@@ -28,7 +28,7 @@ jobs:
         with:
           go-version-file: go.mod
       # Every docker loop takes a network, and the default pools hold about
-      # 30 (OPERATIONS.md). This is the widening that page tells an operator
+      # 30 (site/content/run-a-hub/service.md). This is the widening that page tells an operator
       # to make, merged into whatever the runner image configures already.
       - name: widen the daemon's address pools
         run: |

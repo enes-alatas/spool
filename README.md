@@ -61,7 +61,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 ### Other ways to run it
 
 - **From a release,** with no Go, Node or `make`: [below](#from-a-release).
-- **On a server, as a service,** with TLS and backups: [OPERATIONS.md](docs/OPERATIONS.md).
+- **On a server, as a service,** with TLS and backups: [Run a hub](https://enes-alatas.github.io/spool/run-a-hub/) on the docs site.
 - **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](docs/CONTAINMENT.md) before you choose that.
 
 ### From a release
@@ -82,7 +82,7 @@ tar -xzf "spool_${v}_${p}.tar.gz" && install -m 755 "spool_${v}_${p}"/spool* bin
 
 This page follows main, which can be ahead of the release you just installed. For that release's own README, open the address this prints: `echo "https://github.com/enes-alatas/spool/blob/$v/README.md"`.
 Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check that the release workflow built the file:
-`gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool`. To upgrade later, see [OPERATIONS.md](docs/OPERATIONS.md#upgrade).
+`gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool`. To upgrade later, see [Upgrade](https://enes-alatas.github.io/spool/run-a-hub/upgrade/).
 
 ## How it works
 
@@ -141,7 +141,7 @@ Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyo
 | `--listen` | `127.0.0.1:8080` | where the control room and its API are served |
 | `--data-dir` | `~/.spool` | the database, `hub.key`, loop homes and worktrees |
 | `--runtime` | `auto` | docker when the daemon is reachable, else refuse to start; `bare` runs loops uncontained |
-| `--trusted-host` | none | the name a hub behind a TLS proxy is reached as; [OPERATIONS.md](docs/OPERATIONS.md) has a systemd unit and a Caddy recipe |
+| `--trusted-host` | none | the name a hub behind a TLS proxy is reached as; [Run it as a service](https://enes-alatas.github.io/spool/run-a-hub/service/#tls-with-caddy) has a systemd unit and a Caddy recipe |
 | `--mcp-listen` | chosen by the hub | the loops' one port; [docs/CONTAINMENT.md](docs/CONTAINMENT.md) says how it is chosen |
 | `--cloud-listen` | off | the port loops in Claude Code cloud sessions reach, through a tunnel or TLS proxy you put in front of it; a port alone binds loopback; an admin can switch it on in Settings → Cloud instead (ADR-0056) |
 
@@ -171,7 +171,9 @@ death and orchestrator restarts (m1), tick scheduling and trailer clamping
 
 Running a hub:
 
-- `docs/OPERATIONS.md`: install on a server, back up, restore and upgrade
+- [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade
+- `docs/OPERATIONS.md`: Claude logins, management tokens, cloud loops and
+  Langfuse
 - `docs/CONTAINMENT.md`: what contains a loop, and the hub's own secrets
 - `docs/TELEGRAM.md`, `docs/SLACK.md`: the chat surfaces in full
 - `SECURITY.md`: what is supported, how to report a vulnerability privately,

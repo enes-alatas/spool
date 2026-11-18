@@ -1,268 +1,40 @@
 # Operating a hub
 
-*How to keep a hub running once it is up: run it as a service behind TLS,
-back it up, restore it, and upgrade it. The README gets a hub started; this
-page is for after that.*
+*How to keep a hub running once it is up. Running it as a service, backing
+it up and upgrading it have moved to [the docs site](https://enes-alatas.github.io/spool/run-a-hub/); their
+headings stay here so old links still land. The README gets a hub started.*
 
 ## Run it as a service
 
-These steps take a fresh Debian or Ubuntu server to a hub that starts at
-boot, restarts on failure, and serves the control room over HTTPS at a name
-you own. The rest of this page assumes this layout:
-
-| What | Where |
-|---|---|
-| The checkout and `bin/spool` | `/opt/spool`, built by you (README steps 1–3) |
-| The hub's user | `spool`, a system user in the `docker` group |
-| The data directory | `/home/spool/.spool` |
-| The control room | `127.0.0.1:8080`, reached only through the proxy |
-| The proxy | Caddy on 443, with a certificate for `spool.example.com` |
-
-Use Docker Engine 26.0.0 or later. Of the older lines, only a 25.x from
-25.0.5 and a 23.x from 23.0.11 are fixed; no 24.x is. Any other engine lets a workstation resolve outside
-names, which can carry data past the egress allowlist (CVE-2024-29018),
-and the hub warns at boot when it finds one.
-`docker version --format '{{.Server.Version}}'` prints yours.
-
-Each docker loop gets a network of its own (ADR-0028), and Docker's default
-address pools hold about 30 networks on one engine, other containers'
-included. A loop past that fails to wake with an error naming
-`default-address-pools`. To run more, widen the pools in
-`/etc/docker/daemon.json` and restart Docker:
-
-```json
-{ "default-address-pools": [{ "base": "10.201.0.0/16", "size": 24 }] }
-```
-
-Pick a base no network around your machine uses. A /16 split into /24s holds
-256 networks.
-
-Spool does not terminate TLS (ADR-0030). The proxy does that, and the hub
-stays on loopback behind it. Who may call the API does not change: a session
-or the operator token, as on localhost.
+Moved to [Run it as a service](https://enes-alatas.github.io/spool/run-a-hub/service/) on the docs site.
 
 ### The hub's user
 
-```bash
-sudo useradd --system --create-home --home-dir /home/spool --shell /usr/sbin/nologin spool
-sudo usermod -aG docker spool
-```
-
-Membership of `docker` is what lets the hub run workstations. It is also
-root on this host to anyone who can act as `spool`, which is why nothing
-but the hub runs as that user.
+Moved to [The hub's user](https://enes-alatas.github.io/spool/run-a-hub/service/#the-hubs-user) on the docs site.
 
 ### The unit
 
-`/etc/systemd/system/spool.service`:
-
-```ini
-[Unit]
-Description=Spool hub
-Wants=network-online.target docker.service
-After=network-online.target docker.service
-
-[Service]
-User=spool
-Group=spool
-SupplementaryGroups=docker
-WorkingDirectory=/home/spool
-ExecStart=/opt/spool/bin/spool --data-dir /home/spool/.spool \
-    --listen 127.0.0.1:8080 --trusted-host spool.example.com
-Restart=on-failure
-RestartSec=5
-# The hub drains HTTP for up to 10s, then stops each loop's claude.
-TimeoutStopSec=30
-# The hub's stdout carries only the operator token and the admin's
-# one-time password, printed once at the first start. The log is on stderr.
-# Under systemd, stdout is the journal, which members of `adm` and
-# `systemd-journal` can read, so it goes nowhere instead. stderr follows
-# stdout unless it's named, so it's named: the log stays in the journal.
-StandardOutput=null
-StandardError=journal
-UMask=0077
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=full
-
-[Install]
-WantedBy=multi-user.target
-```
-
-- `--trusted-host` names the proxy's host. Without it, the hub's Host and
-  Origin checks refuse every request the proxy forwards, with
-  `unexpected Host` and a 403. That is the guard working, not a bug.
-- `Restart=on-failure` covers a hub that cannot bind or open its database:
-  each exits non-zero (#253), so systemd sees the failure and retries.
-- The hardening lines take nothing the hub uses. It writes only under its
-  data directory and the loops' workspaces, and it shares no host path with
-  a container: workstations get named volumes, and the egress proxy's
-  allowlist is streamed in.
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now spool
-journalctl -u spool -n 50        # `runtime ready`, and where the loop listener bound
-```
-
-The first start mints the operator token and the `admin` user's one-time
-password. It prints them to stdout, which this unit discards, so neither
-reaches the journal. Print each at your own terminal instead:
-
-```bash
-sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool              # the operator token
-sudo -u spool /opt/spool/bin/spool user reset admin --data-dir /home/spool/.spool  # a fresh one-time password
-```
-
-Sign in as `admin` with that password and set your own. The operator
-token is a full API credential that doesn't expire, so keep it with the
-keys file (see Back up and restore), not in shell history or a ticket.
+Moved to [The unit](https://enes-alatas.github.io/spool/run-a-hub/service/#the-unit) on the docs site.
 
 ### TLS with Caddy
 
-Point `spool.example.com`'s DNS at the server, install Caddy from its
-[Debian/Ubuntu packages](https://caddyserver.com/docs/install#debian-ubuntu-raspbian),
-and replace `/etc/caddy/Caddyfile` with:
-
-```caddyfile
-spool.example.com {
-	reverse_proxy 127.0.0.1:8080
-}
-```
-
-Then run `sudo systemctl reload caddy`. Caddy obtains and renews the
-certificate on its own, redirects http to https, and passes everything the
-hub needs:
-- It keeps the `Host` the browser sent, which `--trusted-host` matches.
-- It sets `X-Forwarded-Proto: https`, so the hub marks its session cookie
-  `Secure`.
-- It flushes the control room's event streams as they arrive.
-
-**nginx instead:** the same three things have to be said explicitly.
-
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_http_version 1.1;
-    proxy_buffering off;          # the event streams
-    proxy_read_timeout 1h;        # a quiet stream is not a dead one
-}
-```
+Moved to [TLS with Caddy](https://enes-alatas.github.io/spool/run-a-hub/service/#tls-with-caddy) on the docs site.
 
 ### The firewall
 
-Open 80 and 443 for Caddy, and SSH. Open nothing for the hub.
-
-```bash
-sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw enable
-```
-
-The control room port is on loopback, so the network cannot reach it at all.
-The loop listener (`--mcp-listen`) binds the docker bridge
-([CONTAINMENT.md](CONTAINMENT.md)), which the network is not routed to. A default-deny inbound
-policy can still drop the workstations' own traffic to it, since that
-traffic arrives from the bridge. The symptom is a docker loop that never
-answers while its wake times out in the hub log. The fix is to allow that one
-port from the bridge only:
-
-```bash
-sudo ufw allow in on docker0 to any port 8081 proto tcp
-```
-
-The cloud listener (`--cloud-listen`, for loops in Claude Code cloud sessions,
-ADR-0056) is off unless you set it, or an admin switches it on in
-Settings → Cloud. The page opens it on `127.0.0.1:8090` unless told
-otherwise, and the hub opens it there again at each start until it is
-switched off. Given a port alone it binds loopback, and the tunnel or TLS
-proxy that makes it public reaches it there, so it needs no firewall rule
-either. Name a wider address only for a proxy on another
-machine.
+Moved to [The firewall](https://enes-alatas.github.io/spool/run-a-hub/service/#the-firewall) on the docs site.
 
 ### Checking it worked
 
-- `curl -s https://spool.example.com/api/version` names your build, and
-  `curl http://<server address>:8080` from another machine does not connect.
-- Sign in at `https://spool.example.com`. The browser's cookie for it is
-  `HttpOnly; Secure; SameSite=Strict`.
-- `sudo systemctl restart spool` brings the control room back within
-  seconds, and `sudo reboot` brings it back without you.
+Moved to [Checking it worked](https://enes-alatas.github.io/spool/run-a-hub/service/#checking-it-worked) on the docs site.
 
 ### The cloud listener on the control room's name
 
-A host that already serves the control room through Caddy can make the
-cloud listener public on the same name, with no tunnel. Route the cloud
-listener's three paths to its port, 8090 unless you changed it, and
-everything else to the control room. This replaces the site block in
-[TLS with Caddy](#tls-with-caddy):
-
-```caddyfile
-spool.example.com {
-	@cloud path /mcp /mcp/check/* /hooks
-	handle @cloud {
-		reverse_proxy 127.0.0.1:8090
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080
-	}
-}
-```
-
-Reload Caddy, and paste `https://spool.example.com` as the Public address.
-The control room serves none of those paths, so routing them away takes
-nothing from it. The trade-off: the cloud listener then shares the control
-room's origin. The internet reaches both on one name, and a browser sends
-the control room's cookie along to the cloud paths, which ignore it. Give
-the cloud listener a name of its own, a second site block with only the
-`reverse_proxy` to 8090, to keep the two apart.
+Moved to [The cloud listener on the control room's name](https://enes-alatas.github.io/spool/run-a-hub/service/#the-cloud-listener-on-the-control-rooms-name) on the docs site.
 
 ### A Tailscale Funnel beside Caddy
 
-The cloud setup's Tailscale step runs `tailscale funnel --bg 8090`, with your
-cloud listener's port, 8090 unless you changed it. From outside, the funnel
-works beside Caddy. From the server itself, the `*.ts.net` name resolves to
-the server's own tailnet address, and there Caddy holds 443 with no
-certificate for that name. The hub's self-check of the public address runs
-from the server, so it fails with
-`tls: internal error` while the address works from everywhere else.
-
-Give Caddy the name too, with Tailscale's certificate. Add to
-`/etc/caddy/Caddyfile`, with your machine and tailnet names and that port:
-
-```caddyfile
-<machine>.<tailnet>.ts.net {
-	tls {
-		get_certificate tailscale
-	}
-	reverse_proxy 127.0.0.1:8090
-}
-```
-
-Then let the caddy user fetch that certificate from tailscaled, and reload:
-
-```bash
-echo 'TS_PERMIT_CERT_UID=caddy' | sudo tee -a /etc/default/tailscaled
-sudo systemctl restart tailscaled && sudo systemctl reload caddy
-```
-
-The cloud setup's Public address step then passes, and says it reached the
-listener over a private route from this machine: the request went over the
-tailnet, which proves nothing of the Funnel. So test from off the tailnet
-too, such as from a phone on mobile data:
-`curl -i https://<machine>.<tailnet>.ts.net/mcp` should get the hub's
-answer, a 401. If a cloud session still can't reach the hub, its start
-turns the step red and holds every cloud loop, until you fix the Funnel
-and check the step again (#1093).
-
-**The name doesn't resolve.** `tailscale funnel status` can show the
-Funnel as on before public DNS has the `*.ts.net` name. Until it does,
-the Public address step fails. Check the name from off the tailnet:
-`dig +short <machine>.<tailnet>.ts.net @1.1.1.1`. An empty answer means
-the name hasn't reached public DNS yet. Wait a few minutes and check the
-step again. If it stays empty, put the cloud listener on
-[the control room's name](#the-cloud-listener-on-the-control-rooms-name)
-instead.
+Moved to [A Tailscale Funnel beside Caddy](https://enes-alatas.github.io/spool/run-a-hub/service/#a-tailscale-funnel-beside-caddy) on the docs site.
 
 ## Claude logins
 
@@ -430,9 +202,9 @@ order. Each step the hub checks before the next opens. The hub needs the
    reach. It serves only the cloud loops' MCP, the posts their sessions'
    hooks make, and the management MCP. Nothing changes on claude.ai.
 2. **Public address.** Put a tunnel or a TLS proxy in front of the
-   listener ([TLS with Caddy](#tls-with-caddy),
-   [the control room's name](#the-cloud-listener-on-the-control-rooms-name),
-   [a Tailscale Funnel](#a-tailscale-funnel-beside-caddy)) and paste its
+   listener ([TLS with Caddy](https://enes-alatas.github.io/spool/run-a-hub/service/#tls-with-caddy),
+   [the control room's name](https://enes-alatas.github.io/spool/run-a-hub/service/#the-cloud-listener-on-the-control-rooms-name),
+   [a Tailscale Funnel](https://enes-alatas.github.io/spool/run-a-hub/service/#a-tailscale-funnel-beside-caddy)) and paste its
    HTTPS address. On Spool's side, the hub sends a request through the
    address and checks that its own listener answered. It checks again every
    five minutes, and just before a cloud loop wakes. Nothing changes on
@@ -625,554 +397,63 @@ so a hub with only cloud loops has no plan usage to show.
 
 ## Back up and restore
 
-The commands here assume the layout of [Run it as a service](#run-it-as-a-service):
-the hub runs as a system unit named `spool` with its data directory at
-`/home/spool/.spool`, and you run them as the checkout's owner, with `sudo`
-on the lines that need root. A hub you start by hand (`./bin/spool`, data in
-`~/.spool`) is stopped and started however you run it, and gets its own
-`--data-dir`.
+Moved to [Back up and restore](https://enes-alatas.github.io/spool/run-a-hub/backup/) on the docs site.
 
 ### What a backup holds
 
-A hub's state is in two places: its data directory (`--data-dir`, default
-`~/.spool`) and one docker volume per contained loop, `spool-ws-<loop id>`,
-which holds the loop's sessions, memory, workspace and the tools it installed.
-A backup that copies only the directory brings every docker loop back with
-no memory.
-
-`scripts/spool-backup.sh` writes three files:
-
-| File | Holds | Keep it |
-|---|---|---|
-| `spool-data-<ts>.tar.gz` | the data directory without its two credentials or an unfinished cloud sign-in (`spool.db`, `files/`, `homes/`, `worktrees/`) | with your backups |
-| `spool-volumes-<ts>.tar.gz` | every `spool-ws-*` volume, and a manifest naming each volume's loop; none with `--no-volumes` | with your backups |
-| `spool-keys-<ts>.tar` | `hub.key` and `operator-token` | **apart** from the data file, e.g. in a password manager or on another host |
-
-Every secret in `spool.db` is sealed under `hub.key` (ADR-0046). The data
-file without the keys file holds them only as ciphertext, and grants no API
-access. Keep the two apart and a leaked copy of either is not enough. The
-volumes file is still sensitive: a workstation volume holds whatever its
-loop holds, its own GitHub token included. All three files are written 0600.
-
-Install `pigz` (`sudo apt install pigz`) and the backup and the restore
-compress on every core; without it, `gzip` uses one (#948). A backup from
-before #948 holds its volumes inside the data file, and the restore still
-reads it that way.
-
-A volume is found by its name, `spool-ws-<loop id>`, not by its labels. A
-volume made by hand, as when loops move over from another machine, has no
-labels, and the hub runs on it all the same. The backup lists such a
-volume as `no loop labels` and takes its loop id from the name. A restore
-creates it with the labels, so later backups list it by its loop (#844). A
-script from before that change skipped such volumes without a word.
+Moved to [What a backup holds](https://enes-alatas.github.io/spool/run-a-hub/backup/#what-a-backup-holds) on the docs site.
 
 ### Installing the scripts
 
-Run the scripts from a copy installed outside the checkout, never from
-`scripts/` itself. An upgrade or a rollback moves the checkout to a tag,
-and tags from before the scripts (v0.5.1 and earlier) don't have them: a
-restore run from there would stop with the data directory already moved
-aside. Install them from `main`, whatever tag the checkout is on, and do it
-again at every upgrade. Run git as the checkout's owner and let `sudo` do
-the writes outside it. A `sudo` in front of a `>` redirect doesn't help, because
-your own shell opens the file:
-
-```bash
-cd /opt/spool && git fetch origin
-sudo install -d -m 700 /var/backups/spool    # where the backups below are written
-for s in spool-backup.sh spool-restore.sh; do
-  git show "origin/main:scripts/$s" | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
-done
-```
-
-`spool upgrade` does this for you: it installs the target's own two
-scripts before its backup (#1583). The block above is still for a first
-install, an upgrade by hand, and an upgrade that can't: one run by a
-`spool` from before #1583, which is the hub's installed binary and not
-the target's, or to a release from before it, which carries no scripts
-([Upgrade](#upgrade)).
-
-The scripts need nothing else from the checkout. The commands below call
-them from `/usr/local/sbin`.
+Moved to [Installing the scripts](https://enes-alatas.github.io/spool/run-a-hub/backup/#installing-the-scripts) on the docs site.
 
 ### Taking one
 
-The hub must be stopped. `spool.db` runs in WAL mode, so a copy taken under a
-running hub can miss its latest commits, and a loop that is awake is writing
-to its volume. The script refuses when a process holds `spool.db` open. It
-stops running workstation containers for the copy and starts them again
-afterwards. It reads volumes through the local `spool-workstation` image and
-never pulls one.
-
-Run it as the hub's user or as root. The open-file check sees only the
-caller's processes, so run as anyone else it would pass against a running
-hub.
-
-```bash
-sudo systemctl stop spool                  # or stop the hub however you run it
-sudo /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
-sudo systemctl start spool
-```
-
-Loops are paused while the copy runs: seconds for a small fleet, longer once
-volumes hold installed toolchains. Move the keys file off the host.
+Moved to [Taking one](https://enes-alatas.github.io/spool/run-a-hub/backup/#taking-one) on the docs site.
 
 ### Nightly, with a timer
 
-Two units run the backup each night, with the hub as the system unit
-`spool` above (#1601).
-
-`/etc/systemd/system/spool-backup.service`:
-
-```ini
-[Unit]
-Description=Spool backup
-
-[Service]
-Type=oneshot
-Environment=SPOOL_BACKUP_KEEP=7
-EnvironmentFile=-/etc/default/spool-backup
-ExecStartPre=/usr/bin/systemctl stop spool
-ExecStart=/usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool \
-    --out /var/backups/spool --keep ${SPOOL_BACKUP_KEEP}
-# Runs when the backup fails too, so the hub is never left stopped.
-ExecStopPost=/usr/bin/systemctl start spool
-```
-
-`/etc/systemd/system/spool-backup.timer`:
-
-```ini
-[Unit]
-Description=Nightly Spool backup
-
-[Timer]
-OnCalendar=*-*-* 03:15:00
-# A night the box was off runs once at the next boot.
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now spool-backup.timer
-sudo systemctl start spool-backup.service    # one backup now, to check it works
-systemctl list-timers spool-backup.timer     # the last and next run
-systemctl status spool-backup                # the last result
-journalctl -u spool-backup -n 50             # the script's output, and its reason when it fails
-```
-
-The backup runs as root. A failed one leaves the hub running and
-`spool-backup` failed, and the reason is in the journal. To keep a
-different number of backups, put `SPOOL_BACKUP_KEEP=14` in
-`/etc/default/spool-backup`. No upgrade writes that file. Stop the timer
-before an upgrade, `spool upgrade` too, or a restore
-(`sudo systemctl stop spool-backup.timer`), and start it again after, so
-the backup doesn't start the hub partway through.
-
-A nightly line in root's crontab, from before #1601, does the same without
-a record of the last run. To swap it for the units, delete the line
-(`sudo crontab -e`) and install the units as above.
-
-`--keep 7` deletes all but the newest seven backups in `--out` once the new
-one is written (#1600). Pick the count your disk holds: each backup takes
-about the data directory plus the workstation volumes, compressed, and
-`spool upgrade` refuses to start when `/var/backups/spool` lacks room for
-its own copy of the data directory. A backup there is the data, keys and volumes files
-that share a timestamp, and each goes whole. A failed run deletes nothing,
-and no file the script didn't name is touched. Each `spool upgrade` also
-leaves its backup in `/var/backups/spool`, under the same names, so the
-nightly run counts it and in time deletes it like the others. Copy one off
-the host first if you want it kept. Without `--keep`, the script deletes
-nothing.
-
-A hub with only bare loops, or no docker on the host, passes `--no-volumes`.
-A bare loop's sessions live under the hub user's `~/.claude/projects/`, which
-this script does not copy.
+Moved to [Nightly, with a timer](https://enes-alatas.github.io/spool/run-a-hub/backup/#nightly-with-a-timer) on the docs site.
 
 ### Restoring
 
-```bash
-sudo /usr/local/sbin/spool-restore.sh --data spool-data-<ts>.tar.gz \
-  --volumes spool-volumes-<ts>.tar.gz \
-  --keys spool-keys-<ts>.tar --data-dir /home/spool/.spool
-sudo systemctl start spool                 # or start the hub however you run it
-```
-
-A backup that wrote no volumes file (one taken with `--no-volumes`, or on a
-docker hub with no workstation volume yet) restores without `--volumes`.
-
-Run as root, restore gives every file it writes to the owner the backup
-recorded, the hub's user, keys included (#783). Restore never overwrites
-anything. The data directory must be missing or empty, and no volume the
-backup names may exist yet. All checks run before anything is written. To
-restore over a broken hub, move its data directory aside, and remove
-each volume the refusal names along with the workstation container of
-the same name. Docker refuses to remove a volume a container still uses,
-even a stopped one:
-
-```bash
-docker rm -f spool-ws-<id> && docker volume rm spool-ws-<id>
-```
-
-The containers need nothing more: the hub provisions one on a loop's next
-wake and reuses the restored volume. Build the images first (`make image`) on a
-new host.
-
-Check it worked:
-
-- The hub starts. A sealed database with a missing or wrong `hub.key` makes
-  it exit 1 at once, saying so.
-- `curl -H "Authorization: Bearer $(cat ~/.spool/operator-token)" http://127.0.0.1:8080/api/loops`
-  returns your loops.
-- A docker loop answers a message and remembers what it knew.
-- Access is what the backup held, not what you last set. Any user, link,
-  allowed sender or block changed after the backup was taken is back to its
-  old state, so a person removed since then can reach the loops again. Check
-  Settings → Users and access before you let the fleet run.
-
-**Lost the keys file?** Restore without `--keys`. The hub refuses to start
-until `hub.key` is back. Starting it once with `--forget-secrets` gives up
-every sealed secret instead: connections are revoked, bots unbound and the
-setup-token cleared, so you enter them again (ADR-0046). A new
-`operator-token` is minted at that start. Under the systemd unit its
-stdout goes nowhere, so read the token with `spool token`.
-
-A restored `worktrees/` points at each loop's source repository by path. If
-that repository moved, run `git worktree repair` in it.
+Moved to [Restoring](https://enes-alatas.github.io/spool/run-a-hub/backup/#restoring) on the docs site.
 
 ## Upgrade
 
-An upgrade moves the checkout to a new tag, rebuilds the binary and the
-images, and starts the hub on the same data directory. The hub migrates
-`spool.db` forward at its first start. No release migrates it back, so the
-backup taken just before that start is the way back. Take it every time.
+Moved to [Upgrade](https://enes-alatas.github.io/spool/run-a-hub/upgrade/) on the docs site.
 
 ### With `spool upgrade`
 
-```bash
-sudo spool upgrade --dry-run       # the plan, with the unit's paths; changes nothing
-sudo spool upgrade                 # the latest release; or vX.Y.Z, or main
-```
-
-It does the steps below in their order (ADR-0057). It reads the binary,
-the data directory and the images from the unit (`--unit`, default
-`spool`), and checks the new build before anything stops. A release is
-checked by its checksum, and by `gh attestation verify` run as you if you
-have `gh` 2.49 or later and are logged in; without that it warns, and
-`--require-attestation` makes it refuse. Ubuntu's and Debian's own `gh`
-packages can be older: install it from cli.github.com's apt repository
-([Linux install](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)) (#1338).
-A target that doesn't know a migration the database has applied is
-refused. It then stops the hub, installs the target's `spool-backup.sh`
-and `spool-restore.sh` in `/usr/local/sbin` (#1583), keeping those
-there as `*.previous`, backs up the data directory with that
-`spool-backup.sh --no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
-outside the data directory and is checked before anything stops), installs,
-starts, and waits two minutes for the hub to answer at the target
-version. If it doesn't, the command rolls the binary, the images, the
-data directory and the scripts back, restoring with the target's
-`spool-restore.sh` before the previous one goes back, leaves the volumes, and prints where the
-backup and the failed data directory are. Each step prints as it
-starts, with the time since the run began.
-
-The scripts run as the unit's `User=`, not as root (#1583). The backup
-writes into a fresh directory of that user's beside `--backup-dir`, and the
-upgrade copies each file it names into `--backup-dir` as root's, mode
-`0600`, then removes that directory. A rollback's restore reads copies
-handed over the same way. Where the data directory's parent isn't the
-hub user's, the restore runs as root, as it makes the directory there;
-`--dry-run` says which. A unit with no `User=` runs both as root.
-
-The upgrade's backup leaves out the workstation volumes. The upgrade
-changes none, and a rollback restores none, so copying them would only
-keep the hub down longer. So it isn't a full backup: keep the
-[scheduled one](#back-up-and-restore) running for the volumes.
-
-Before it builds or pulls, the upgrade tags the images the hub runs as
-`spool-workstation:spool-previous` and `spool-egress:spool-previous`, and
-a rollback tags them back. They stay until the next upgrade moves them;
-`docker image rm` them to reclaim the space once the new hub is checked.
-
-`main`, or a tag with `--from-source <checkout>`, is built in the
-checkout as its owner. Until a release ships binaries (#747), only those
-work. An upgrade run by a `spool` from before #1583, or to a release from
-before it, installs no scripts and needs them installed already:
-[Installing the scripts](#installing-the-scripts). A hub upgraded with
-`--no-unit` as its own user keeps the scripts it has, since that user
-can't write `/usr/local/sbin`.
-
-The build runs in the owner's login shell, which isn't interactive, so it
-reads `~/.profile` and not `~/.bashrc`. It loads a Node or Go that nvm,
-fnm, volta or asdf installed in its default place, and finds Go in
-`/usr/local/go/bin`. Before anything stops, even on `--dry-run` under
-`sudo`, it checks that `git`, `make`, `go`, `node`, `npm` and `docker` are
-there and that the owner can use docker without sudo. It names whatever is
-missing. A tool installed anywhere else needs its `PATH` set in
-`~/.profile`. Check what the build sees with:
-
-```bash
-sudo runuser -l "$USER" -c 'command -v go; command -v node; command -v npm'
-```
-
-The steps [by hand](#by-hand) are the fallback, and the reference for
-what the command does.
+Moved to [With `spool upgrade`](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#with-spool-upgrade) on the docs site.
 
 ### A hub with no unit
 
-A hub you started by hand, such as `./bin/spool` on a Mac with its data
-in `~/.spool`, has no unit to read. Upgrade it as the user who runs it,
-**without** `sudo`, with the binary it runs:
-
-```bash
-./bin/spool upgrade --no-unit --dry-run    # the plan; changes nothing
-./bin/spool upgrade --no-unit              # the latest release; or vX.Y.Z, or main
-```
-
-`--no-unit` is implied where there is no `systemctl`. `--data-dir` names
-the data directory if it isn't `~/.spool` (ADR-0057, amendment of
-2026-11-04).
-
-- **Finding the hub.** The upgrade finds the hub by the one process
-  holding `spool.db` open, through `lsof`, and reads its flags from its
-  command line. On a Mac, `ps` can't show where a path with a space in
-  it splits, so the upgrade refuses such a command line: start the hub
-  from paths with no spaces. It refuses if that process runs another binary than the
-  one you ran, and names the right one.
-- **Stopping and starting.** The upgrade stops the hub with SIGTERM, as
-  systemd would. It can't start one in your terminal, so it prints the
-  command line the hub ran with. Type that where you started the hub
-  before. On a terminal that prompt is bold yellow, and a short line
-  under it blinks with the time left until the wait runs out; `NO_COLOR=1` turns
-  that off. The upgrade waits ten minutes for the hub to answer at the
-  target, and rolls back if it doesn't. A rollback asks you the same
-  way to start the previous build.
-- **Backups.** The backup goes into `spool-backups` beside the data
-  directory, so `~/spool-backups` for `~/.spool`, unless you name another
-  with `--backup-dir`. The [installed scripts](#installing-the-scripts)
-  are needed as for a unit.
-- **No docker.** If your user reaches no docker, as on a hub of bare
-  loops only, the upgrade leaves the images alone and says so.
+Moved to [A hub with no unit](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#a-hub-with-no-unit) on the docs site.
 
 ### By hand
 
-The commands assume the checkout is at `/opt/spool` and the hub runs as a
-system unit named `spool`. Substitute your own checkout. The binary the unit
-runs and the data directory are read from the unit itself (step 1 below), so
-a hub set up some other way than [Run it as a service](#run-it-as-a-service)
-upgrades the same. Run them as the user who owns the checkout, who
-can also run `docker`, as `make image` needs. `sudo` marks the lines that
-need root: the unit, the scripts, and anything under `/usr/local/sbin` or
-`/home/spool`. Running the whole block as root instead leaves root's files
-in your checkout, and git refuses a checkout root doesn't own.
+Moved to [By hand](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#by-hand) on the docs site.
 
 ### Before you start
 
-1. **Find what the unit runs.** The upgrade replaces that binary and backs
-   up that data directory, wherever they are. Run this in the shell you
-   upgrade from:
-
-   ```bash
-   unit=$(systemctl show spool -p ExecStart)
-   BIN=$(printf '%s' "$unit" | sed -n 's/.*path=\([^ ;]*\).*/\1/p')
-   DATA=$(printf '%s' "$unit" | sed -n 's/.*--data-dir[= ]\([^ ;]*\).*/\1/p')
-   echo "binary: ${BIN:?no unit named spool}  data: ${DATA:?no --data-dir in the unit; set DATA by hand}"
-   ```
-
-   With the unit above, these are `/opt/spool/bin/spool` and
-   `/home/spool/.spool`. A unit that runs a copy elsewhere, such as
-   `/usr/local/bin/spool`, is why the block below installs the new build: a
-   rebuilt `bin/spool` alone changes nothing the unit starts.
-2. **Read what changed.** Note the running build with `"$BIN" --version`.
-   Read every release's notes between that build and the target on the
-   [releases page](https://github.com/enes-alatas/spool/releases). Then check
-   [Release-specific steps](#release-specific-steps) below for anything
-   between your version and the target.
-3. **Keep the build you are leaving**, so a rollback needs no rebuild:
-
-   ```bash
-   cd /opt/spool
-   git describe --tags --always > bin/previous-version
-   cp "$BIN" bin/spool.previous
-   ```
-4. **Check the build tools** if you build from source rather than
-   downloading a release. The running hub needs neither Go nor Node; only
-   `make build` does. Make sure your own shell has them, at the versions the
-   README names:
-
-   ```bash
-   go version && node --version && npm --version
-   ```
-
-   Don't fall back to `make server`. It skips the web UI and embeds whatever
-   older build is left in `web/dist`.
+Moved to [Before you start](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#before-you-start) on the docs site.
 
 ### Upgrading
 
-```bash
-cd /opt/spool
-git fetch --tags origin
-for s in spool-backup.sh spool-restore.sh; do   # refresh the installed scripts first
-  git show "origin/main:scripts/$s" | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
-done
-git checkout vX.Y.Z                         # the target tag
-make build                                  # web UI + bin/spool; the running hub is unaffected
-make image                                  # spool-workstation and spool-egress, rebuilt locally
-
-sudo systemctl stop spool
-sudo /usr/local/sbin/spool-backup.sh --data-dir "$DATA" --out /var/backups/spool
-# Install the build where the unit runs it; a unit that runs bin/spool in place needs nothing.
-[ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool bin/spool-hook "$(dirname "$BIN")/"
-# spool-github, for a bare loop holding a github-app (#1054); a build from before it has none.
-[ "$BIN" -ef bin/spool ] || [ ! -f bin/spool-github ] || sudo install -m 755 bin/spool-github "$(dirname "$BIN")/"
-
-# Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
-# image (#715): remove the containers, never the volumes, and the hub
-# provisions each from the new image at its loop's next wake, on the same
-# volume. A later hub replaces them itself at that wake.
-docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
-
-sudo systemctl start spool
-```
-
-**To main, between releases.** Replace the tag line with
-`git checkout main && git pull --ff-only origin main`. `git fetch` alone
-moves `origin/main`, not your `main`, so checking out `main` after it
-builds the commit you already run. `git describe --tags` then names the
-build, such as `v0.5.1-159-g8691220`.
-
-Do not use the control room's **Recreate workstation** for this. It removes
-the volume too, and with it the loop's memory and workspace.
-
-Building happens while the old hub still runs, so the outage is only the
-backup and the start.
-
-**From a release.** A release from the one after v0.5.1 on carries the built
-binary (#756, ADR-0052), so `make build` above can be replaced with a
-download. A release whose notes have an **Images** section also carries the
-images (#763), so `make image` can be replaced with what the new binary's
-`spool images` prints. Each image is pulled by digest, which is its check,
-and tagged with the name the hub runs, so the hub replaces the workstations
-at their next wake, as it does after `make image`. Like `make image`, that
-moves the loops of the hub that is still running. To keep them on the old
-images until the new hub starts, run `./bin/spool images | sh` after
-`systemctl stop spool` instead. The rest of the block stays the same.
-This block upgrades a hub installed in `/opt/spool`. To install a hub
-from a release on a machine that has never had one, see
-[From a release](../README.md#from-a-release) in the README.
-
-```bash
-v=vX.Y.Z; p=linux_amd64                      # the target tag; linux_arm64 on ARM
-base=https://github.com/enes-alatas/spool/releases/download/$v
-dl=$(mktemp -d) && cd "$dl"                  # private to you: nothing swaps the file after the check
-curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
-sha256sum -c --ignore-missing SHA256SUMS     # the file is the release's
-gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool   # optional: the release workflow built it
-tar -xzf "spool_${v}_${p}.tar.gz"
-install -m 755 "spool_${v}_${p}/spool" "spool_${v}_${p}/spool-hook" /opt/spool/bin/
-[ ! -f "spool_${v}_${p}/spool-github" ] || install -m 755 "spool_${v}_${p}/spool-github" /opt/spool/bin/   # a release from before #1054 has none
-cd /opt/spool && rm -rf "$dl"                # back for the rest of the block
-
-./bin/spool images                           # read it: two pulls by digest, two tags
-./bin/spool images | sh                      # run them; running loops move at their next wake
-```
-
-The checksum catches a broken download. The attestation also catches a
-file and checksums that were swapped together, so run it if you have `gh`.
-An image's attestation is checked the same way:
-`gh attestation verify oci://<image>@sha256:… --owner enes-alatas`, with the
-references `spool images` prints.
-
-To try a release before upgrading to it, run `scripts/release-smoke.sh
-vX.Y.Z` from the clone on a throwaway VM with Docker. It installs the
-release the README's way, checks the checksum and attestations, and starts a
-hub on its images with a data directory of its own. Never run it on the
-fleet's host: it retags `spool-workstation` and `spool-egress`, and it
-refuses a daemon that already runs a hub's containers. The release
-workflow runs the same check after every tag (#770).
+Moved to [Upgrading](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#upgrading) on the docs site.
 
 ### Checking it worked
 
-- `curl -s http://127.0.0.1:8080/api/version` names the target tag, and
-  `curl -s http://127.0.0.1:8080/api/health` answers `{"ok":true}`. That
-  is the hub's answer. A loop names the build its session started on until
-  its next rotation, so a loop still quoting the old build proves nothing.
-- `journalctl -u spool -n 100` shows `runtime ready`, and no `level=ERROR` since the
-  start.
-- Sign in to the control room. Every loop is listed, and the Fleet page shows
-  no loop failing.
-- Message one docker loop and wait for its answer. That wake is what
-  provisions its container from the new image. `docker ps --filter
-  label=spool.loop.id` then lists it again.
+Moved to [Checking it worked](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#checking-it-worked) on the docs site.
 
 ### Rolling back
 
-To roll back, return to the previous build and restore the backup taken
-during the upgrade. Anything the fleet did after the upgrade (messages,
-memory, loop changes) is lost.
-
-Starting the old binary on the migrated `spool.db` is not supported. The old
-binary skips migrations it doesn't know, then reads tables in a shape it was
-never written for.
-
-`$BIN` and `$DATA` are the ones step 1 of [Before you start](#before-you-start)
-read; read them again in a new shell.
-
-```bash
-sudo systemctl stop spool
-cd /opt/spool
-git checkout "$(cat bin/previous-version)"
-cp bin/spool.previous bin/spool
-[ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool.previous "$BIN"
-make image                                  # the previous release's images
-
-sudo mv "$DATA" "$DATA.failed-upgrade"
-docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
-docker volume rm $(docker volume ls -q --filter name=spool-ws-)   # by name: a volume may carry no labels (#844)
-sudo /usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
-  --volumes /var/backups/spool/spool-volumes-<ts>.tar.gz \
-  --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir "$DATA"
-
-sudo systemctl start spool
-```
-
-`docker volume rm` destroys the volumes as they stood after the upgrade. Run
-it only once you have the backup's data and volumes files in hand. A backup
-taken before #948 has no volumes file: leave out `--volumes`, and the
-restore reads the volumes from the data file. Keep
-`$DATA.failed-upgrade` until the rolled-back hub is checked, then delete it:
-it holds the same credentials as the live directory.
-
-The restore runs from `/usr/local/sbin`, so it works whatever the previous
-build is, including one from before the scripts existed. Don't refresh the
-installed copy during a rollback.
-
-A rollback to a build from before #1381 refuses the session start of every
-cloud loop whose environment was given the newer setup script, which sends
-a field the older hub doesn't take. Those loops then don't run until you
-paste the setup view's script into each environment again. A rollback that
-`spool upgrade` makes on its own, when the new build doesn't answer,
-happens before anyone could paste the newer script, so it needs nothing.
-A build with #1414 drops a hook field it doesn't know, so a rollback to it
-or a later build needs no paste for a field a newer script adds.
-
-If the new hub never started (a failed build, or a stop before `systemctl
-start`), the database was not migrated. Putting `bin/spool.previous` back
-where the unit runs it (`$BIN`) and starting is then enough.
+Moved to [Rolling back](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#rolling-back) on the docs site.
 
 ### Release-specific steps
 
-Steps a release needs on top of the above, newest first. A change that alters
-stored data at its first start adds its row here in the same PR (see
-CONVENTIONS.md, Releases).
-
-| Release | At its first start | What it means for you |
-|---|---|---|
-| v0.9.0 | Gives each channel some room is bound to one chat, its channel's chat (ADR-0070): the chat of its earliest-bound room. Every room bound to that chat stays bound. A room bound to the same channel in another chat goes back to unbound, still recorded, and the hub logs a `channel chat upgrade` line naming each channel this touched. If rooms carried one chat for two channels, it's kept for the channel that bound it earlier, and the other channel keeps no chat, its rooms unbound. Binds no room that was unbound. | Look for `channel chat upgrade` in the log of the first start. If that start couldn't write it, it warns that an upgrade note failed and the next start writes it. Each channel the line names has members whose bot isn't in its chat yet: add each one's bot to that chat, or unbind the chat and bind another. A channel the line says kept no chat needs one bound on its page. From now on, a channel with a chat takes only loops with a bot on its surface, so a loop with no bot there, a web-only loop for one, can't be put in it or moved into a team whose home it is. A loop's bot removed from a chat now forgets its room there, and a Slack app an allowed person invites to a Slack channel records it, before anyone speaks there. A Slack app made before this release isn't sent either: add the `member_joined_channel`, `channel_left`, `group_left` and `member_left_channel` bot events under **Event Subscriptions**, then reinstall the app. Until then a removed app's room stays recorded, and a Slack channel is recorded at an allowed person's first message there, as before. |
-| v0.8.0 | Turns the fleet channel, `group`, into an ordinary channel named `fleet` (or the first free `fleet-N`) with the same members, history and bound rooms, in no team. Drops `group` when it has no member, message or bound room, as on a fresh install. Makes no team (ADR-0068). | Nothing to do. Loops now address every channel as `channel:<name>`, and their next wake reads the new prompt. A Telegram group or Slack channel a loop's bot first hears from is recorded unbound: bind it from the loop's page. To make `fleet` a team's home, name it as the team's home channel. |
-| v0.6.0 | Rewrites nothing. A loop's owner is now chosen as a hub user, and stored as that user's link on the loop's surface (#731). | Link your Telegram, or your Slack, in Settings → Account before changing any loop's owner. A user with no link there cannot be chosen. Senders allowed before the upgrade keep working, and keep the loops they own, shown as not linked. |
-| v0.5.0 | Mints `hub.key` and seals every stored secret in `spool.db` under it, rewriting the database (ADR-0046). | The pre-upgrade backup is the only copy of the database a v0.4 binary can read. From now on `hub.key` must be in every backup's keys file. A hub without it will not start. |
+Moved to [Release-specific steps](https://enes-alatas.github.io/spool/reference/release-steps/) on the docs site.
 
 ## Langfuse beside the hub
 

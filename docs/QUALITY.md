@@ -59,7 +59,7 @@ the store stopped waiting on an fsync per commit (ADR-0035).
 The same phases run on docker workstations in
 `TestPerfSmokeOnDockerWorkstations` (`itest/perf_docker_test.go`, #445). The
 test stands up a hundred workstations, so it takes minutes and a daemon whose
-address pools hold a hundred networks (OPERATIONS.md). It runs from
+address pools hold a hundred networks ([Run it as a service](https://enes-alatas.github.io/spool/run-a-hub/service/)). It runs from
 `make perf-docker` and the `perf` workflow, weekly on main and on dispatch,
 never on a PR. ci-health posts a failed run on main to the pinned issue. It
 skips under `make itest`. The hub runs at the default 45s liveness

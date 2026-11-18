@@ -13,7 +13,7 @@ running an older tag, the first step of any fix is to update.
 
 From 1.0, only the latest minor release gets security fixes. An older
 minor is fixed by upgrading to the latest, with `spool upgrade`
-([OPERATIONS.md, "Upgrade"](docs/OPERATIONS.md#upgrade)); there are still
+([Upgrade](https://enes-alatas.github.io/spool/run-a-hub/upgrade/) on the docs site); there are still
 no backports.
 
 ## Reporting a vulnerability
@@ -205,7 +205,7 @@ kind of report this policy is for.
 A release carries its binaries for Linux and macOS, `SHA256SUMS`, and the
 digests of the workstation and egress images (ADR-0052). Each archive and each
 image has a GitHub attestation of the workflow run that built it.
-[OPERATIONS.md](docs/OPERATIONS.md#upgrading) has the commands:
+[Upgrade](https://enes-alatas.github.io/spool/run-a-hub/upgrade/#upgrading) has the commands:
 - `sha256sum -c` against `SHA256SUMS` catches a broken download;
 - `gh attestation verify` catches an archive and checksums swapped together;
 - `./bin/spool images` prints each image as a pull by its digest, which is

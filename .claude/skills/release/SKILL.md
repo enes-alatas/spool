@@ -81,7 +81,7 @@ half never holds a tag.
   runner and never the fleet's host, install the last tag the README's
   way. Then upgrade it from a clone of `main`, which needs Go and Node on
   the machine: `sudo spool upgrade --dry-run --from-source <clone> main`,
-  then the same without `--dry-run` (OPERATIONS.md, "Upgrade"). It passes
+  then the same without `--dry-run` (`site/content/run-a-hub/upgrade.md`). It passes
   when the hub answers at the new version on the same data directory. Elliot
   (DevSecOps) runs it and sends the run's link to the product owner for
   the release-day message.
