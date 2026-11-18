@@ -2,6 +2,12 @@
 title: Spool
 layout: hextra-home
 toc: false
+# Every page is a docs page (#1664): Hextra's plain page layout has no
+# sidebar, and its sidebar roots at the home page only when the home page
+# is a docs page too, so each page lists the whole site.
+type: docs
+cascade:
+  type: docs
 ---
 
 {{< hextra/hero-headline >}}
