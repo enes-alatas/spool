@@ -77,7 +77,7 @@ func headingAnchors(file string) (map[string]bool, error) {
 // sends an operator to a file the docs site replaced (ADR-0071): the
 // file keeps only stubs, one click short of the answer.
 func TestNoMessageNamesAMovedDoc(t *testing.T) {
-	moved := []string{"OPERATIONS", "TELEGRAM.md", "SLACK.md"}
+	moved := []string{"OPERATIONS", "TELEGRAM.md", "SLACK.md", "CONTAINMENT.md"}
 	for _, root := range []string{filepath.Join("..", "..", "cmd"), filepath.Join("..", "..", "internal")} {
 		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
