@@ -275,7 +275,7 @@ func (up *upgrader) argvOfDefault(ctx context.Context, pid int) ([]string, error
 	}
 	argv := strings.Fields(out)
 	if err := unambiguous(argv); err != nil {
-		return nil, fmt.Errorf("%w: ps can't show where its arguments split, so restart the hub with no spaces in its paths, or upgrade by hand (OPERATIONS)", err)
+		return nil, fmt.Errorf("%w: ps can't show where its arguments split, so restart the hub with no spaces in its paths, or upgrade by hand (%s)", err, docsByHand)
 	}
 	return argv, nil
 }

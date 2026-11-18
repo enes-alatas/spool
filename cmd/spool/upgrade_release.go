@@ -22,7 +22,7 @@ import (
 // is also the host's: the upgrade runs the binary the unit runs.
 func goPlatform() string { return runtime.GOOS + "_" + runtime.GOARCH }
 
-// download gets a release the way OPERATIONS does by hand (ADR-0057): the
+// download gets a release the way the Upgrade page does by hand (ADR-0057): the
 // archive and SHA256SUMS over HTTPS into a fresh 0700 directory,
 // the sum checked, the attestation checked with gh where it can be, and
 // only spool, spool-hook, spool-github and the backup and restore scripts
@@ -203,7 +203,7 @@ func (up *upgrader) attest(ctx context.Context, archive string) error {
 	}
 	if err := runGh("attestation", "--help"); err != nil {
 		return unchecked("this gh is older than 2.49 and has no `gh attestation`",
-			"install a current gh from cli.github.com's apt repository (docs/OPERATIONS.md, Upgrading)")
+			"install a current gh from cli.github.com's apt repository ("+docsWithUpgrade+")")
 	}
 	verify := archive
 	if !up.asSelf() {

@@ -699,7 +699,7 @@ func (up *upgrader) runSteps(steps []rollbackStep) error {
 		up.step("rollback: %s", step.what)
 		if err := step.do(); err != nil {
 			up.step("rollback stopped at %q: %v", step.what, err)
-			up.printf("spool upgrade: left to do by hand, in order (docs/OPERATIONS.md, Rolling back):")
+			up.printf("spool upgrade: left to do by hand, in order (%s):", docsRollingBack)
 			for _, left := range steps[i:] {
 				up.printf("  - %s", left.what)
 			}
@@ -1031,7 +1031,7 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 
 	listed, err := ask("migrations")
 	if err != nil {
-		return fmt.Errorf("the new build lists no migrations, so it predates spool upgrade; upgrade to it by hand (docs/OPERATIONS.md): %w", err)
+		return fmt.Errorf("the new build lists no migrations, so it predates spool upgrade; upgrade to it by hand (%s): %w", docsByHand, err)
 	}
 	carries, err := parseMigrations(listed)
 	if err != nil {
@@ -1043,7 +1043,7 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 	}
 	for _, name := range applied {
 		if !slices.Contains(carries, name) {
-			return fmt.Errorf("refusing a downgrade: the database has applied %s, which %s doesn't know, and no release migrates a database back; roll back from a backup instead (docs/OPERATIONS.md)", name, cand.version)
+			return fmt.Errorf("refusing a downgrade: the database has applied %s, which %s doesn't know, and no release migrates a database back; roll back from a backup instead (%s)", name, cand.version, docsRollingBack)
 		}
 	}
 
@@ -1073,7 +1073,7 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 	}
 	for _, script := range installed {
 		if info, err := os.Stat(script); err != nil || info.Mode()&0o111 == 0 {
-			return fmt.Errorf("%s isn't installed (docs/OPERATIONS.md, Back up): the upgrade backs up through it", script)
+			return fmt.Errorf("%s isn't installed (%s): the upgrade backs up through it", script, docsBackupScripts)
 		}
 	}
 	// the scripts run as the unit's User= (#1583): a name that isn't a user
