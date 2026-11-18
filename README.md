@@ -52,9 +52,9 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
 5. **Chat surface.** Choose **Attach a bot**, then **Attach Telegram** or **Attach Slack**.
    - **Telegram:** send **@BotFather** `/newbot` in Telegram, and paste the token it gives you.
-   - **Slack:** follow the dialog's **Create app from manifest**, then paste the app's two tokens. [docs/SLACK.md](docs/SLACK.md) has the steps.
+   - **Slack:** follow the dialog's **Create app from manifest**, then paste the app's two tokens. [Slack](https://enes-alatas.github.io/spool/start/chat-surfaces/slack/) has the steps.
 
-   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account. On Telegram it also makes you the owner of every loop that has none; a Slack link makes nobody an owner, so choose yourself as the loop's **owner** on its page ([docs/SLACK.md](docs/SLACK.md) step 6). Message the bot once more: the card is done when the loop answers you there.
+   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account. On Telegram it also makes you the owner of every loop that has none; a Slack link makes nobody an owner, so choose yourself as the loop's **owner** on its page ([Slack](https://enes-alatas.github.io/spool/start/chat-surfaces/slack/) step 6). Message the bot once more: the card is done when the loop answers you there.
 
    No chat app? You can talk to a loop on its page in the control room instead. Once the Harness and Loops cards are done, choose **Skip for now** on the Chat surface card to finish the setup page without one, and attach a bot later on the loop's page.
 
@@ -128,11 +128,11 @@ https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 
 ## Chat surfaces
 
-A loop starts with the control room only. Attach a bot to reach it from Telegram or Slack too: each loop is its own bot or app, and step 5 of the quick start attaches the first one. To put a channel in a Telegram group or a Slack channel, open it under **Channels** and choose **Add Telegram group** or **Add Slack channel**. A channel has one such chat at most, bound once for all its loops (ADR-0070). The hub records the chat when someone on your allowlist adds a loop's bot to the group or invites its app to the Slack channel, and you confirm it on the channel's page. No chat binds itself, and it stays unread until a channel's page binds it. Everyone in the chat then reads what the channel's loops say there, and what someone on your sender allowlist writes there reaches them. The channel's page shows each loop's status there, and the loop's page lists its chats read-only. [docs/TELEGRAM.md](docs/TELEGRAM.md) covers BotFather, groups and reactions; [docs/SLACK.md](docs/SLACK.md) covers the app manifest, the two tokens, Slack channels, reactions and polls.
+Moved to [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site.
 
 ### Who can talk to your loops
 
-Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyone else who messages one of your bots is ignored: their message never reaches a loop or makes a group known to it, and `/spool_status` won't answer them. Linking your account in step 5 put you on it. To let someone else in, add them as a user (`spool user add`, or **Settings → Users and access**) and have them link theirs under **Settings → Account**, with **Link Telegram** or **Link Slack**. **Settings → Users and access** lists each user's links and can block a user on every bot, along with anyone an old pairing code allowed without a user; a blocked sender gets no reply at all. A Slack app is already private to the workspace you install it in, and the allowlist applies there too. Loop-to-loop traffic is internal and unaffected.
+Moved to [Who can talk to your loops](https://enes-alatas.github.io/spool/guides/who-can-talk/) on the docs site.
 
 ## Flags
 
@@ -173,7 +173,7 @@ Running a hub:
 
 - `docs/OPERATIONS.md`: install on a server, back up, restore and upgrade
 - `docs/CONTAINMENT.md`: what contains a loop, and the hub's own secrets
-- `docs/TELEGRAM.md`, `docs/SLACK.md`: the chat surfaces in full
+- [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site: Telegram and Slack in full
 - `SECURITY.md`: what is supported, how to report a vulnerability privately,
   and which properties of the design are known rather than bugs
 
