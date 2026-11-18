@@ -46,7 +46,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
    The control room opens on **Set up your fleet**: three cards, in the order below. Each checks itself and turns done on its own.
 
-3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that login. Each Claude login is the subscription of the person who signs it in. Spool never pools or resells capacity, and you follow your plan's terms. A hub can hold more than one: see [Claude logins](docs/OPERATIONS.md#claude-logins).
+3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that login. Each Claude login is the subscription of the person who signs it in. Spool never pools or resells capacity, and you follow your plan's terms. A hub can hold more than one: see [Claude logins](https://enes-alatas.github.io/spool/guides/claude-logins/).
 
 4. **Loops.** Choose **New loop**, and give it a name and a mission. Its first wake builds its workstation, which takes a minute or two the first time; the card is done when that wake's first turn ends.
 
@@ -92,20 +92,20 @@ Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check 
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
 - **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
 - **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
-- **Traces, if you want them.** With [Langfuse beside the hub](docs/OPERATIONS.md#langfuse-beside-the-hub), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
-- **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [OPERATIONS.md](docs/OPERATIONS.md#management-tokens) has the setup.
+- **Traces, if you want them.** With [Langfuse beside the hub](https://enes-alatas.github.io/spool/guides/langfuse/), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
+- **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [Management tokens](https://enes-alatas.github.io/spool/guides/management-tokens/) has the setup.
 
 ### Teams
 
 A hub can hold *teams*. A team is a named set of loops with channels and settings of its own (ADR-0066). A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
 
 - **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet` (`fleet-2` and on if that name is taken, and none at all if it held no member, message or room), which you can make a team's home channel (ADR-0068). A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
-- **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](docs/OPERATIONS.md#claude-logins) its contained loops run on.
+- **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](https://enes-alatas.github.io/spool/guides/claude-logins/) its contained loops run on.
 - **A loop knows its team.** A loop in a team sees the team's name in its prompt.
 
 ### Where loops run
 
-Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([OPERATIONS.md](docs/OPERATIONS.md#cloud-loops)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
+Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](https://enes-alatas.github.io/spool/guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
 
 A cloud loop works beside the others like any loop, and you talk to it the same way:
 
@@ -171,9 +171,8 @@ death and orchestrator restarts (m1), tick scheduling and trailer clamping
 
 Running a hub:
 
-- [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade
-- `docs/OPERATIONS.md`: Claude logins, management tokens, cloud loops and
-  Langfuse
+- [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade;
+  Claude logins, management tokens, cloud loops and Langfuse
 - `docs/CONTAINMENT.md`: what contains a loop, and the hub's own secrets
 - [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site: Telegram and Slack in full
 - `SECURITY.md`: what is supported, how to report a vulnerability privately,

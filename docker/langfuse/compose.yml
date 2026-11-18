@@ -6,7 +6,7 @@
 #   docker compose -f docker/langfuse/compose.yml \
 #     --env-file docker/langfuse/langfuse.env --profile langfuse up -d
 #
-# OPERATIONS ("Langfuse beside the hub") is the runbook. Against upstream's
+# site/content/guides/langfuse.md is the runbook. Against upstream's
 # docker-compose.yml (v4):
 #   - Networks: ClickHouse, Postgres, Redis, MinIO and the worker sit on
 #     `langfuse`, which is internal: no route out, nothing published.

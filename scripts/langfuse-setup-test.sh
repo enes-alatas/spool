@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests scripts/langfuse-setup.sh and holds docker/langfuse/compose.yml to
 # ADR-0064 item 5 (#1299). docker is a stand-in: the profile's own run is in
-# OPERATIONS and the PR.
+# site/content/guides/langfuse.md and the PR.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

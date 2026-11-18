@@ -45,7 +45,7 @@ Which login a loop runs on:
 - **A cloud loop:** the login it names, else `default`.
 - **A bare loop:** this machine's own Claude login.
 
-Any user can add a login of their own. Its owner or an admin can act on it, and only an admin runs its check. [Claude logins](https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#claude-logins) covers signing in and renewing.
+Any user can add a login of their own. Its owner or an admin can act on it, and only an admin runs its check. [Claude logins](../../guides/claude-logins/) covers signing in and renewing.
 
 ## Custom models
 
@@ -96,7 +96,7 @@ What a cloud loop needs from this hub, step by step, each one checked:
 - **A public HTTPS address** that reaches it, usually through a tunnel. Use a name you keep: a cloud loop sends its token to whoever answers there.
 - **A signed-in Claude login.**
 
-The hub checks the address every five minutes and the login each time it starts. [Cloud loops](https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#cloud-loops) walks through it.
+The hub checks the address every five minutes and the login each time it starts. [Cloud loops](../../guides/cloud-loops/) walks through it.
 
 ## Management tokens
 
@@ -106,7 +106,7 @@ Tokens for an agent of your own to look after the hub through Spool's management
 - **What it can't:** edit a mission or any setting, read a message, or mint a token.
 - **Lifetime:** ends in 90 days, or never.
 
-[Management tokens](https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#management-tokens) shows how to point an agent at the hub.
+[Management tokens](../../guides/management-tokens/) shows how to point an agent at the hub.
 
 ## Build
 

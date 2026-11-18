@@ -87,4 +87,4 @@ Every change to a connection is kept on an append-only record: created, attached
 
 ## Cloud loops
 
-A cloud loop gets its env variables when its session starts, not on its next turn. Stop and start the loop to apply a change at once. MCP servers never reach a cloud loop, and it can't hold a GitHub App. The values stay in the session on Anthropic's machines until you archive it on claude.ai. [Cloud loops](https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#cloud-loops) has the details.
+A cloud loop gets its env variables when its session starts, not on its next turn. Stop and start the loop to apply a change at once. MCP servers never reach a cloud loop, and it can't hold a GitHub App. The values stay in the session on Anthropic's machines until you archive it on claude.ai. [Cloud loops](../cloud-loops/) has the details.
