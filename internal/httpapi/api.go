@@ -690,7 +690,8 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		out.DailyCapReached = dailyUntil > 0
 		if out.State == loop.StateCapped {
 			nowMS := time.Now().UnixMilli()
-			out.CappedUntil = dailyUntil
+			// a usage limit that refused a turn holds the loop as a cap does
+			out.CappedUntil = max(dailyUntil, actor.UsageLimitUntil())
 			if server.PlanCap != nil {
 				if planCap := server.PlanCap.At(effectiveLogin(loopRecord), nowMS); planCap.Holds(nowMS) {
 					out.CappedUntil = max(out.CappedUntil, planCap.Until)
@@ -1604,10 +1605,10 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 	symptom := r.PathValue("symptom")
 	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomTurnStuck &&
 		symptom != store.SymptomWakeMissed && symptom != store.SymptomSendFailed && symptom != store.SymptomCloudAddress &&
-		symptom != store.SymptomCloudConnections {
-		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
+		symptom != store.SymptomCloudConnections && symptom != store.SymptomUsageLimit {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
 			store.SymptomTurnErrors, store.SymptomTurnStuck, store.SymptomWakeMissed, store.SymptomSendFailed, store.SymptomCloudAddress,
-			store.SymptomCloudConnections)
+			store.SymptomCloudConnections, store.SymptomUsageLimit)
 		return
 	}
 	actor, ok := server.Manager.Get(loopRecord.ID)

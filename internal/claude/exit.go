@@ -61,3 +61,23 @@ func IsUnrecognizedModel(res *ResultInfo) bool {
 func IsLoginRejected(msg *AssistantInfo) bool {
 	return msg != nil && msg.Error == "authentication_failed"
 }
+
+// IsUsageLimited reports whether the API refused the turn on a rate limit:
+// the CLI's stand-in assistant message with error "rate_limit", the name
+// the CLI's StopFailure hook gives the same refusal (FIDELITY.md, #1649).
+// The turn's prompt is already in the session file by then: the CLI writes
+// it before it calls the API.
+func IsUsageLimited(msg *AssistantInfo) bool {
+	return msg != nil && msg.Error == "rate_limit"
+}
+
+// UsageLimitResets reads a rate_limit_event that says the plan refused the
+// request, status "rejected", and returns when its limit resets in unix
+// milliseconds, 0 when the event names no reset (#1649). It reports false
+// for any other status.
+func UsageLimitResets(info *RateLimitInfo) (int64, bool) {
+	if info == nil || info.Status != "rejected" {
+		return 0, false
+	}
+	return info.ResetsAt * 1000, true
+}

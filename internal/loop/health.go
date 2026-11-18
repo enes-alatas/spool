@@ -182,6 +182,8 @@ func (actor *Actor) acknowledge(symptom string) bool {
 			actor.downSince = now()
 			actor.downTimer.Reset(actor.downGrace())
 		}
+	case store.SymptomUsageLimit:
+		actor.usageLimitContinued()
 	}
 	return cleared
 }
@@ -732,14 +734,16 @@ const (
 )
 
 // Health sums up open problems: failing while the workstation is down, a
-// wake goes without a turn, or a cloud loop's address fails its check or
-// its setup isn't done, since the loop is not running at all, warning for
-// errored turns, a long one or undelivered sends, and ok with none.
+// wake goes without a turn, a cloud loop's address fails its check or its
+// setup isn't done, or a usage limit with no known reset holds the loop,
+// since the loop is not running at all, warning for errored turns, a long
+// one or undelivered sends, and ok with none.
 func Health(problems []store.Problem) string {
 	health := HealthOK
 	for _, problem := range problems {
 		if problem.Symptom == store.SymptomWorkstationDown || problem.Symptom == store.SymptomWakeMissed ||
-			problem.Symptom == store.SymptomCloudAddress || problem.Symptom == store.SymptomCloudSetup {
+			problem.Symptom == store.SymptomCloudAddress || problem.Symptom == store.SymptomCloudSetup ||
+			problem.Symptom == store.SymptomUsageLimit {
 			return HealthFailing
 		}
 		health = HealthWarning

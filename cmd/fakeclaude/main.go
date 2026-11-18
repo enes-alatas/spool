@@ -123,6 +123,14 @@
 // every turn two seconds before it answers, so a test can read a login
 // check while it is still running.
 //
+// A "usage-limited" file there is the plan's usage limit refusing every
+// turn, for every loop of the hub, as a rejected rate_limit_event, an
+// assistant message with error "rate_limit" and an errored result that
+// bills nothing (#1649). The file holds how many seconds from now the
+// limit resets, which the event carries as resetsAt, and an empty file a
+// refusal that names no reset. The turn uses up no script line, and
+// removing the file is the limit gone.
+//
 // An "admitted-token" file there is the one token the API takes: a run on
 // any other CLAUDE_CODE_OAUTH_TOKEN is refused as an expired login is. A
 // login check, the one run with --no-session-persistence, adds a line to
@@ -353,6 +361,38 @@ func main() {
 				"type": "result", "subtype": "success", "is_error": true,
 				"terminal_reason": "api_error",
 				"total_cost_usd":  state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
+				"result": refusal, "session_id": id,
+				"usage": map[string]any{
+					"input_tokens": 0, "output_tokens": 0,
+					"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+				},
+			})
+			persist(stateDir, id, state)
+			continue
+		}
+		if resets, limited := usageLimited(stateDir); limited {
+			// what the CLI emits when the plan's usage limit refuses a turn
+			// (#1649, FIDELITY.md): a rejected rate_limit_event, a stand-in
+			// assistant message with error "rate_limit", then an errored
+			// result, status 429, that bills nothing
+			const refusal = "You've hit your weekly limit"
+			emit(map[string]any{
+				"type": "rate_limit_event", "session_id": id, "uuid": fmt.Sprintf("rate-limit-refused-%d", state.Turns),
+				"rate_limit_info": map[string]any{"status": "rejected", "resetsAt": resets, "rateLimitType": "seven_day"},
+			})
+			emit(map[string]any{
+				"type": "assistant", "session_id": id,
+				"error": "rate_limit", "is_api_error_message": true,
+				"message": map[string]any{
+					"model": "<synthetic>", "role": "assistant",
+					"content": []map[string]any{{"type": "text", "text": refusal}},
+					"usage":   map[string]any{"input_tokens": 0, "output_tokens": 0},
+				},
+			})
+			emit(map[string]any{
+				"type": "result", "subtype": "success", "is_error": true,
+				"api_error_status": 429, "terminal_reason": "api_error",
+				"total_cost_usd": state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
 				"result": refusal, "session_id": id,
 				"usage": map[string]any{
 					"input_tokens": 0, "output_tokens": 0,
@@ -1282,4 +1322,20 @@ func writeCredentials(path string, credentials []byte) error {
 		return err
 	}
 	return nil
+}
+
+// usageLimited reports whether a "usage-limited" file in stateDir has the
+// plan's usage limit refuse every turn, for every loop of the hub, and
+// when the limit resets in unix seconds: the file holds how many seconds
+// from now, 0 or empty for a refusal that names no reset.
+func usageLimited(stateDir string) (int64, bool) {
+	raw, err := os.ReadFile(filepath.Join(stateDir, "usage-limited"))
+	if err != nil {
+		return 0, false
+	}
+	seconds, _ := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+	if seconds <= 0 {
+		return 0, true
+	}
+	return time.Now().Unix() + seconds, true
 }

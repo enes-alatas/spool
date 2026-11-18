@@ -1,6 +1,6 @@
 # ADR-0047: Above the plan cap, every loop sleeps until the window resets
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-08, recorded on #650) · Amended: 2026-10-22 (item 10: a loop's own daily USD cap, #652) · Relates to: ADR-0017, ADR-0022
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-08, recorded on #650) · Amended: 2026-10-22 (item 10: a loop's own daily USD cap, #652); 2026-11-18 (item 5: the plan's own limit holds a loop as a cap does, #1649) · Relates to: ADR-0017, ADR-0022
 
 ## Context
 
@@ -63,6 +63,40 @@ survive the reading going away.
    all outrank `capped`, since each is something the operator must undo
    for that loop. A loop in its turn when the cap takes hold stays `busy`
    until that turn finishes.
+
+   **Amendment (2026-11-18, #1649, #1650; operator decision of 2026-11-18):
+   the plan's own limit holds a loop as a cap does.**
+   - **A turn the usage limit refuses holds its loop.** The refusal is
+     read off the CLI's stream: a `rate_limit_event` with status
+     `rejected`, or an assistant message with error `rate_limit`, and
+     an errored result. The loop is then `capped`, as in this item, until
+     the reset the event names; `capped_until` says when. The plan cap's
+     thresholds don't enter into it, so it holds with the cap off too. It
+     holds only the loop whose turn was refused.
+   - **A refusal with no reset waits for the operator.** When the event
+     names no reset, or one more than seven days and 15 minutes off (the
+     plan's longest window with the slack a window's reset gets), no
+     timer is set: a guessed retry would only be refused again, and only
+     the operator can tell when the limit has reset. The loop opens the
+     `usage_limit` problem (ADR-0053), which tells the owner to continue
+     it once the limit has reset, and `capped_until` is 0.
+   - **What lifts it.** The reset it named; for one with no reset,
+     Acknowledge on its `usage_limit` problem; and for either, moving the
+     loop to another Claude login, since the limit is the login's. A
+     login whose limit is still spent refuses the next turn, which holds
+     the loop again. Resume now doesn't lift it, and neither does a
+     threshold the operator raises.
+   - **Why.** A refused turn stays in the session: the CLI writes the
+     turn's prompt to the session file before it calls the API. A loop
+     that kept taking turns through the limit woke from it to every tick
+     of the outage at once. Each tick came with its own
+     standing-instructions note, stale by then.
+   - **The refused work waits.** Its batch goes back to the front of the
+     queue with its latest tick alone, as a refused login's does (#420).
+     A standing-instructions note it carried is in the session already,
+     so it counts as told. The turn after the reset gets a note only if
+     the instructions changed while the loop was held, rendered as they
+     stand when that turn runs.
 
 6. **It takes hold at the next quiet boundary.** The turn in flight
    finishes, and the next one does not start. That includes a rotation's

@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260); 2026-11-08 (item 3: an operator-ended turn is not counted, #1420); 2026-11-14 (item 11: an acknowledgement silences its failures for a while, #1588)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260); 2026-11-08 (item 3: an operator-ended turn is not counted, #1420); 2026-11-14 (item 11: an acknowledgement silences its failures for a while, #1588); 2026-11-18 (item 12 added: usage_limit, #1649)
 
 ## Context
 
@@ -227,6 +227,20 @@ an amendment here.
     in its grace, with no acknowledgement on it, leaves an open problem as
     it is. The operator's clearing notice says until when it is quiet.
     `GET/PUT /api/settings` carries the setting beside the grace.
+
+12. **`usage_limit`: the plan's usage limit refused a turn and named no
+    reset** (added 2026-11-18, #1649, under ADR-0047 item 5's amendment
+    of that date). A refusal that names a reset holds its loop until then
+    and opens nothing. One that names none, or none the hold can trust,
+    holds the loop until the operator continues it, so the owner must
+    hear of it: the problem opens, dated from the refusal, and its notice
+    says to continue the loop once the limit has reset. Acknowledge is
+    that continue: it clears the problem and lets the loop go. Moving the
+    loop to another Claude login lets it go too, with the problem left
+    open until a turn runs. A turn that runs without the limit refusing
+    it clears the problem, which also covers a hold a hub restart forgot.
+    Health is `failing` while it is open, since the loop is not running.
+    It has no setting: it opens on the first such refusal.
 
 ## Consequences
 

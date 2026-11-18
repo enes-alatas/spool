@@ -50,7 +50,7 @@ type ProblemNotice struct {
 	LoopName string `json:"loop_name"`
 	// Symptom is the store's: "workstation_down", "turn_errors",
 	// "turn_stuck", "wake_missed", "send_failed", "cloud_address",
-	// "cloud_connections" or "cloud_setup".
+	// "cloud_connections", "cloud_setup" or "usage_limit".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -103,6 +103,10 @@ func (notice ProblemNotice) Text() string {
 			return fmt.Sprintf("Spool: %s has been due to wake since %s, and no turn has started though nothing holds it. "+
 				"The loop's page in the control room shows how its last try to run went. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
+		case "usage_limit":
+			return fmt.Sprintf("Spool: the Claude plan's usage limit refused %s's turn at %s without saying when it resets, so the loop is held. "+
+				"Its messages wait. Once the limit has reset, continue it with Acknowledge beside this problem on the loop's page in the control room; "+
+				"moving it to another Claude login continues it too. You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_connections":
 			return fmt.Sprintf("Spool: the cloud loop %s's session asked for its connections at %s and the hub refused, "+
 				"so its shell commands may run without them. Stopping and starting the loop hands them over again. "+
@@ -123,6 +127,8 @@ func (notice ProblemNotice) Text() string {
 			problem = notice.LoopName + "'s session being refused its connections"
 		case "cloud_setup":
 			problem = notice.LoopName + "'s unfinished setup"
+		case "usage_limit":
+			problem = "the usage limit holding " + notice.LoopName
 		case "turn_stuck":
 			problem = notice.LoopName + "'s long turn"
 		case "wake_missed":
@@ -152,6 +158,8 @@ func (notice ProblemNotice) Text() string {
 		return fmt.Sprintf("Spool: the cloud loop %s's session was handed its connections again.", notice.LoopName)
 	case "cloud_setup":
 		return fmt.Sprintf("Spool: the cloud loop %s's setup is done, so it is running.", notice.LoopName)
+	case "usage_limit":
+		return fmt.Sprintf("Spool: %s took a turn again: the usage limit no longer refuses it.", notice.LoopName)
 	case "turn_stuck":
 		return fmt.Sprintf("Spool: %s's long turn has ended.", notice.LoopName)
 	case "wake_missed":

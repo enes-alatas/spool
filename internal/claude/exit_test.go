@@ -71,3 +71,36 @@ func TestIsLoginRejected(t *testing.T) {
 		t.Error("no message at all: IsLoginRejected = true")
 	}
 }
+
+// A usage-limit refusal is read off the stand-in assistant message's error
+// and off a rejected rate_limit_event, which names when the limit resets
+// (#1649). An allowed event, or a message merely quoting the word, is not one.
+func TestUsageLimitRefusal(t *testing.T) {
+	limited := DecodeEvent([]byte(`{"type":"assistant","message":{"model":"<synthetic>","role":"assistant",` +
+		`"content":[{"type":"text","text":"You've hit your limit"}],"usage":{"input_tokens":0,"output_tokens":0}},` +
+		`"error":"rate_limit","is_api_error_message":true}`))
+	quoted := DecodeEvent([]byte(`{"type":"assistant","message":{"role":"assistant",` +
+		`"content":[{"type":"text","text":"a rate_limit error means the plan ran out"}],"usage":{"input_tokens":3,"output_tokens":9}}}`))
+	if !IsUsageLimited(limited.Assistant) || IsUsageLimited(quoted.Assistant) || IsUsageLimited(nil) {
+		t.Errorf("IsUsageLimited: refusal %v, quote %v, nil %v; want true, false, false",
+			IsUsageLimited(limited.Assistant), IsUsageLimited(quoted.Assistant), IsUsageLimited(nil))
+	}
+	for _, testCase := range []struct {
+		line   string
+		resets int64
+		ok     bool
+	}{
+		{`{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1795030000,"rateLimitType":"five_hour"}}`, 1795030000000, true},
+		{`{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}`, 0, true},
+		{`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1795030000}}`, 0, false},
+		{`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1795030000}}`, 0, false},
+	} {
+		resets, ok := UsageLimitResets(DecodeEvent([]byte(testCase.line)).RateLimit)
+		if resets != testCase.resets || ok != testCase.ok {
+			t.Errorf("UsageLimitResets(%s) = %d, %v; want %d, %v", testCase.line, resets, ok, testCase.resets, testCase.ok)
+		}
+	}
+	if _, ok := UsageLimitResets(nil); ok {
+		t.Error("UsageLimitResets(nil) reports a refusal")
+	}
+}

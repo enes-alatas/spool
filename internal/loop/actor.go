@@ -240,6 +240,7 @@ type Actor struct {
 	ensureSnap    atomic.Bool   // a wake is ensuring the workstation, for REST reads
 	problemsSnap  atomic.Value  // []store.Problem; the open problems, for REST reads
 	dailyCapSnap  atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
+	limitSnap     atomic.Int64  // when the usage limit holding the loop resets, 0 when none does, for REST reads
 	failSnap      atomic.Value  // string; how the loop's last try to run failed, "" for none, for REST reads
 	owedSnap      atomic.Int64  // since when queued work has waited for a turn, 0 for none, for the wake check
 	turnStartedAt atomic.Int64  // when the latest turn started, which answers every wake owed before it
@@ -336,6 +337,17 @@ type Actor struct {
 	// turnRefusal is the CLI's sentence when the API refused the running
 	// turn's login, empty otherwise.
 	turnRefusal string
+	// turnLimited reports that the API refused the running turn on the
+	// plan's usage limit, and turnLimitResets when that limit resets, 0
+	// when the stream didn't say (#1649).
+	turnLimited     bool
+	turnLimitResets int64
+	// usageLimitUntil is when a usage limit that refused a turn resets: the
+	// loop is held, as a capped loop is, until then; usageLimitOpen holds it
+	// so until the operator continues it, when the refusal named no reset
+	// (usagelimit.go).
+	usageLimitUntil int64
+	usageLimitOpen  bool
 
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
 	// before the window's degradation zone, by writing a handoff note as its
@@ -400,6 +412,8 @@ type Actor struct {
 	sendTimer   *time.Timer
 	// dailyCapTimer fires when the day turns under a loop its daily cap holds.
 	dailyCapTimer *time.Timer
+	// usageLimitTimer fires when the usage limit holding the loop resets.
+	usageLimitTimer *time.Timer
 }
 
 func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
@@ -446,6 +460,8 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.sendTimer.Stop()
 	actor.dailyCapTimer = time.NewTimer(time.Hour)
 	actor.dailyCapTimer.Stop()
+	actor.usageLimitTimer = time.NewTimer(time.Hour)
+	actor.usageLimitTimer.Stop()
 	actor.armDailyCap()
 	actor.loadProblems()
 	// a hub stopped mid-turn left turn_stuck open: no turn runs yet, so
@@ -693,6 +709,8 @@ func (actor *Actor) run() {
 			// the cap still holds, or nothing would wake the loop.
 			actor.armDailyCap()
 			actor.capChanged()
+		case <-actor.usageLimitTimer.C:
+			actor.usageLimitReset()
 		}
 		actor.noteOwed()
 	}
@@ -765,6 +783,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		}
 		command.reply <- err
 	case "update":
+		login := actor.login()
 		token := actor.loop // keep runtime-only fields
 		actor.loop = *command.loop
 		actor.loop.CurrentSessionID = token.CurrentSessionID
@@ -787,6 +806,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.loop.RepoPath, actor.loop.WorktreePath, actor.loop.Branch = token.RepoPath, token.WorktreePath, token.Branch
 		actor.loop.MemMB, actor.loop.CPUs = token.MemMB, token.CPUs
 		actor.paused = actor.loop.Status == store.StatusPaused
+		actor.loginMoved(login)
 		if token.ModelRefusal != "" && actor.loop.ModelRefusal == "" {
 			// An edit of the model cleared the refusal in the same statement:
 			// a new model, or the same one saved again, since access may have
@@ -837,7 +857,8 @@ func (actor *Actor) holdsWork() bool {
 // than told, so a turn whose own usage report crossed a threshold, or whose
 // cost reached the loop's cap, stops the next turn from starting (ADR-0047).
 func (actor *Actor) capped() bool {
-	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(actor.login(), now()) || actor.dailyCapUntil() > 0
+	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(actor.login(), now()) || actor.dailyCapUntil() > 0 ||
+		actor.usageLimited()
 }
 
 // held reports whether a cap stops the loop's next turn, its login's plan
@@ -1633,6 +1654,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	actor.turnStartedAt.Store(turn.StartedAt)
 	actor.clearMissedWake()
 	actor.turnRefusal = ""
+	actor.turnLimited, actor.turnLimitResets = false, 0
 
 	for _, env := range batch {
 		if payload, err := json.Marshal(env); err == nil {
@@ -1707,9 +1729,15 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 		if claude.IsLoginRejected(ev.Assistant) {
 			actor.turnRefusal = ev.Assistant.Text
 		}
+		if claude.IsUsageLimited(ev.Assistant) {
+			actor.turnLimited = true
+		}
 		actor.storeClaudeEvent(ev)
 	case ev.Type == "rate_limit_event":
 		actor.storeClaudeEvent(ev)
+		if resets, ok := claude.UsageLimitResets(ev.RateLimit); ok {
+			actor.turnLimited, actor.turnLimitResets = true, resets
+		}
 		if observed, ok := planUsageFrom(ev.RateLimit, now()); ok && actor.deps.PlanUsage != nil {
 			if err := actor.deps.PlanUsage.Observe(context.Background(), actor.login(), observed); err != nil {
 				actor.log().Error("plan usage", "err", err)
@@ -1740,6 +1768,8 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 func (actor *Actor) finishTurn(ev claude.Event) {
 	res := ev.Result
 	loginRejected := actor.turnRefusal != "" && res != nil && res.IsError && !actor.handoffTurn
+	// a turn the plan's usage limit refused is held like a capped one
+	limitRefused := !loginRejected && actor.turnLimited && res != nil && res.IsError && !actor.handoffTurn
 	if !loginRejected {
 		// a refused login is not a turn that ran: the ladder keeps climbing
 		actor.backoff = 0
@@ -1793,8 +1823,8 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
 		actor.watchSends()
 		switch {
-		case loginRejected:
-			// told by the workstation's state instead
+		case loginRejected, limitRefused:
+			// told by the workstation's state, or the loop's, instead
 		case turn.IsError:
 			actor.noteWakeFailure(WakeFailureTurn)
 		default:
@@ -1821,6 +1851,13 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	if loginRejected {
 		actor.rejectLogin(actor.turnRefusal)
 		return
+	}
+	if limitRefused {
+		actor.holdForUsageLimit(actor.turnLimitResets)
+		return
+	}
+	if res != nil && !res.IsError && !actor.handoffTurn {
+		actor.usageLimitPassed()
 	}
 	if actor.loginRejected && !actor.handoffTurn {
 		actor.loginRejected = false
@@ -3212,6 +3249,7 @@ func (actor *Actor) publishState() {
 	}
 	actor.stateSnap.Store(state)
 	actor.dailyCapSnap.Store(actor.dailyCapUntil())
+	actor.limitSnap.Store(actor.usageLimitUntil)
 	rehoming := actor.rehomePending()
 	actor.rehomeSnap.Store(rehoming)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{

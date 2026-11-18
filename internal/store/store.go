@@ -2622,7 +2622,7 @@ type PrivateChatStore interface {
 type Problem struct {
 	// Symptom is SymptomWorkstationDown, SymptomTurnErrors, SymptomTurnStuck,
 	// SymptomWakeMissed, SymptomSendFailed, SymptomCloudAddress,
-	// SymptomCloudConnections or SymptomCloudSetup.
+	// SymptomCloudConnections, SymptomCloudSetup or SymptomUsageLimit.
 	Symptom string `json:"symptom"`
 	// Since is when the problem opened, in Unix ms.
 	Since int64 `json:"since"`
@@ -2656,6 +2656,10 @@ const (
 	// minted or revoked by a kill, or hasn't passed its setup check on the
 	// setup it has now (ADR-0061, #1182).
 	SymptomCloudSetup = "cloud_setup"
+	// SymptomUsageLimit: the plan's usage limit refused a turn and named
+	// no reset the hold can wait for, so the loop is held until the operator
+	// continues it by acknowledging this (#1649).
+	SymptomUsageLimit = "usage_limit"
 
 	ClearedByOperator = "operator"
 	ClearedByRecovery = "recovery"
