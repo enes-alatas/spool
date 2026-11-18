@@ -5,7 +5,7 @@ weight: 4
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
 machines, on a Claude login of the hub's, `default` unless the loop
-names another, and reaches the hub over the internet (ADR-0059). Settings → Cloud walks the hub's setup in three steps, in this
+names another, and reaches the hub over the internet. Settings → Cloud walks the hub's setup in three steps, in this
 order. Each step the hub checks before the next opens. The hub needs the
 `claude` CLI on its machine, the same one the Claude login signs in with.
 
@@ -37,8 +37,8 @@ create on claude.ai for it. Its setup view, `GET
 /api/loops/<name>/cloud/setup`, shows what to paste and which steps are
 left: `settings`, `repo`, `environment`, `token`, `allowlist` and `check`.
 The loop's page walks those steps: **Set up** on its Workstation card,
-which New loop opens on a new cloud loop (#1183). The API takes each step
-too, though on a loop made before ADR-0061 the repo and environment go in
+which New loop opens on a new cloud loop. The API takes each step
+too, though on a loop made before v0.6.2 the repo and environment go in
 one edit, as below.
 
 The list to paste into an environment's allowed domains is the hub's
@@ -51,7 +51,7 @@ with one read-only call; if the list fails, the loop takes a pasted ID.
 A pasted ID is started in only once the list shows it, on every login:
 the hub lists the login's environments before each start and setup
 check, and a list that doesn't show the loop's environment, or can't
-be read, fails the start and names why (#1232). The CLI doesn't refuse
+be read, fails the start and names why. The CLI doesn't refuse
 an environment the account doesn't hold, but starts in the account's
 first one, so if the environment goes between the list and the start,
 the hub ends the CLI and records the loop's check as failed at the
@@ -99,16 +99,16 @@ The steps, in order:
 
 A cloud loop whose repo, environment or token isn't set, or whose check
 hasn't passed on its setup as it is now, waits with a `cloud_setup`
-problem, and so does one made before ADR-0061, whose old token the upgrade
+problem, and so does one made before v0.6.2, whose old token the upgrade
 revoked. Such a loop has neither a repo nor an environment, and the hub
 checks the two together, so they go in one edit: the walk saves the repo
 with the environment you pick, and through the API one `PATCH
-/api/loops/<name>` names `cloud_repo` and `cloud_environment_id` (#1286).
+/api/loops/<name>` names `cloud_repo` and `cloud_environment_id`.
 An edit of its repo, branch, environment or Claude login, a
 Rotate token or a kill takes a new check. A loop's repo, branch,
 environment and Claude login change only while it is stopped.
 
-**A cloud loop on another Claude login** (#1078). Name the login,
+**A cloud loop on another Claude login**. Name the login,
 `claude_login`, as for a contained loop. Its sessions start and take
 their turns under that login's token, so they spend that login's plan,
 and its environment must be one the login's account made: create it on
@@ -153,7 +153,7 @@ environment whose script predates that hook still waits two hours with
 no post on such a turn: paste the setup view's script into it again. The
 setup check stays green either way, but the setup view says the script is
 out of date once a session has started under it, and the loop keeps
-running meanwhile (#1381). Each
+running meanwhile. Each
 later wake is sent into the same session with `claude -p --cloud`.
 Anthropic idles the session's machine between turns, and the next
 message brings it back.
@@ -194,11 +194,11 @@ deleting a cloud loop that misbehaved is the time to rotate them.
 `mcp-server` connections never reach a cloud loop.
 
 A cloud loop's GitHub work goes through Claude's GitHub App, from the repo
-it starts from (ADR-0061). Its requests go through Anthropic's GitHub
+it starts from. Its requests go through Anthropic's GitHub
 proxy, which refuses GraphQL, so `gh pr` and `gh issue` fail and only REST
 through `gh api` works. A push can update a branch, never push a tag or
 delete a branch. A `GH_TOKEN` connection reaches no repository the session
-didn't start from or attach (#1169).
+didn't start from or attach.
 
 A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model

@@ -21,7 +21,7 @@ names, which can carry data past the egress allowlist (CVE-2024-29018),
 and the hub warns at boot when it finds one.
 `docker version --format '{{.Server.Version}}'` prints yours.
 
-Each docker loop gets a network of its own (ADR-0028), and Docker's default
+Each docker loop gets a network of its own, and Docker's default
 address pools hold about 30 networks on one engine, other containers'
 included. A loop past that fails to wake with an error naming
 `default-address-pools`. To run more, widen the pools in
@@ -34,7 +34,7 @@ included. A loop past that fails to wake with an error naming
 Pick a base no network around your machine uses. A /16 split into /24s holds
 256 networks.
 
-Spool does not terminate TLS (ADR-0030). The proxy does that, and the hub
+Spool does not terminate TLS. The proxy does that, and the hub
 stays on loopback behind it. Who may call the API does not change: a session
 or the operator token, as on localhost.
 
@@ -90,7 +90,7 @@ WantedBy=multi-user.target
   Origin checks refuse every request the proxy forwards, with
   `unexpected Host` and a 403. That is the guard working, not a bug.
 - `Restart=on-failure` covers a hub that cannot bind or open its database:
-  each exits non-zero (#253), so systemd sees the failure and retries.
+  each exits non-zero, so systemd sees the failure and retries.
 - The hardening lines take nothing the hub uses. It writes only under its
   data directory and the loops' workspaces, and it shares no host path with
   a container: workstations get named volumes, and the egress proxy's
@@ -168,8 +168,7 @@ port from the bridge only:
 sudo ufw allow in on docker0 to any port 8081 proto tcp
 ```
 
-The cloud listener (`--cloud-listen`, for loops in Claude Code cloud sessions,
-ADR-0056) is off unless you set it, or an admin switches it on in
+The cloud listener (`--cloud-listen`, for loops in Claude Code cloud sessions) is off unless you set it, or an admin switches it on in
 Settings → Cloud. The page opens it on `127.0.0.1:8090` unless told
 otherwise, and the hub opens it there again at each start until it is
 switched off. Given a port alone it binds loopback, and the tunnel or TLS
@@ -250,7 +249,7 @@ too, such as from a phone on mobile data:
 `curl -i https://<machine>.<tailnet>.ts.net/mcp` should get the hub's
 answer, a 401. If a cloud session still can't reach the hub, its start
 turns the step red and holds every cloud loop, until you fix the Funnel
-and check the step again (#1093).
+and check the step again.
 
 **The name doesn't resolve.** `tailscale funnel status` can show the
 Funnel as on before public DNS has the `*.ts.net` name. Until it does,

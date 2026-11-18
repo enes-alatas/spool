@@ -6,7 +6,7 @@ weight: 5
 The hub runs contained and cloud loops on a *Claude login*: a claude.ai
 account it signs in to with the `claude` CLI's own login, and keeps
 sealed under the hub key. It refreshes each one before its token expires,
-and never puts one in a workstation (ADR-0058, ADR-0060).
+and never puts one in a workstation.
 
 A hub can hold several Claude logins, each under a name. The one named
 `default` is the one **Sign in with Claude** signs in, on the setup card
@@ -15,7 +15,7 @@ and in Settings → Cloud. A contained loop runs on the login it names, its
 team names one, and otherwise on `default`. A bare loop runs on
 this machine's own login, so naming a login on one is refused (409). A
 cloud loop names one too, and its environment must be one of that
-login's account's ([Cloud loops](../cloud-loops/), #1078). Moving a
+login's account's ([Cloud loops](../cloud-loops/)). Moving a
 contained loop to another login closes its process at its next quiet
 boundary, as an attached env-var does, and its session goes on. A loop
 on a login
@@ -30,12 +30,12 @@ every login. Resume now names the login it lifts
 (`POST /api/plan-cap/resume` with `{"claude_login": "<name>"}`, the
 default with none). Bare loops follow the `default` login's cap, since
 they report into its usage. A cloud loop follows its own login's, though
-its turns report no usage (ADR-0059), so only the login's other loops
+its turns report no usage, so only the login's other loops
 move it. Moving a capped loop to a login that isn't capped wakes it.
 With more than one login, the Fleet page's plan strip shows a ring for
-each, named, whose figures open on a click (#1074). A capped login's ring wears a red rim in place
+each, named, whose figures open on a click. A capped login's ring wears a red rim in place
 of a cap banner, and its figures name the loops on it that sleep, with a
-Resume now for that login alone (#1076).
+Resume now for that login alone.
 
 **Whose subscription a login is.** Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools
@@ -58,14 +58,14 @@ rotated token back over what the command cleared.
 default first, each with its state and last check. **Add a Claude
 login** takes a name, then runs the same sign-in as the default. Each
 login's line carries Sign in, Check again, Sign out and Remove for its
-owner and the admins, and Sign out first names the loops it holds
-(#1070). New loop picks a contained or cloud loop's login, default
+owner and the admins, and Sign out first names the loops it holds.
+New loop picks a contained or cloud loop's login, default
 preselected, and the loop's Workstation card names the login it runs
 on; there an admin moves a contained loop to another, which takes
-effect from its next turn (#1072). A cloud loop moves only while
+effect from its next turn. A cloud loop moves only while
 paused, and one with an environment picks its new one from the new
 login's account's list in the same move; it then needs a new hub token
-and a passed check before it runs again (#1228).
+and a passed check before it runs again.
 
 **From the API**:
 - `GET /api/claude-logins` lists them, with each one's last check and,
@@ -91,11 +91,11 @@ and a passed check before it runs again (#1228).
   loop's create or `PATCH`, and `"default"` or `""` moves it back. A
   member changes no loop's config. Put a loop on another user's login
   only with that user's say-so: nothing enforces it until loops have
-  owners (#100).
+  owners.
 - An admin puts a team's contained loops on a login with
   `"claude_login": "ada"` in the team's create or `PATCH`. Each loop that
   names none of its own moves at its next quiet boundary, and a loop
   joining or leaving the team moves with it. A bare loop and a cloud
   loop never take a team's login. The loop view's
   `effective_claude_login` and `claude_login_from` say which login a loop
-  runs on and why (ADR-0066).
+  runs on and why.

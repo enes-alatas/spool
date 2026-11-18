@@ -4,9 +4,9 @@ weight: 6
 ---
 
 A *management token* is the credential an operator's own agent holds to look
-after the hub, in place of the operator token (ADR-0067). It opens only
+after the hub, in place of the operator token. It opens only
 the management MCP, below. An admin mints, lists and revokes them in
-Settings → Management tokens (#1403), or over the API:
+Settings → Management tokens, or over the API:
 
 - `POST /api/management-tokens` with `{"name": "watcher"}` mints one and
   answers with it once, as plain text. Copy it then: the hub keeps only
@@ -25,7 +25,7 @@ a second operator token.
 ## Pointing an agent at the hub
 
 The management MCP is `/manage/mcp`, streamable HTTP, with the token as a
-bearer. It has three tools (ADR-0067):
+bearer. It has three tools:
 
 - `list_loops`: each loop's name, runtime, state, whether it is paused
   and whether `resume_loop` can resume it, its health (`ok`, `warning`

@@ -4,7 +4,7 @@ weight: 7
 ---
 
 Langfuse is optional. With it, an operator sees each loop's spend, tokens,
-turn times, tool mix and failures, but no content (ADR-0064). It runs as
+turn times, tool mix and failures, but no content. It runs as
 the `langfuse` compose profile in `docker/langfuse/compose.yml`. It's off
 by default, and the hub runs the same without it. The commands run from
 the checkout as a user who can reach docker, on a hub that uses the docker
@@ -62,7 +62,7 @@ docker compose -f docker/langfuse/compose.yml \
     checkout its binary sits in (`/opt/spool/bin/spool` reads
     `/opt/spool/docker/langfuse/hub.env`), or the file `--langfuse-env`
     names. Traces are then on, with the file's key pair and its
-    `LANGFUSE_URL` if you set one (ADR-0064 item 3). The log says
+    `LANGFUSE_URL` if you set one. The log says
     `langfuse settings from the hub's Langfuse file`.
   - **A file the hub can't use stops it.** That covers a line that isn't
     `NAME=VALUE`, a missing `LANGFUSE_PUBLIC_KEY` or
@@ -82,7 +82,7 @@ docker compose -f docker/langfuse/compose.yml \
 ## Reading figures back
 
 - **The hub reads each loop's figures back** from the read address,
-  with the read key, every five minutes (#1300). With the profile,
+  with the read key, every five minutes. With the profile,
   `hub.env` sets both. `GET /api/loops/{name}/figures?window=24h` serves
   a loop's turns, failures, spend, tokens, turn durations, tool mix and
   per-turn rows over `1h`, `24h`, `7d` or `30d`, numbers and names only.
@@ -97,7 +97,7 @@ docker compose -f docker/langfuse/compose.yml \
 - **A restart reads the last 30 days again.** The hub keeps the figures
   in memory, not in `spool.db`.
 - **A bare loop's figures are trusted as far as the loop**: it can post
-  spans in another loop's name (ADR-0064 item 4).
+  spans in another loop's name.
 
 ## Turning it off
 
@@ -110,7 +110,7 @@ docker compose -f docker/langfuse/compose.yml \
   are turned off by clearing the upstream there.
 - **With bare loops,** also rotate or delete the project's key pair in
   Langfuse's UI. A bare loop holds the key in its environment and may
-  have kept a copy (ADR-0064 item 5).
+  have kept a copy.
 - **Stopping Langfuse:**
   `docker compose -f docker/langfuse/compose.yml --env-file docker/langfuse/langfuse.env --profile langfuse down`
   stops it and keeps its data.

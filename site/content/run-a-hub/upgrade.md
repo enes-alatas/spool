@@ -15,17 +15,17 @@ sudo spool upgrade --dry-run       # the plan, with the unit's paths; changes no
 sudo spool upgrade                 # the latest release; or vX.Y.Z, or main
 ```
 
-It does the steps below in their order (ADR-0057). It reads the binary,
+It does the steps below in their order. It reads the binary,
 the data directory and the images from the unit (`--unit`, default
 `spool`), and checks the new build before anything stops. A release is
 checked by its checksum, and by `gh attestation verify` run as you if you
 have `gh` 2.49 or later and are logged in; without that it warns, and
 `--require-attestation` makes it refuse. Ubuntu's and Debian's own `gh`
 packages can be older: install it from cli.github.com's apt repository
-([Linux install](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)) (#1338).
+([Linux install](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)).
 A target that doesn't know a migration the database has applied is
 refused. It then stops the hub, installs the target's `spool-backup.sh`
-and `spool-restore.sh` in `/usr/local/sbin` (#1583), keeping those
+and `spool-restore.sh` in `/usr/local/sbin`, keeping those
 there as `*.previous`, backs up the data directory with that
 `spool-backup.sh --no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
 outside the data directory and is checked before anything stops), installs,
@@ -36,7 +36,7 @@ data directory and the scripts back, restoring with the target's
 backup and the failed data directory are. Each step prints as it
 starts, with the time since the run began.
 
-The scripts run as the unit's `User=`, not as root (#1583). The backup
+The scripts run as the unit's `User=`, not as root. The backup
 writes into a fresh directory of that user's beside `--backup-dir`, and the
 upgrade copies each file it names into `--backup-dir` as root's, mode
 `0600`, then removes that directory. A rollback's restore reads copies
@@ -55,8 +55,8 @@ a rollback tags them back. They stay until the next upgrade moves them;
 `docker image rm` them to reclaim the space once the new hub is checked.
 
 `main`, or a tag with `--from-source <checkout>`, is built in the
-checkout as its owner. Until a release ships binaries (#747), only those
-work. An upgrade run by a `spool` from before #1583, or to a release from
+checkout as its owner. Until a release ships binaries, only those
+work. An upgrade run by a `spool` from before v0.9.0, or to a release from
 before it, installs no scripts and needs them installed already:
 [Installing the scripts](../backup/#installing-the-scripts). A hub upgraded with
 `--no-unit` as its own user keeps the scripts it has, since that user
@@ -90,8 +90,7 @@ in `~/.spool`, has no unit to read. Upgrade it as the user who runs it,
 ```
 
 `--no-unit` is implied where there is no `systemctl`. `--data-dir` names
-the data directory if it isn't `~/.spool` (ADR-0057, amendment of
-2026-11-04).
+the data directory if it isn't `~/.spool`.
 
 - **Finding the hub.** The upgrade finds the hub by the one process
   holding `spool.db` open, through `lsof`, and reads its flags from its
@@ -183,11 +182,11 @@ sudo systemctl stop spool
 sudo /usr/local/sbin/spool-backup.sh --data-dir "$DATA" --out /var/backups/spool
 # Install the build where the unit runs it; a unit that runs bin/spool in place needs nothing.
 [ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool bin/spool-hook "$(dirname "$BIN")/"
-# spool-github, for a bare loop holding a github-app (#1054); a build from before it has none.
+# spool-github, for a bare loop holding a github-app; a build from before v0.6.0 has none.
 [ "$BIN" -ef bin/spool ] || [ ! -f bin/spool-github ] || sudo install -m 755 bin/spool-github "$(dirname "$BIN")/"
 
 # Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
-# image (#715): remove the containers, never the volumes, and the hub
+# image: remove the containers, never the volumes, and the hub
 # provisions each from the new image at its loop's next wake, on the same
 # volume. A later hub replaces them itself at that wake.
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
@@ -208,9 +207,9 @@ Building happens while the old hub still runs, so the outage is only the
 backup and the start.
 
 **From a release.** A release from the one after v0.5.1 on carries the built
-binary (#756, ADR-0052), so `make build` above can be replaced with a
+binary, so `make build` above can be replaced with a
 download. A release whose notes have an **Images** section also carries the
-images (#763), so `make image` can be replaced with what the new binary's
+images, so `make image` can be replaced with what the new binary's
 `spool images` prints. Each image is pulled by digest, which is its check,
 and tagged with the name the hub runs, so the hub replaces the workstations
 at their next wake, as it does after `make image`. Like `make image`, that
@@ -230,7 +229,7 @@ sha256sum -c --ignore-missing SHA256SUMS     # the file is the release's
 gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool   # optional: the release workflow built it
 tar -xzf "spool_${v}_${p}.tar.gz"
 install -m 755 "spool_${v}_${p}/spool" "spool_${v}_${p}/spool-hook" /opt/spool/bin/
-[ ! -f "spool_${v}_${p}/spool-github" ] || install -m 755 "spool_${v}_${p}/spool-github" /opt/spool/bin/   # a release from before #1054 has none
+[ ! -f "spool_${v}_${p}/spool-github" ] || install -m 755 "spool_${v}_${p}/spool-github" /opt/spool/bin/   # a release from before v0.6.0 has none
 cd /opt/spool && rm -rf "$dl"                # back for the rest of the block
 
 ./bin/spool images                           # read it: two pulls by digest, two tags
@@ -249,7 +248,7 @@ release the README's way, checks the checksum and attestations, and starts a
 hub on its images with a data directory of its own. Never run it on the
 fleet's host: it retags `spool-workstation` and `spool-egress`, and it
 refuses a daemon that already runs a hub's containers. The release
-workflow runs the same check after every tag (#770).
+workflow runs the same check after every tag.
 
 ## Checking it worked
 
@@ -288,7 +287,7 @@ make image                                  # the previous release's images
 
 sudo mv "$DATA" "$DATA.failed-upgrade"
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
-docker volume rm $(docker volume ls -q --filter name=spool-ws-)   # by name: a volume may carry no labels (#844)
+docker volume rm $(docker volume ls -q --filter name=spool-ws-)   # by name: a volume may carry no labels
 sudo /usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
   --volumes /var/backups/spool/spool-volumes-<ts>.tar.gz \
   --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir "$DATA"
@@ -298,7 +297,7 @@ sudo systemctl start spool
 
 `docker volume rm` destroys the volumes as they stood after the upgrade. Run
 it only once you have the backup's data and volumes files in hand. A backup
-taken before #948 has no volumes file: leave out `--volumes`, and the
+taken before v0.6.0 has no volumes file: leave out `--volumes`, and the
 restore reads the volumes from the data file. Keep
 `$DATA.failed-upgrade` until the rolled-back hub is checked, then delete it:
 it holds the same credentials as the live directory.
@@ -307,14 +306,14 @@ The restore runs from `/usr/local/sbin`, so it works whatever the previous
 build is, including one from before the scripts existed. Don't refresh the
 installed copy during a rollback.
 
-A rollback to a build from before #1381 refuses the session start of every
+A rollback to a build from before v0.8.0 refuses the session start of every
 cloud loop whose environment was given the newer setup script, which sends
 a field the older hub doesn't take. Those loops then don't run until you
 paste the setup view's script into each environment again. A rollback that
 `spool upgrade` makes on its own, when the new build doesn't answer,
 happens before anyone could paste the newer script, so it needs nothing.
-A build with #1414 drops a hook field it doesn't know, so a rollback to it
-or a later build needs no paste for a field a newer script adds.
+A build from v0.8.0 on drops a hook field it doesn't know, so a rollback to
+one of those needs no paste for a field a newer script adds.
 
 If the new hub never started (a failed build, or a stop before `systemctl
 start`), the database was not migrated. Putting `bin/spool.previous` back

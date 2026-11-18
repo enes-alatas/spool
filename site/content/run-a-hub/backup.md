@@ -26,22 +26,22 @@ no memory.
 | `spool-volumes-<ts>.tar.gz` | every `spool-ws-*` volume, and a manifest naming each volume's loop; none with `--no-volumes` | with your backups |
 | `spool-keys-<ts>.tar` | `hub.key` and `operator-token` | **apart** from the data file, e.g. in a password manager or on another host |
 
-Every secret in `spool.db` is sealed under `hub.key` (ADR-0046). The data
+Every secret in `spool.db` is sealed under `hub.key`. The data
 file without the keys file holds them only as ciphertext, and grants no API
 access. Keep the two apart and a leaked copy of either is not enough. The
 volumes file is still sensitive: a workstation volume holds whatever its
 loop holds, its own GitHub token included. All three files are written 0600.
 
 Install `pigz` (`sudo apt install pigz`) and the backup and the restore
-compress on every core; without it, `gzip` uses one (#948). A backup from
-before #948 holds its volumes inside the data file, and the restore still
+compress on every core; without it, `gzip` uses one. A backup from
+before v0.6.0 holds its volumes inside the data file, and the restore still
 reads it that way.
 
 A volume is found by its name, `spool-ws-<loop id>`, not by its labels. A
 volume made by hand, as when loops move over from another machine, has no
 labels, and the hub runs on it all the same. The backup lists such a
 volume as `no loop labels` and takes its loop id from the name. A restore
-creates it with the labels, so later backups list it by its loop (#844). A
+creates it with the labels, so later backups list it by its loop. A
 script from before that change skipped such volumes without a word.
 
 ## Installing the scripts
@@ -64,9 +64,9 @@ done
 ```
 
 `spool upgrade` does this for you: it installs the target's own two
-scripts before its backup (#1583). The block above is still for a first
+scripts before its backup. The block above is still for a first
 install, an upgrade by hand, and an upgrade that can't: one run by a
-`spool` from before #1583, which is the hub's installed binary and not
+`spool` from before v0.9.0, which is the hub's installed binary and not
 the target's, or to a release from before it, which carries no scripts
 ([Upgrade](../upgrade/)).
 
@@ -98,7 +98,7 @@ volumes hold installed toolchains. Move the keys file off the host.
 ## Nightly, with a timer
 
 Two units run the backup each night, with the hub as the system unit
-`spool` above (#1601).
+`spool` above.
 
 `/etc/systemd/system/spool-backup.service`:
 
@@ -149,12 +149,12 @@ before an upgrade, `spool upgrade` too, or a restore
 (`sudo systemctl stop spool-backup.timer`), and start it again after, so
 the backup doesn't start the hub partway through.
 
-A nightly line in root's crontab, from before #1601, does the same without
+A nightly line in root's crontab, from before v0.9.0, does the same without
 a record of the last run. To swap it for the units, delete the line
 (`sudo crontab -e`) and install the units as above.
 
 `--keep 7` deletes all but the newest seven backups in `--out` once the new
-one is written (#1600). Pick the count your disk holds: each backup takes
+one is written. Pick the count your disk holds: each backup takes
 about the data directory plus the workstation volumes, compressed, and
 `spool upgrade` refuses to start when `/var/backups/spool` lacks room for
 its own copy of the data directory. A backup there is the data, keys and volumes files
@@ -182,7 +182,7 @@ A backup that wrote no volumes file (one taken with `--no-volumes`, or on a
 docker hub with no workstation volume yet) restores without `--volumes`.
 
 Run as root, restore gives every file it writes to the owner the backup
-recorded, the hub's user, keys included (#783). Restore never overwrites
+recorded, the hub's user, keys included. Restore never overwrites
 anything. The data directory must be missing or empty, and no volume the
 backup names may exist yet. All checks run before anything is written. To
 restore over a broken hub, move its data directory aside, and remove
@@ -213,7 +213,7 @@ Check it worked:
 **Lost the keys file?** Restore without `--keys`. The hub refuses to start
 until `hub.key` is back. Starting it once with `--forget-secrets` gives up
 every sealed secret instead: connections are revoked, bots unbound and the
-setup-token cleared, so you enter them again (ADR-0046). A new
+setup-token cleared, so you enter them again. A new
 `operator-token` is minted at that start. Under the systemd unit its
 stdout goes nowhere, so read the token with `spool token`.
 
