@@ -12,7 +12,7 @@ import (
 // against. Other versions are allowed but logged. Release images pin the
 // same one, in docker/workstation/claude-code.version, and a test holds the
 // two together (#1235).
-const TestedVersion = "2.1.322"
+const TestedVersion = "2.1.327"
 
 // Preflight checks the claude binary exists and returns its version string.
 // It is an auxiliary run (ADR-0033): the environment is built from nothing,

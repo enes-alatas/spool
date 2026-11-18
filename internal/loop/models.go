@@ -31,7 +31,7 @@ var contextLimits = map[string]int{
 // claude-opus-4-1 is a 200k model, and treating it as a megatoken one would
 // under-report a nearly full context as barely used.
 var aliasLimits = map[string]int{
-	// "fable" resolves to claude-fable-5-2 on 2.1.322, and answers its
+	// "fable" resolves to claude-fable-5-2 on 2.1.322 and 2.1.327, and answers its
 	// window, the operator's figure (#1591).
 	"fable":  1_000_000,
 	"opus":   1_000_000,
