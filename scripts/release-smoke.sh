@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs a release the way the README's quick start does, then checks that
+# Installs a release the way the docs site's From a release does, then checks that
 # the hub it gives starts (#770, ADR-0052): download, `sha256sum -c`,
 # `gh attestation verify`, unpack, `spool images | sh`, start. Nothing here
 # needs Go, Node or a checkout's build.
@@ -120,8 +120,8 @@ else
 	step "attestation: none on a dry run, not checked"
 fi
 
-# 4. Unpacked as the README says: spool, spool-hook and spool-github side
-# by side.
+# 4. Unpacked as the docs site's From a release says: spool, spool-hook
+# and spool-github side by side.
 tar -xzf "$dl/$name.tar.gz" -C "$work" || die "cannot unpack $name.tar.gz"
 bin=$work/$name
 for f in spool spool-hook spool-github; do

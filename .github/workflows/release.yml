@@ -274,10 +274,10 @@ jobs:
                "$notes" "$WORKSTATION" "$EGRESS" "$CLAUDE_CODE" | gh release edit "$GITHUB_REF_NAME" --notes-file - ;;
           esac
 
-  # The README's release path on a fresh runner (#770): no Go, no Node, no
-  # build, only scripts/release-smoke.sh from the checkout. A dry run
-  # smokes its own artifacts, so a tag is cut from a commit whose install
-  # already worked.
+  # The docs site's From a release path on a fresh runner (#770): no Go,
+  # no Node, no build, only scripts/release-smoke.sh from the checkout. A
+  # dry run smokes its own artifacts, so a tag is cut from a commit whose
+  # install already worked.
   smoke-dry-run:
     needs: [build, images-check]
     # index is skipped on a dispatch, and a skip anywhere upstream would

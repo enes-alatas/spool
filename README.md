@@ -31,91 +31,17 @@ Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and t
 
 ## Quick start
 
-You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows/wsl/install), with [Docker](https://docs.docker.com/get-docker/) running, `git`, [Go](https://go.dev/dl/) 1.25+, [Node](https://nodejs.org/) 20.19+ or 22.12+, and [Claude Code](https://claude.com/claude-code) on a Claude subscription, installed on the machine Spool runs on: the hub signs in with it in step 3.
-
-1. **Get Spool and build it.**
-
-   ```bash
-   git clone https://github.com/enes-alatas/spool && cd spool
-   make build image
-   ```
-
-   That builds `bin/spool`, the control room inside it, and the two Docker images a loop runs in.
-
-2. **Start it and sign in.** Run `./bin/spool`. On its first start it prints a one-time password for the user `admin`. Open http://127.0.0.1:8080, sign in as `admin` with that password, and choose your own. Missed the password? `./bin/spool user reset admin` prints a new one.
-
-   The control room opens on **Set up your fleet**: three cards, in the order below. Each checks itself and turns done on its own.
-
-3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that login. Each Claude login is the subscription of the person who signs it in. Spool never pools or resells capacity, and you follow your plan's terms. A hub can hold more than one: see [Claude logins](https://enes-alatas.github.io/spool/guides/claude-logins/).
-
-4. **Loops.** Choose **New loop**, and give it a name and a mission. Its first wake builds its workstation, which takes a minute or two the first time; the card is done when that wake's first turn ends.
-
-5. **Chat surface.** Choose **Attach a bot**, then **Attach Telegram** or **Attach Slack**.
-   - **Telegram:** send **@BotFather** `/newbot` in Telegram, and paste the token it gives you.
-   - **Slack:** follow the dialog's **Create app from manifest**, then paste the app's two tokens. [Slack](https://enes-alatas.github.io/spool/start/chat-surfaces/slack/) has the steps.
-
-   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account. On Telegram it also makes you the owner of every loop that has none; a Slack link makes nobody an owner, so choose yourself as the loop's **owner** on its page ([Slack](https://enes-alatas.github.io/spool/start/chat-surfaces/slack/) step 6). Message the bot once more: the card is done when the loop answers you there.
-
-   No chat app? You can talk to a loop on its page in the control room instead. Once the Harness and Loops cards are done, choose **Skip for now** on the Chat surface card to finish the setup page without one, and attach a bot later on the loop's page.
-
-### Other ways to run it
-
-- **From a release,** with no Go, Node or `make`: [below](#from-a-release).
-- **On a server, as a service,** with TLS and backups: [Run a hub](https://enes-alatas.github.io/spool/run-a-hub/) on the docs site.
-- **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](https://enes-alatas.github.io/spool/security/containment/) before you choose that.
-
-### From a release
-
-A release carries the built binary and the two images, so this replaces step 1. You need Docker running, `curl` and Claude Code. Run this in a new terminal:
+You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows/wsl/install), with [Docker](https://docs.docker.com/get-docker/) running, `git`, [Go](https://go.dev/dl/) 1.25+, [Node](https://nodejs.org/) 20.19+ or 22.12+, and [Claude Code](https://claude.com/claude-code) on a Claude subscription.
 
 ```bash
-v=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/enes-alatas/spool/releases/latest); v=${v##*/}
-p=$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')   # this machine's: linux_amd64, linux_arm64, darwin_arm64 or darwin_amd64
-mkdir -p ~/spool/bin && cd ~/spool
-base=https://github.com/enes-alatas/spool/releases/download/$v
-curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
-grep " spool_${v}_${p}.tar.gz\$" SHA256SUMS | $(command -v shasum >/dev/null && echo shasum -a 256 || echo sha256sum) -c   # the file is the release's
-tar -xzf "spool_${v}_${p}.tar.gz" && install -m 755 "spool_${v}_${p}"/spool* bin/
-./bin/spool images                           # read it: two pulls by digest, two tags
-./bin/spool images | sh
+git clone https://github.com/enes-alatas/spool && cd spool
+make build image
+./bin/spool
 ```
 
-This page follows main, which can be ahead of the release you just installed. For that release's own README, open the address this prints: `echo "https://github.com/enes-alatas/spool/blob/$v/README.md"`.
-Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check that the release workflow built the file:
-`gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool`. To upgrade later, see [Upgrade](https://enes-alatas.github.io/spool/run-a-hub/upgrade/).
+On its first start, Spool prints a one-time password for the user `admin`. Open http://127.0.0.1:8080, sign in with it, and choose your own. **Set up your fleet** then takes you through three cards: sign in with Claude, create a loop, and attach a Telegram bot or a Slack app, or skip that and talk to the loop in the control room.
 
-## How it works
-
-- **Plain `claude` CLI underneath.** Contained and bare loops are `claude` subprocesses speaking stream-json over stdin/stdout; a cloud loop's turn is read back from a Stop hook. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
-- **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
-- **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
-- **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
-- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
-- **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
-- **Traces, if you want them.** With [Langfuse beside the hub](https://enes-alatas.github.io/spool/guides/langfuse/), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
-- **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [Management tokens](https://enes-alatas.github.io/spool/guides/management-tokens/) has the setup.
-
-### Teams
-
-A hub can hold *teams*. A team is a named set of loops with channels and settings of its own (ADR-0066). A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
-
-- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet` (`fleet-2` and on if that name is taken, and none at all if it held no member, message or room), which you can make a team's home channel (ADR-0068). A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
-- **Settings add to the hub's.** A fleet rule can bind every loop or one team's loops: **Rules** writes it for All or for one team, and where the two conflict, the hub's rule wins. A team can name the [Claude login](https://enes-alatas.github.io/spool/guides/claude-logins/) its contained loops run on.
-- **A loop knows its team.** A loop in a team sees the team's name in its prompt.
-
-### Where loops run
-
-Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](https://enes-alatas.github.io/spool/security/containment/)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](https://enes-alatas.github.io/spool/guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
-
-A cloud loop works beside the others like any loop, and you talk to it the same way:
-
-https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
-
-### Start from prompts.chat
-
-New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop, or a bare loop working in a directory of yours, takes none. A [team](https://prompts.chat/bots/teams) makes a team on the hub in one step: its loops, in a team whose home channel they share:
-
-https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
+[Quick start](https://enes-alatas.github.io/spool/start/quick-start/) on the docs site has each step in full. [From a release](https://enes-alatas.github.io/spool/start/from-a-release/) installs the built binary with no Go, Node or `make`, and [Run a hub](https://enes-alatas.github.io/spool/run-a-hub/) runs Spool on a server as a service.
 
 ## Security in brief
 
@@ -126,66 +52,14 @@ https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
 
 [What contains a loop](https://enes-alatas.github.io/spool/security/containment/) has the whole picture, including what containment does not do. [SECURITY.md](SECURITY.md) says how to report a vulnerability.
 
-## Chat surfaces
+## Docs
 
-Moved to [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site.
+The [docs site](https://enes-alatas.github.io/spool/) has the rest:
 
-### Who can talk to your loops
+- **[Start](https://enes-alatas.github.io/spool/start/):** the quick start, [your first loop](https://enes-alatas.github.io/spool/start/your-first-loop/) and how Spool works, and the [chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/).
+- **[Guides](https://enes-alatas.github.io/spool/guides/):** [teams and channels](https://enes-alatas.github.io/spool/guides/teams-and-channels/), who can talk to your loops, connections, cloud loops, Claude logins, management tokens and Langfuse.
+- **[Run a hub](https://enes-alatas.github.io/spool/run-a-hub/):** as a service, backed up and upgraded.
+- **[Security](https://enes-alatas.github.io/spool/security/):** what contains a loop, and what doesn't.
+- **[Reference](https://enes-alatas.github.io/spool/reference/):** [flags](https://enes-alatas.github.io/spool/reference/flags/), Settings and release-specific steps.
 
-Moved to [Who can talk to your loops](https://enes-alatas.github.io/spool/guides/who-can-talk/) on the docs site.
-
-## Flags
-
-| Flag | Default | What it sets |
-|---|---|---|
-| `--listen` | `127.0.0.1:8080` | where the control room and its API are served |
-| `--data-dir` | `~/.spool` | the database, `hub.key`, loop homes and worktrees |
-| `--runtime` | `auto` | docker when the daemon is reachable, else refuse to start; `bare` runs loops uncontained |
-| `--trusted-host` | none | the name a hub behind a TLS proxy is reached as; [Run it as a service](https://enes-alatas.github.io/spool/run-a-hub/service/#tls-with-caddy) has a systemd unit and a Caddy recipe |
-| `--mcp-listen` | chosen by the hub | the loops' one port; [What contains a loop](https://enes-alatas.github.io/spool/security/containment/) says how it is chosen |
-| `--cloud-listen` | off | the port loops in Claude Code cloud sessions reach, through a tunnel or TLS proxy you put in front of it; a port alone binds loopback; an admin can switch it on in Settings → Cloud instead (ADR-0056) |
-
-`spool --help` lists every flag. `spool token` prints the operator token again.
-
-## Development
-
-```bash
-make server         # Go binary only (uses last-built UI)
-make dev            # run backend on :8080
-make ui-dev         # vite dev server with /api proxy
-make test           # tier 1: unit + architecture tests
-make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~10min
-                    #         (~7min without a docker daemon; four files skip)
-make image          # build the spool-workstation and spool-egress images locally
-make lint           # gofmt + vet (as this machine's OS, then as macOS) + golangci-lint
-make e2e-m1         # tier 3: real claude sessions (spends plan tokens)
-```
-
-Testing is three-tiered (see `docs/CONVENTIONS.md`): unit and fakeclaude-backed
-integration tests gate every PR in CI; the real-claude e2e suites
-(`scripts/e2e/`) run locally per milestone: session resume across process
-death and orchestrator restarts (m1), tick scheduling and trailer clamping
-(m2), mention relay + storm guard (m4), Telegram (m5), worktree isolation (m6).
-
-### Project docs
-
-Running a hub:
-
-- [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade;
-  Claude logins, management tokens, cloud loops and Langfuse
-- [Security](https://enes-alatas.github.io/spool/security/) on the docs site: what contains a loop, and the hub's own secrets
-- [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site: Telegram and Slack in full
-- `SECURITY.md`: what is supported, how to report a vulnerability privately,
-  and which properties of the design are known rather than bugs
-
-Working on Spool:
-
-- `CONTRIBUTING.md`: how to report a problem and who answers
-- `docs/VISION.md`: product vision and the L0–L7 milestone ladder
-- `docs/ARCHITECTURE.md`: shape, seams, ubiquitous language
-- `docs/CONVENTIONS.md`: workflow, style, test tiers
-- `docs/QUALITY.md`: baselines and CI gates
-- `docs/THREAT-MODEL.md`: what each boundary holds and does not
-- `docs/adr/`: decision records
-- `AGENTS.md`: orientation for AI agents working on this repo (`CLAUDE.md` is
-  a symlink to it)
+Working on Spool itself? [CONTRIBUTING.md](CONTRIBUTING.md) has the development commands and the project docs.
