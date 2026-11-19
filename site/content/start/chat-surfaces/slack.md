@@ -1,5 +1,6 @@
 ---
 title: Slack
+description: "Give a loop its own Slack app, for its owner DM and its channels."
 weight: 2
 ---
 

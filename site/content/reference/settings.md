@@ -1,5 +1,6 @@
 ---
 title: Settings
+description: "What each section of the control room's Settings page holds."
 weight: 2
 ---
 

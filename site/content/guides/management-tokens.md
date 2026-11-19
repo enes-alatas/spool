@@ -1,5 +1,6 @@
 ---
 title: Management tokens
+description: "The credential your own agent holds to look after the hub through the management MCP, in place of the operator token."
 weight: 6
 ---
 

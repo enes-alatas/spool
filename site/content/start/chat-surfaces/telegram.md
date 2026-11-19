@@ -1,5 +1,6 @@
 ---
 title: Telegram
+description: "Give a loop its own Telegram bot, to reach it from Telegram."
 weight: 1
 ---
 

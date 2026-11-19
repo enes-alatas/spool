@@ -1,5 +1,6 @@
 ---
 title: Security in brief
+description: "The short version: how each loop is contained and what the hub holds."
 weight: 2
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: Run it as a service
+description: "A fresh Debian or Ubuntu server to a hub that starts at boot, behind TLS."
 weight: 1
 ---
 

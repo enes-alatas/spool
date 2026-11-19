@@ -1,5 +1,6 @@
 ---
 title: Connections
+description: "A secret or a tool for your loops, such as a token, an MCP server or a GitHub App, defined once."
 weight: 3
 ---
 

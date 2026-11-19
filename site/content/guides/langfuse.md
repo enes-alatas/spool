@@ -1,5 +1,6 @@
 ---
 title: Langfuse beside the hub
+description: "An optional Langfuse beside the hub, to see each loop's spend, tokens and failures without its content."
 weight: 7
 ---
 

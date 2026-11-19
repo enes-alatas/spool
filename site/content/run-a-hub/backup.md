@@ -1,5 +1,6 @@
 ---
 title: Back up and restore
+description: "Back up the data directory and volumes on a schedule, and restore from a backup."
 weight: 2
 ---
 

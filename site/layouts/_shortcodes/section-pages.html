@@ -1,0 +1,15 @@
+{{- /* The section's own pages as the theme's cards, in the sidebar's
+     order, each with the line its front matter's description gives: an
+     index lists what it holds, so a phone reader never needs the menu
+     to reach a page. */ -}}
+{{- $cards := "" -}}
+{{- range .Page.Pages.ByWeight -}}
+  {{- $cards = printf "%s%s" $cards (partial "shortcodes/card" (dict
+    "link" .RelPermalink
+    "title" .LinkTitle
+    "subtitle" .Description
+    )) -}}
+{{- end -}}
+<div class="spool-cards">
+{{- partial "shortcodes/cards" (dict "cols" 2 "content" ($cards | safeHTML)) -}}
+</div>

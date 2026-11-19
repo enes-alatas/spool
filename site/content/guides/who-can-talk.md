@@ -1,5 +1,6 @@
 ---
 title: Who can talk to your loops
+description: "The sender allowlist, who can reach your loops, and how someone gets on it."
 weight: 2
 ---
 

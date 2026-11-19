@@ -1,5 +1,6 @@
 ---
 title: Upgrade
+description: "Move a hub to a new release with spool upgrade, and roll back if it fails."
 weight: 3
 ---
 

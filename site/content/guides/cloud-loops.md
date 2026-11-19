@@ -1,5 +1,6 @@
 ---
 title: Cloud loops
+description: "Running a loop's claude in a Claude Code cloud session instead of a container on the hub."
 weight: 4
 ---
 

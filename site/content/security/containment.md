@@ -1,5 +1,6 @@
 ---
 title: What contains a loop
+description: "What keeps a loop from your machine, what it does not stop, and how the hub keeps its secrets."
 weight: 1
 ---
 

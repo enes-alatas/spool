@@ -1,5 +1,6 @@
 ---
 title: Release-specific steps
+description: "The extra steps a particular release needs when you upgrade to it."
 weight: 3
 ---
 

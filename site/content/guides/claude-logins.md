@@ -1,5 +1,6 @@
 ---
 title: Claude logins
+description: "The claude.ai accounts your loops run on, which the hub signs in to, seals and refreshes."
 weight: 5
 ---
 

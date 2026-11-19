@@ -273,3 +273,16 @@ article h1,
 .hextra-card span {
   font-weight: 500 !important;
 }
+
+/* A section index's cards (section-pages shortcode): the title sits at
+   the top of each card, not pushed down to match a taller neighbour, and
+   the line saying what a page is for shows in full. */
+.spool-cards .hextra-card > div {
+  margin-top: 0;
+}
+.spool-cards .hextra-card-subtitle {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
