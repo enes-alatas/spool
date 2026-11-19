@@ -55,8 +55,9 @@ a rollback tags them back. They stay until the next upgrade moves them;
 `docker image rm` them to reclaim the space once the new hub is checked.
 
 `main`, or a tag with `--from-source <checkout>`, is built in the
-checkout as its owner. Until a release ships binaries, only those
-work. An upgrade run by a `spool` from before v0.9.0, or to a release from
+checkout as its owner. A release from v0.6.0 on is downloaded; one
+before v0.6.0 ships no binaries, so it needs `--from-source`. An
+upgrade run by a `spool` from before v0.9.0, or to a release from
 before it, installs no scripts and needs them installed already:
 [Installing the scripts](../backup/#installing-the-scripts). A hub upgraded with
 `--no-unit` as its own user keeps the scripts it has, since that user
