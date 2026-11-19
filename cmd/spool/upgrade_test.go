@@ -453,6 +453,27 @@ func TestUpgradeRefusesADowngrade(t *testing.T) {
 	}
 }
 
+// A release with no archive for this platform is refused before the hub
+// stops, naming v0.6.0 only for a tag before it: any other 404 is a tag
+// not released yet, or a platform the release doesn't ship.
+func TestUpgradeRefusesAReleaseWithNoArchive(t *testing.T) {
+	for _, release := range []struct{ tag, want, notWant string }{
+		{"v0.5.1", "releases before v0.6.0 carry no binaries", "may not be released yet"},
+		{"v0.10.0", "may not be released yet, or the release may not ship this platform", "v0.6.0"},
+		{"v1.2.0", "may not be released yet", "v0.6.0"},
+	} {
+		_, up, host, _ := newUpgradeEnv(t)
+		up.target = release.tag
+		err := up.run(context.Background())
+		if err == nil || !strings.Contains(err.Error(), release.want) || strings.Contains(err.Error(), release.notWant) {
+			t.Errorf("%s: upgrade = %v; want %q and not %q", release.tag, err, release.want, release.notWant)
+		}
+		if stopped(host) {
+			t.Errorf("%s: the hub was stopped for a release with no archive", release.tag)
+		}
+	}
+}
+
 // What a candidate answers is read strictly: anything but a list of
 // migration names, or two pulls by digest, is a refusal.
 func TestUpgradeReadsTheCandidateStrictly(t *testing.T) {

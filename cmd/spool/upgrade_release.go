@@ -47,7 +47,7 @@ func (up *upgrader) download(ctx context.Context, p plan) (candidate, error) {
 	up.printf("spool upgrade: downloading %s", base+name+".tar.gz")
 	if err := up.fetch(ctx, base+name+".tar.gz", archive, maxArchive); err != nil {
 		if errors.Is(err, errNoAsset) {
-			err = fmt.Errorf("release %s ships no %s.tar.gz: until a release carries binaries (#747), upgrade with `spool upgrade main` or `--from-source`", tag, name)
+			err = noArchive(tag, name)
 		}
 		return cand, err
 	}
@@ -288,4 +288,15 @@ func extractRelease(archive, name, dir string) error {
 		}
 	}
 	return nil
+}
+
+// noArchive is the refusal for a release with no archive for this
+// platform. Only a tag before v0.6.0 is known to ship none; any other
+// 404 is a tag not released yet, or one that doesn't ship this platform.
+func noArchive(tag, name string) error {
+	var major, minor int
+	if _, err := fmt.Sscanf(tag, "v%d.%d.", &major, &minor); err == nil && major == 0 && minor < 6 {
+		return fmt.Errorf("release %s ships no %s.tar.gz: releases before v0.6.0 carry no binaries, so build it with `--from-source`, or upgrade to `main`", tag, name)
+	}
+	return fmt.Errorf("release %s has no %s.tar.gz: the tag may not be released yet, or the release may not ship this platform", tag, name)
 }
