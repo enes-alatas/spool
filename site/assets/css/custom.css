@@ -316,3 +316,9 @@ article h1,
 .hextra-sidebar-container ul:has(> li > a[href^='#']) {
   display: none;
 }
+
+/* The page for a wrong address (layouts/404.html): its column starts
+   under the logo and keeps a reading width, as a page's content does. */
+.spool-404 {
+  max-width: 48rem;
+}

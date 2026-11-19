@@ -1,0 +1,28 @@
+{{- /* The page for a wrong address, in the site's own frame: the
+     theme's 404 is a bare page of its own that turns white in a light
+     scheme. This one renders inside the base layout, so it carries the
+     navbar, the search and the near-black canvas, and it links home and
+     to each section. Pages serves it for any missing path, so every
+     link is root-relative. */ -}}
+{{ define "main" }}
+  {{- /* the phone menu lives in the sidebar, which a desktop hides here */ -}}
+  {{ partial "sidebar.html" (dict "context" . "disableSidebar" true "displayPlaceholder" false) }}
+  <main
+    id="content"
+    class="hextra-max-navbar-width hx:mx-auto hx:px-6 hx:pt-4 hx:pb-8 hx:min-h-[calc(100vh-var(--hextra-navbar-height))]"
+  >
+    <div class="content spool-404">
+      <p class="spool-label">404</p>
+      <h1>This page isn't here</h1>
+      <p>The address may be mistyped, or the page may have moved. Start from <a href="{{ site.Home.RelPermalink }}">the docs home</a>, search, or open a section:</p>
+      {{- $cards := "" -}}
+      {{- range site.Home.Sections.ByWeight -}}
+        {{- $cards = printf "%s%s" $cards (partial "shortcodes/card" (dict
+          "link" .RelPermalink
+          "title" .LinkTitle
+          )) -}}
+      {{- end -}}
+      {{- partial "shortcodes/cards" (dict "cols" 2 "content" ($cards | safeHTML)) -}}
+    </div>
+  </main>
+{{ end }}
