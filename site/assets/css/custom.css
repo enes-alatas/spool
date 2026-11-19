@@ -158,7 +158,9 @@ samp {
 /* The banner on unreleased pages wants attention soon: the state orange, as a
    line and a wash, with the text staying white. */
 .hextra-banner {
-  background: var(--active-wash) !important;
+  /* the wash over the canvas, opaque: a phone keeps the banner stuck
+     above the navbar while the page scrolls under it */
+  background: linear-gradient(var(--active-wash), var(--active-wash)), var(--canvas) !important;
   border-bottom: 1px solid var(--active-line);
   color: var(--text) !important;
 }
@@ -285,4 +287,32 @@ article h1,
   -webkit-line-clamp: unset;
   line-clamp: unset;
   overflow: visible;
+}
+
+/* The phone header and menu (#1670). With the banner showing, the
+   theme makes the navbar's canvas as tall as the banner, which left an
+   empty band under the logo row. The banner sticks at the top on its
+   own, so the navbar sticks just under it, at the banner's height, and
+   its canvas stays the navbar's height. In the phone menu, the theme puts
+   the navbar's Versions group before the sections: it goes after them,
+   past a hairline. And the menu lists the open page's headings in among
+   its pages, so a heading could read as a page; they are left out, as
+   the page itself still has them. */
+@media (max-width: 48rem) {
+  [data-hextra-banner='visible'] .hextra-nav-container-blur {
+    height: 100% !important;
+  }
+  [data-hextra-banner='visible'] .hextra-nav-container {
+    /* the theme measures the banner without its 1px border */
+    top: calc(var(--hextra-banner-height) + 1px);
+  }
+}
+.hextra-sidebar-container > div > ul > li:has(> .hextra-sidebar-item > span) {
+  order: 1;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--hairline);
+}
+.hextra-sidebar-container ul:has(> li > a[href^='#']) {
+  display: none;
 }
