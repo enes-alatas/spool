@@ -85,6 +85,11 @@ ADR instead.*
     no single package dominates drops the scope.
   - **The summary says what is true once the commit lands**, in the present
     tense (or, for a `feat`, a noun phrase), and names one change.
+    - **A `test` commit** names the test or check and what it now covers,
+      never only the condition it asserts, which reads as a bug:
+      `the moved-doc check covers CONTAINMENT.md too`, not
+      `no message names CONTAINMENT.md, which the docs site replaced`.
+      Review checks this with the rest of the subject rules.
   - **Self-contained**: it reads alone in `git log --oneline`.
   - **Length**: about 72 characters.
   - **No closing keywords in a commit message**, subject or body (#80): only
