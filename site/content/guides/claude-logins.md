@@ -8,6 +8,8 @@ account it signs in to with the `claude` CLI's own login, and keeps
 sealed under the hub key. It refreshes each one before its token expires,
 and never puts one in a workstation.
 
+## Which login a loop runs on
+
 A hub can hold several Claude logins, each under a name. The one named
 `default` is the one **Sign in with Claude** signs in, on the setup card
 and in Settings → Cloud. A contained loop runs on the login it names, its
@@ -22,6 +24,9 @@ on a login
 that is signed out is held until the login is signed in again or the
 loop moves: it never falls back to `default`.
 Until `default` is signed in, a stored setup-token stands in for it.
+
+## Plan usage and the plan cap
+
 Each login keeps its own plan usage, which only its own loops report
 into, and `GET /api/plan-usage` lists it under `logins`. The plan cap
 works per login too: a login over a threshold sleeps only the loops on
@@ -37,12 +42,16 @@ each, named, whose figures open on a click. A capped login's ring wears a red ri
 of a cap banner, and its figures name the loops on it that sleep, with a
 Resume now for that login alone.
 
-**Whose subscription a login is.** Each login is the subscription of the
+## Whose subscription a login is
+
+Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools
 or resells capacity. The operator is responsible for following the terms
 of each plan.
 
-**Who may do what.** Any user may add a login of their own, and becomes
+## Who may do what
+
+Any user may add a login of their own, and becomes
 its owner. Its owner or an admin may sign it in, check it, sign it out
 and remove it. `default` is the hub's, so it is an admin's. Every
 user sees each login's name, owner and whether it is signed in, but the
@@ -54,7 +63,9 @@ logins to revoke at claude.ai. With the hub running, remove the user
 from the control room instead: a refresh under way could write a
 rotated token back over what the command cleared.
 
-**In the control room**, Settings → Claude logins lists them, the
+## In the control room
+
+Settings → Claude logins lists them, the
 default first, each with its state and last check. **Add a Claude
 login** takes a name, then runs the same sign-in as the default. Each
 login's line carries Sign in, Check again, Sign out and Remove for its
@@ -67,7 +78,8 @@ paused, and one with an environment picks its new one from the new
 login's account's list in the same move; it then needs a new hub token
 and a passed check before it runs again.
 
-**From the API**:
+## From the API
+
 - `GET /api/claude-logins` lists them, with each one's last check and,
   on the logins the caller may manage, the address it signed in with;
   never a token.

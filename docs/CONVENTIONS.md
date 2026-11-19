@@ -173,7 +173,7 @@ the gate and the roles are the release plan the operator agreed on
   and `v1.0.0` is the OSS launch (L6). A docs issue lists the release's
   additions in the README and says whether the demo video still shows what
   ships, re-recorded if not, before the tag ask (#684). A change that
-  alters stored data at first start adds its row to the docs site's
+  alters stored data at first start adds its section to the docs site's
   Release-specific steps (`site/content/reference/release-steps.md`) in
   the same PR (#712).
 - **The operator tags, never a loop** (#223): notes come from commit titles,

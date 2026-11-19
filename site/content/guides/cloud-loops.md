@@ -5,7 +5,11 @@ weight: 4
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
 machines, on a Claude login of the hub's, `default` unless the loop
-names another, and reaches the hub over the internet. Settings → Cloud walks the hub's setup in three steps, in this
+names another, and reaches the hub over the internet.
+
+## The hub's setup
+
+Settings → Cloud walks the hub's setup in three steps, in this
 order. Each step the hub checks before the next opens. The hub needs the
 `claude` CLI on its machine, the same one the Claude login signs in with.
 
@@ -32,6 +36,8 @@ order. Each step the hub checks before the next opens. The hub needs the
    already has. On Spool's side, the hub checks the login with one haiku
    answer. The account is the one every cloud loop on `default` spends.
 
+## A loop's setup
+
 Then set each cloud loop up, in a cloud environment of its own that you
 create on claude.ai for it. Its setup view, `GET
 /api/loops/<name>/cloud/setup`, shows what to paste and which steps are
@@ -40,6 +46,8 @@ The loop's page walks those steps: **Set up** on its Workstation card,
 which New loop opens on a new cloud loop. The API takes each step
 too, though on a loop made before v0.6.2 the repo and environment go in
 one edit, as below.
+
+## The allowed domains and the environment
 
 The list to paste into an environment's allowed domains is the hub's
 egress allowlist ([What contains a loop](../../security/containment/)) as an environment
@@ -58,7 +66,8 @@ the hub ends the CLI and records the loop's check as failed at the
 environment: archive any session the check names on claude.ai, name
 one of the account's environments, and check again. If you delete or
 recreate a loop's environment, stop the loop and name the new ID.
-The steps, in order:
+
+## The steps, in order
 
 1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
    `owner/name`, its branch, `main` unless you name another, and any further
@@ -97,6 +106,8 @@ The steps, in order:
    none of its connections, and stays on claude.ai, where you can
    archive it.
 
+## A loop held for its setup
+
 A cloud loop whose repo, environment or token isn't set, or whose check
 hasn't passed on its setup as it is now, waits with a `cloud_setup`
 problem, and so does one made before v0.6.2, whose old token the upgrade
@@ -108,7 +119,9 @@ An edit of its repo, branch, environment or Claude login, a
 Rotate token or a kill takes a new check. A loop's repo, branch,
 environment and Claude login change only while it is stopped.
 
-**A cloud loop on another Claude login**. Name the login,
+## A cloud loop on another Claude login
+
+Name the login,
 `claude_login`, as for a contained loop. Its sessions start and take
 their turns under that login's token, so they spend that login's plan,
 and its environment must be one the login's account made: create it on
@@ -130,12 +143,16 @@ reads every turn, can send into a session and run commands in its VM,
 where the loop's `env-var` connections sit. Attach to such a loop only
 connections the login's owner may hold.
 
+## What the setup script denies
+
 The setup script also denies the session the `claude-code-remote` tools that
 act on the claude.ai account, such as `create_trigger` and `list_sessions`, and
 lets `add_repo` attach only the loop's own repos. Both are guards a root shell
 in the VM can undo, not a boundary. Stop, kill and Rotate token end no routine
 or session a loop made on claude.ai, so after killing a loop that misbehaved,
 check the account's routines and sessions there.
+
+## The first wake
 
 At its first wake, the hub runs `claude --cloud` on its own machine, with
 the wake as the first message, in an empty directory whose `origin` is the
@@ -163,6 +180,8 @@ domains, then stop and start each cloud loop, which drops its session, and
 check it again. A check stands for the address it ran against, so one
 that passed before the change counts again if the address goes back.
 
+## The hub token
+
 A cloud loop's hub token belongs to its environment, not to one session.
 It is kept at Anthropic as that environment's network secret, with no
 expiry: anyone who holds the claude.ai account can start a session there
@@ -181,6 +200,8 @@ If the hub can't store the stop or the revocation, the stop or the kill
 still happens, but it answers with an error saying the session can still
 reach the hub. Stopping or killing the loop again retries.
 
+## Secrets
+
 A cloud loop's secrets are its env-var connections, attached as a
 contained loop's are. The hub answers the session's
 `SessionStart` post with them, and the hook writes them where the
@@ -193,12 +214,16 @@ the session on Anthropic's disk until you archive it on claude.ai, so
 deleting a cloud loop that misbehaved is the time to rotate them.
 `mcp-server` connections never reach a cloud loop.
 
+## GitHub
+
 A cloud loop's GitHub work goes through Claude's GitHub App, from the repo
 it starts from. Its requests go through Anthropic's GitHub
 proxy, which refuses GraphQL, so `gh pr` and `gh issue` fail and only REST
 through `gh api` works. A push can update a branch, never push a tag or
 delete a branch. A `GH_TOKEN` connection reaches no repository the session
 didn't start from or attach.
+
+## Cost
 
 A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model
