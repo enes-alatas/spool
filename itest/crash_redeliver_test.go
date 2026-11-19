@@ -34,7 +34,11 @@ func TestAMessageOutlivesAKilledProcess(t *testing.T) {
 		return running.Trigger == "message"
 	})
 	// the retry resumes the same session, whose turn count the killed turn
-	// never saved, so it reads the script's second line again: echo there
+	// never saved, so it reads the script's second line again: echo there.
+	// The hub lists the turn as running before its process has started, and
+	// the process reads the script as it starts, so the script changes only
+	// once the process has said it is up (#1672).
+	waitTurnInit(t, hub, "sturdy", killed.ID, 30*time.Second)
 	setScript(t, workspace, "!echo\n")
 	killClaude(t, hub, "sturdy")
 
@@ -188,6 +192,22 @@ func setScript(t *testing.T, workspace, lines string) {
 	if err := os.WriteFile(filepath.Join(workspace, ".fakeclaude"), []byte(lines), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// waitTurnInit waits for the init a turn's claude process reports on its
+// first message, which fakeclaude sends only after reading its script.
+func waitTurnInit(t *testing.T, hub *server, name, turnID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, event := range hub.eventsQuery(name, "limit=200") {
+			if event.Type == "system" && event.Subtype == "init" && event.TurnID == turnID {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("turn %s of %s reported no init within %s", turnID, name, timeout)
 }
 
 // killClaude SIGKILLs a bare loop's newest claude process from outside the
