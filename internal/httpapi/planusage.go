@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,9 @@ type planUsageView struct {
 	// ResumedUntil is when the operator's Resume now stops holding the cap
 	// off, present only while it does.
 	ResumedUntil int64 `json:"resumed_until,omitempty"`
+	// ResumedCap is the cap a Resume now is holding off, and null otherwise:
+	// Cap again is offered exactly while it is not null (#1651).
+	ResumedCap *planCapView `json:"resumed_cap"`
 }
 
 // planUsagesView is GET /api/plan-usage: every login's plan usage in
@@ -64,9 +68,9 @@ type planCapView struct {
 // the plan's usage.
 const unknownNotObserved = "no loop has reported the plan's usage yet"
 
-// resumePlanCapReq names the Claude login whose cap Resume now holds off,
-// as a loop names it: none, or "default", for the default.
-type resumePlanCapReq struct {
+// planCapActionReq names the Claude login whose cap Resume now or Cap again
+// acts on, as a loop names it: none, or "default", for the default.
+type planCapActionReq struct {
 	ClaudeLogin string `json:"claude_login"`
 }
 
@@ -75,7 +79,14 @@ type resumePlanCapReq struct {
 // body resumes the default's. With that login not capped it changes
 // nothing, so a second press is harmless.
 func (server *Server) handleResumePlanCap(w http.ResponseWriter, r *http.Request) {
-	var req resumePlanCapReq
+	server.actOnPlanCap(w, r, server.PlanCap.Resume)
+}
+
+// actOnPlanCap reads the login a plan cap action names, as Resume now and
+// Cap again take it, has act act on that login's cap, and answers with the
+// plan usage that results.
+func (server *Server) actOnPlanCap(w http.ResponseWriter, r *http.Request, act func(ctx context.Context, login string, now int64) error) {
+	var req planCapActionReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
@@ -90,11 +101,19 @@ func (server *Server) handleResumePlanCap(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	if err := server.PlanCap.Resume(r.Context(), login, time.Now().UnixMilli()); err != nil {
+	if err := act(r.Context(), login, time.Now().UnixMilli()); err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	server.handlePlanUsage(w, r)
+}
+
+// handleCapAgain ends a login's Resume now hold, so its plan cap holds
+// again until its windows reset, and answers with the plan usage that
+// results. It takes the body Resume now takes. With no cap of that login
+// resumed it changes nothing, so a second press is harmless (#1651).
+func (server *Server) handleCapAgain(w http.ResponseWriter, r *http.Request) {
+	server.actOnPlanCap(w, r, server.PlanCap.CapAgain)
 }
 
 func (server *Server) handlePlanUsage(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +146,9 @@ func planUsageOf(record store.PlanUsageRecord, planCap loop.Cap, fiveHour, seven
 	}
 	if planCap.ResumedUntil > now {
 		view.ResumedUntil = planCap.ResumedUntil
+	}
+	if planCap.Resumed(now) {
+		view.ResumedCap = &planCapView{Windows: planCap.Windows, Until: planCap.Until}
 	}
 	if view.FiveHour == nil && view.SevenDay == nil {
 		view.Unknown = unknownNotObserved

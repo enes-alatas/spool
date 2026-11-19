@@ -119,6 +119,24 @@ survive the reading going away.
      resets after the hold ends caps the fleet again. Resume now with
      nothing capped changes nothing.
 
+   **Amendment (2026-11-19, #1651; the operator's ask of 2026-11-18):
+   Cap again undoes a Resume now.**
+   - **Cap again** (`POST /api/plan-cap/cap-again`) ends a login's stored
+     Resume now hold. It takes the body Resume now takes, a
+     `claude_login`, the default with none, and answers as it does.
+   - The cap then holds again until its own *until*, as before the
+     Resume now. Its loops are capped at their next quiet boundary, as in
+     item 6, and no pause is recorded on them.
+   - It applies only while a Resume now is what keeps the cap from
+     holding: a window over its threshold and not yet reset, and a hold
+     that lasts until it has. Otherwise it changes nothing, so a second
+     press is harmless.
+   - `GET /api/plan-usage` adds `resumed_cap` on each login, null or
+     `{windows, until}`: the cap a Resume now holds off. It is not null
+     exactly while Cap again applies, so the control room offers Cap
+     again then. A login under its thresholds has a null `resumed_cap`,
+     even while its `resumed_until` lasts.
+
 9. **The API.**
    - `GET /api/plan-usage` adds `cap`, which is null or `{windows, until}`,
      and `resumed_until` while a hold lasts. Each window also carries its

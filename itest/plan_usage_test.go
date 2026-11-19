@@ -23,16 +23,21 @@ type planWindowJSON struct {
 
 // planUsageJSON is one Claude login's plan usage.
 type planUsageJSON struct {
-	FiveHour *planWindowJSON `json:"five_hour"`
-	SevenDay *planWindowJSON `json:"seven_day"`
-	AsOf     int64           `json:"as_of"`
-	Source   string          `json:"source"`
-	Unknown  string          `json:"unknown"`
-	Cap      *struct {
-		Windows []string `json:"windows"`
-		Until   int64    `json:"until"`
-	} `json:"cap"`
-	ResumedUntil int64 `json:"resumed_until"`
+	FiveHour     *planWindowJSON `json:"five_hour"`
+	SevenDay     *planWindowJSON `json:"seven_day"`
+	AsOf         int64           `json:"as_of"`
+	Source       string          `json:"source"`
+	Unknown      string          `json:"unknown"`
+	Cap          *planCapJSON    `json:"cap"`
+	ResumedUntil int64           `json:"resumed_until"`
+	ResumedCap   *planCapJSON    `json:"resumed_cap"`
+}
+
+// planCapJSON is a plan cap: the windows over their thresholds, and when
+// the last of them resets.
+type planCapJSON struct {
+	Windows []string `json:"windows"`
+	Until   int64    `json:"until"`
 }
 
 // planUsagesJSON is GET /api/plan-usage: every Claude login's plan usage,

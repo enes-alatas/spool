@@ -140,16 +140,18 @@ func (s *server) settingsThresholds() [2]int {
 // Each Claude login has its own plan cap (ADR-0060): a login over a
 // threshold sleeps the loops on it alone, while the default's loops keep
 // taking turns; a loop moved off it wakes; Resume now names the login it
-// lifts, and one naming the default leaves another login's cap. The loops
-// are bare, which the API refuses to put on a login, so the test names one
-// in the store: the cap holds a loop the same way on any runtime.
+// lifts, and one naming the default leaves another login's cap. Cap again
+// puts that login's cap back, and its loop sleeps again with no pause
+// recorded (#1651). The loops are bare, which the API refuses to put on a
+// login, so the test names one in the store: the cap holds a loop the
+// same way on any runtime.
 func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dataDir := t.TempDir()
 	hub := startServer(t, dataDir)
 	hub.createLoop("aster", map[string]any{"workspace_path": workspaceWithScript(t, "first\nanswered\n")})
-	hub.createLoop("bloom", map[string]any{"workspace_path": workspaceWithScript(t, "first\n!usage 0.95 0.3 over\nheld\n")})
+	hub.createLoop("bloom", map[string]any{"workspace_path": workspaceWithScript(t, "first\n!usage 0.95 0.3 over\nheld\nagain\n")})
 	hub.createLoop("dahlia", map[string]any{"workspace_path": workspaceWithScript(t, "first\nmoved\n")})
 	for _, name := range []string{"aster", "bloom", "dahlia"} {
 		hub.waitTurn(name, firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
@@ -205,5 +207,23 @@ func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
 		t.Fatalf("Resume now on ada answered ada %+v %d, default %d; want ada held off to its reset, the default untouched",
 			ada.Cap, ada.ResumedUntil, resumed.login("default").ResumedUntil)
 	}
+	if ada := resumed.login("ada"); ada.ResumedCap == nil || ada.ResumedCap.Until != ada.ResumedUntil || resumed.login("default").ResumedCap != nil {
+		t.Fatalf("after Resume now on ada: ada's resumed_cap %+v, the default's %+v; want ada's alone, until its hold",
+			ada.ResumedCap, resumed.login("default").ResumedCap)
+	}
 	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "held") })
+
+	hub.wantRefusal("POST", "/api/plan-cap/cap-again", map[string]any{"claude_login": "nobody"}, 400, "claude_login")
+	var capped planUsagesJSON
+	hub.mustJSON("POST", "/api/plan-cap/cap-again", map[string]any{"claude_login": "ada"}, &capped)
+	if ada := capped.login("ada"); ada.Cap == nil || ada.Cap.Until != resumed.login("ada").ResumedUntil || ada.ResumedCap != nil {
+		t.Fatalf("Cap again on ada answered cap %+v, resumed_cap %+v; want the cap back until its reset, nothing resumed", ada.Cap, ada.ResumedCap)
+	}
+	hub.mustJSON("POST", "/api/plan-cap/cap-again", map[string]any{"claude_login": "ada"}, nil)
+	hub.waitState("bloom", "capped", 15*time.Second)
+	if bloom := hub.loop("bloom"); bloom.CappedUntil != capped.login("ada").Cap.Until {
+		t.Fatalf("bloom capped_until %d; want ada's %d", bloom.CappedUntil, capped.login("ada").Cap.Until)
+	}
+	hub.message("bloom", "capped again")
+	hub.noTurn(2*time.Second, map[string]string{"bloom": "again"})
 }

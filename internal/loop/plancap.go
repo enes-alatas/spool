@@ -39,6 +39,13 @@ func (planCap Cap) Holds(now int64) bool {
 	return len(planCap.Windows) > 0 && now < planCap.Until && planCap.ResumedUntil < planCap.Until
 }
 
+// Resumed reports whether a Resume now is what keeps the cap from holding
+// at the time now: the windows are over and not yet reset, and the hold
+// lasts until they have. Cap again is offered exactly then (#1651).
+func (planCap Cap) Resumed(now int64) bool {
+	return len(planCap.Windows) > 0 && now < planCap.Until && planCap.ResumedUntil >= planCap.Until
+}
+
 // PlanCap judges the plan cap of each Claude login: a login over a
 // threshold caps only the loops on it, until that login's until (ADR-0060).
 // It keeps what the judgment rests on in memory, so an actor can ask on
@@ -145,34 +152,51 @@ func (planCap *PlanCap) Thresholds() (fiveHour, sevenDay int) {
 // windows have all reset, without changing the thresholds. With that login
 // not capped it changes nothing. The hold is stored, so a restart keeps it.
 func (planCap *PlanCap) Resume(ctx context.Context, login string, now int64) error {
+	return planCap.setResumedUntil(ctx, login, now, Cap.Holds, func(current Cap) int64 { return current.Until })
+}
+
+// CapAgain ends the Resume now hold on the cap of the login a loop names
+// as login, so the cap holds again until its own until, as before the
+// Resume now. With no cap of that login resumed it changes nothing
+// (#1651).
+func (planCap *PlanCap) CapAgain(ctx context.Context, login string, now int64) error {
+	return planCap.setResumedUntil(ctx, login, now, Cap.Resumed, func(Cap) int64 { return 0 })
+}
+
+// setResumedUntil stores the login's Resume now hold as resumedUntil makes
+// it from the login's cap judged at the time now, when applies says the
+// action applies to that cap; otherwise it changes nothing.
+func (planCap *PlanCap) setResumedUntil(ctx context.Context, login string, now int64, applies func(Cap, int64) bool, resumedUntil func(Cap) int64) error {
 	name := loginKey(login)
 	planCap.mu.Lock()
 	current := planCap.at(name, now)
-	if !current.Holds(now) {
+	if !applies(current, now) {
 		planCap.mu.Unlock()
 		return nil
 	}
+	hold := resumedUntil(current)
 	var err error
 	if name == store.DefaultClaudeLogin {
-		err = planCap.settings.Set(ctx, store.SettingPlanCapResumedUntil, strconv.FormatInt(current.Until, 10))
+		err = planCap.settings.Set(ctx, store.SettingPlanCapResumedUntil, strconv.FormatInt(hold, 10))
 	} else {
-		err = planCap.logins.SetPlanCapResumedUntil(ctx, name, current.Until)
+		err = planCap.logins.SetPlanCapResumedUntil(ctx, name, hold)
 	}
 	if err != nil {
 		planCap.mu.Unlock()
 		return err
 	}
 	state := planCap.held[name]
-	state.resumedUntil = current.Until
+	state.resumedUntil = hold
 	planCap.held[name] = state
 	planCap.mu.Unlock()
 	planCap.signal()
 	return nil
 }
 
-// Run judges the caps whenever Refresh or Resume changes what they rest
-// on, and when a holding cap's windows reset, and tells OnChange each time
-// a login's cap starts or stops holding. It returns when ctx is done.
+// Run judges the caps whenever Refresh, Resume or CapAgain changes what
+// they rest on, and when a holding cap's windows reset, and tells OnChange
+// each time a login's cap starts or stops holding. It returns when ctx is
+// done.
 func (planCap *PlanCap) Run(ctx context.Context) {
 	var holding []string
 	timer := time.NewTimer(time.Hour)

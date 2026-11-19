@@ -34,8 +34,10 @@ works per login too: a login over a threshold sleeps only the loops on
 it, until that login's windows reset, and the two thresholds apply to
 every login. Resume now names the login it lifts
 (`POST /api/plan-cap/resume` with `{"claude_login": "<name>"}`, the
-default with none). Bare loops follow the `default` login's cap, since
-they report into its usage. A cloud loop follows its own login's, though
+default with none), and Cap again (`POST /api/plan-cap/cap-again`,
+the same body) puts that login's cap back until its windows reset. Bare
+loops follow the `default` login's cap, since they report into its
+usage. A cloud loop follows its own login's, though
 its turns report no usage, so only the login's other loops
 move it. Moving a capped loop to a login that isn't capped wakes it.
 With more than one login, the Fleet page's plan strip shows a ring for

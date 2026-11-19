@@ -301,6 +301,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
 	mux.HandleFunc("GET /api/plan-usage", server.handlePlanUsage)
 	mux.HandleFunc("POST /api/plan-cap/resume", server.handleResumePlanCap)
+	mux.HandleFunc("POST /api/plan-cap/cap-again", server.handleCapAgain)
 	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
 	mux.HandleFunc("POST /api/onboarding/skip-surface", server.handleSkipSurface)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)

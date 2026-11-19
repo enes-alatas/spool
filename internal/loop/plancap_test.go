@@ -26,6 +26,7 @@ func TestCapOf(t *testing.T) {
 		wantWindows        []string
 		wantUntil          int64
 		wantHolds          bool
+		wantResumed        bool
 	}{
 		{
 			name:     "unknown usage never caps",
@@ -63,7 +64,12 @@ func TestCapOf(t *testing.T) {
 			name:     "a Resume now holds off the cap it was pressed on",
 			usage:    usage,
 			fiveHour: 90, sevenDay: 96, resumedUntil: 5000, now: 3000,
-			wantWindows: []string{PlanWindowFiveHour}, wantUntil: 5000,
+			wantWindows: []string{PlanWindowFiveHour}, wantUntil: 5000, wantResumed: true,
+		},
+		{
+			name:     "a Resume now whose windows have reset is over",
+			usage:    usage,
+			fiveHour: 90, sevenDay: 96, resumedUntil: 5000, now: 5000,
 		},
 		{
 			name:     "a window over past the hold caps again",
@@ -81,13 +87,17 @@ func TestCapOf(t *testing.T) {
 			if holds := got.Holds(test.now); holds != test.wantHolds {
 				t.Fatalf("Holds = %v; want %v", holds, test.wantHolds)
 			}
+			if resumed := got.Resumed(test.now); resumed != test.wantResumed {
+				t.Fatalf("Resumed = %v; want %v", resumed, test.wantResumed)
+			}
 		})
 	}
 }
 
 // TestPlanCapReadsItsSettings: the thresholds default to 90, a stored 0 is
 // off, an unusable value falls back to the default, and a Resume now is
-// stored, so a fresh PlanCap over the same settings still holds off.
+// stored, so a fresh PlanCap over the same settings still holds off; Cap
+// again ends the hold, and a restart keeps it ended.
 func TestPlanCapReadsItsSettings(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -138,12 +148,26 @@ func TestPlanCapReadsItsSettings(t *testing.T) {
 	if restarted.Holds("", 2000) {
 		t.Fatal("a restart forgot the Resume now")
 	}
+
+	if err := restarted.CapAgain(ctx, "", 2000); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.Holds("", 2000) || restarted.At("", 2000).Resumed(2000) {
+		t.Fatal("the cap does not hold again after Cap again")
+	}
+	capped := NewPlanCap(settings, db.ClaudeLogins(), nil)
+	if err := capped.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !capped.Holds("", 2000) {
+		t.Fatal("a restart brought back the Resume now that Cap again ended")
+	}
 }
 
 // Each Claude login has its own cap (ADR-0060): a login over a threshold
 // caps the loops on it alone, a loop that names none follows the default's,
 // and Resume now holds off one login's cap, stored where that login keeps
-// it, so a restart keeps it.
+// it, so a restart keeps it; Cap again ends one login's hold alone.
 func TestPlanCapIsJudgedPerLogin(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -192,5 +216,22 @@ func TestPlanCapIsJudgedPerLogin(t *testing.T) {
 	}
 	if restarted.Holds("ada", 2000) {
 		t.Fatal("ada's Resume now did not survive a restart")
+	}
+
+	if err := restarted.CapAgain(ctx, "bloom", 2000); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.CapAgain(ctx, "ada", 2000); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.Holds("ada", 2000) {
+		t.Fatal("ada's cap does not hold again after Cap again")
+	}
+	capped := NewPlanCap(db.Settings(), db.ClaudeLogins(), nil)
+	if err := capped.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !capped.Holds("ada", 2000) || capped.Holds("bloom", 2000) {
+		t.Fatal("after a restart, Cap again on ada did not keep ada capped and bloom not")
 	}
 }

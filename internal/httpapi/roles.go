@@ -92,7 +92,7 @@ var adminRoutes = []string{
 	"PUT /api/settings/cloud/listener", "PUT /api/settings/langfuse",
 	"GET /api/settings/cloud/environments", "PUT /api/settings/cloud/environment", "DELETE /api/settings/cloud/environment",
 	"POST /api/settings/cloud/environment/confirm",
-	"POST /api/plan-cap/resume", "POST /api/onboarding/harness-check", "POST /api/onboarding/skip-surface",
+	"POST /api/plan-cap/resume", "POST /api/plan-cap/cap-again", "POST /api/onboarding/harness-check", "POST /api/onboarding/skip-surface",
 	"POST /api/workspace/inspect",
 	"POST /api/rules", "PATCH /api/rules/{id}", "DELETE /api/rules/{id}",
 	"POST /api/models/custom", "PATCH /api/models/custom/{id}", "DELETE /api/models/custom/{id}",
