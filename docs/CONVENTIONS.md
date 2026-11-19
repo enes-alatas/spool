@@ -176,11 +176,11 @@ the gate and the roles are the release plan the operator agreed on
 
 - **Versions**: semver, `v0.<rung>.x`; completing rung Ln tags `v0.n+1.0`,
   and `v1.0.0` is the OSS launch (L6). A docs issue lists the release's
-  additions in the README and says whether the demo video still shows what
-  ships, re-recorded if not, before the tag ask (#684). A change that
-  alters stored data at first start adds its section to the docs site's
-  Release-specific steps (`site/content/reference/release-steps.md`) in
-  the same PR (#712).
+  additions in the README and the docs site and says whether the demo
+  video still shows what ships, re-recorded if not, before the tag ask
+  (#684). A change that alters stored data at first start adds its section
+  to the docs site's Release-specific steps
+  (`site/content/reference/release-steps.md`) in the same PR (#712).
 - **The operator tags, never a loop** (#223): notes come from commit titles,
   with no CHANGELOG, and `release.yml` publishes attested artifacts
   (ADR-0052).
@@ -231,10 +231,10 @@ the gate and the roles are the release plan the operator agreed on
   takes them as they are, with no browser in it (ADR-0071). A retake is
   its own commit, and a page that links a new shot adds its name to
   `scripts/site-shots.sh`.
-- **Videos too**: `make demo` (#447) records the README videos on a fixture
-  hub; the mp4s are uploaded as attachments, never committed. Remotion is
-  source-available: companies of more than three people need a licence from
-  remotion.pro before running it.
+- **Videos too**: `make demo` (#447) records the README's and the docs
+  site's videos on a fixture hub; the mp4s are uploaded as attachments,
+  never committed. Remotion is source-available: companies of more than
+  three people need a licence from remotion.pro before running it.
 - **A live credential in front of you is an incident**: stop, don't copy it,
   redact it where you can, and tell the operator privately; the value never
   goes in the group. Procedure: `/credential-incident`

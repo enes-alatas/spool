@@ -80,3 +80,45 @@ what the PR claims in your own words once you have checked it.
 
 The rest of how the team works (issues, branches, commits, reviews) is in
 [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
+
+## Development
+
+```bash
+make server         # Go binary only (uses last-built UI)
+make dev            # run backend on :8080
+make ui-dev         # vite dev server with /api proxy
+make test           # tier 1: unit + architecture tests
+make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~10min
+                    #         (~7min without a docker daemon; four files skip)
+make image          # build the spool-workstation and spool-egress images locally
+make lint           # gofmt + vet (as this machine's OS, then as macOS) + golangci-lint
+make e2e-m1         # tier 3: real claude sessions (spends plan tokens)
+```
+
+Testing is three-tiered (see `docs/CONVENTIONS.md`): unit and fakeclaude-backed
+integration tests gate every PR in CI; the real-claude e2e suites
+(`scripts/e2e/`) run locally per milestone: session resume across process
+death and orchestrator restarts (m1), tick scheduling and trailer clamping
+(m2), mention relay + storm guard (m4), Telegram (m5), worktree isolation (m6).
+
+### Project docs
+
+Running a hub:
+
+- [The docs site](https://enes-alatas.github.io/spool/): install on a server, back up, restore and upgrade;
+  Claude logins, management tokens, cloud loops and Langfuse
+- [Security](https://enes-alatas.github.io/spool/security/) on the docs site: what contains a loop, and the hub's own secrets
+- [Chat surfaces](https://enes-alatas.github.io/spool/start/chat-surfaces/) on the docs site: Telegram and Slack in full
+- `SECURITY.md`: what is supported, how to report a vulnerability privately,
+  and which properties of the design are known rather than bugs
+
+Working on Spool:
+
+- `docs/VISION.md`: product vision and the L0–L7 milestone ladder
+- `docs/ARCHITECTURE.md`: shape, seams, ubiquitous language
+- `docs/CONVENTIONS.md`: workflow, style, test tiers
+- `docs/QUALITY.md`: baselines and CI gates
+- `docs/THREAT-MODEL.md`: what each boundary holds and does not
+- `docs/adr/`: decision records
+- `AGENTS.md`: orientation for AI agents working on this repo (`CLAUDE.md` is
+  a symlink to it)

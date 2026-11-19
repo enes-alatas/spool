@@ -15,8 +15,9 @@ import {
   type Focus,
 } from './SpoolDemo'
 
-// The prompts.chat import video (#1326), beside the README's other two: the
-// same frame, short. A title, prompts.chat's own lists, a bot's page filling New loop, a team's page
+// The prompts.chat import video (#1326), on the docs site's Your first loop
+// page beside the cloud one: the README demo's frame, short. A title,
+// prompts.chat's own lists, a bot's page filling New loop, a team's page
 // making three loops and their channel, then the team on Fleet.
 // record.mjs's import-bot and import-team clips are one take each, which
 // the beats cut on their marks.

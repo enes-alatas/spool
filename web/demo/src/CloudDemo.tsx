@@ -17,11 +17,12 @@ import {
   type Focus,
 } from './SpoolDemo'
 
-// The cloud loop video (#1126), beside the README's demo: the same frame,
-// shorter. A title, New loop on the cloud runtime, the loop's page saying
-// where it runs as its first answer lands, then the loop in a channel with a
-// contained one. record.mjs's cloud clip is one take, which the first beats
-// cut on its marks; the cloud-talk clip is the last beat's.
+// The cloud loop video (#1126), on the docs site's Your first loop page: the
+// README demo's frame, shorter. A title, New loop on the cloud runtime, the
+// loop's page saying where it runs as its first answer lands, then the loop
+// in a channel with a contained one. record.mjs's cloud clip is one take,
+// which the first beats cut on its marks; the cloud-talk clip is the last
+// beat's.
 const C = marks.cloud
 const whole: Focus = { x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1 }
 const shot = {

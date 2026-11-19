@@ -78,8 +78,8 @@ half never holds a tag.
 - **No open `severity:high` bug:** `gh issue list --state open --label
   severity:high` lists none.
 - **An upgrade from the last tag:** on a fresh Linux machine, a throwaway
-  runner and never the fleet's host, install the last tag the README's
-  way. Then upgrade it from a clone of `main`, which needs Go and Node on
+  runner and never the fleet's host, install the last tag the way the docs
+  site's From a release does. Then upgrade it from a clone of `main`, which needs Go and Node on
   the machine: `sudo spool upgrade --dry-run --from-source <clone> main`,
   then the same without `--dry-run` (`site/content/run-a-hub/upgrade.md`). It passes
   when the hub answers at the new version on the same data directory. Elliot
@@ -104,7 +104,7 @@ the notes must keep naming what they named. The steps, in order:
    URL>. Use <the last good tag> until the next release.` as its first line,
    then `gh release edit vX.Y.Z --notes-file notes.md`.
 2. **The operator** sets it as a pre-release, so `releases/latest`, which
-   the README's quick start links, moves back to the last good release:
+   the docs site's From a release links, moves back to the last good release:
    `gh release edit vX.Y.Z --prerelease`. `gh release view --json tagName`
    then names the last good release.
 3. **The loop that owns the cause** fixes it on `main` through a normal PR.
