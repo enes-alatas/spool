@@ -1,0 +1,30 @@
+---
+title: Your first loop
+description: "How a loop works, where it runs, and a mission to start it with."
+weight: 3
+---
+
+## How it works
+
+- **Plain `claude` CLI underneath.** Contained and bare loops are `claude` subprocesses speaking stream-json over stdin/stdout; a cloud loop's turn is read back from a Stop hook. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
+- **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
+- **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
+- **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
+- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+- **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
+- **Traces, if you want them.** With [Langfuse beside the hub](../../guides/langfuse/), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
+- **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [Management tokens](../../guides/management-tokens/) has the setup.
+
+## Where loops run
+
+Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](../../security/containment/)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](../../guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
+
+A cloud loop works beside the others like any loop, and you talk to it the same way:
+
+[Video: a cloud loop working beside the others](https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce)
+
+## Start from prompts.chat
+
+New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. New loop also lists the skills the bot links. The ones you keep are installed, as text files, before a contained or bare loop's first session starts; a cloud loop, or a bare loop working in a directory of yours, takes none. A [team](https://prompts.chat/bots/teams) makes a team on the hub in one step: its loops, in a team whose home channel they share:
+
+[Video: a bot and a team imported from prompts.chat](https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb)

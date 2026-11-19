@@ -10,7 +10,7 @@ you own. The other Run a hub pages assume this layout:
 
 | What | Where |
 |---|---|
-| The checkout and `bin/spool` | `/opt/spool`, built by you (README steps 1–3) |
+| The checkout and `bin/spool` | `/opt/spool`, built by you ([Quick start](../../start/quick-start/) steps 1–3) |
 | The hub's user | `spool`, a system user in the `docker` group |
 | The data directory | `/home/spool/.spool` |
 | The control room | `127.0.0.1:8080`, reached only through the proxy |

@@ -159,7 +159,7 @@ in your checkout, and git refuses a checkout root doesn't own.
 4. **Check the build tools** if you build from source rather than
    downloading a release. The running hub needs neither Go nor Node; only
    `make build` does. Make sure your own shell has them, at the versions the
-   README names:
+   [quick start](../../start/quick-start/) names:
 
    ```bash
    go version && node --version && npm --version
@@ -220,7 +220,7 @@ images until the new hub starts, run `./bin/spool images | sh` after
 `systemctl stop spool` instead. The rest of the block stays the same.
 This block upgrades a hub installed in `/opt/spool`. To install a hub
 from a release on a machine that has never had one, see
-[From a release](https://github.com/enes-alatas/spool/blob/main/README.md#from-a-release) in the README.
+[From a release](../../start/from-a-release/).
 
 ```bash
 v=vX.Y.Z; p=linux_amd64                      # the target tag; linux_arm64 on ARM
@@ -246,7 +246,7 @@ references `spool images` prints.
 
 To try a release before upgrading to it, run `scripts/release-smoke.sh
 vX.Y.Z` from the clone on a throwaway VM with Docker. It installs the
-release the README's way, checks the checksum and attestations, and starts a
+release the way [From a release](../../start/from-a-release/) does, checks the checksum and attestations, and starts a
 hub on its images with a data directory of its own. Never run it on the
 fleet's host: it retags `spool-workstation` and `spool-egress`, and it
 refuses a daemon that already runs a hub's containers. The release

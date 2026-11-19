@@ -29,8 +29,6 @@ cascade:
 
 {{< label >}}The docs{{< /label >}}
 
-These docs are moving here from the repository. Until a section has its pages, its page links to where the answer is today.
-
 {{< cards >}}
   {{< card link="start/" title="Start" subtitle="From nothing to a loop you can talk to." >}}
   {{< card link="guides/" title="Guides" subtitle="One task per page." >}}
