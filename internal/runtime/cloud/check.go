@@ -75,14 +75,14 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 	if within <= 0 {
 		within = defaultStartWithin
 	}
-	ctx, cancel := context.WithTimeout(ctx, within)
-	defer cancel()
+	setup, cancelSetup := context.WithTimeout(ctx, setupWithin)
+	defer cancelSetup()
 	cli := cloud.CLI
 	settings, err := startSettings(source.EnvironmentID)
 	if err != nil {
 		return CheckStageEnvironment, err.Error()
 	}
-	if err := cloud.confirmEnvironment(ctx, source); err != nil {
+	if err := cloud.confirmEnvironment(setup, source); err != nil {
 		return CheckStageEnvironment, err.Error()
 	}
 	if !gitSafe(source) {
@@ -91,11 +91,13 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 	if err := cli.ownDir(); err != nil {
 		return CheckStageHub, err.Error()
 	}
-	dir, err := makeStartDir(ctx, cli.Dir, source)
+	dir, err := makeStartDir(setup, cli.Dir, source)
 	if err != nil {
 		return CheckStageHub, err.Error()
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	ctx, cancel := context.WithTimeout(ctx, within)
+	defer cancel()
 	run, err := cloud.newCLIRun(ctx, source.Login, dir)
 	if err != nil {
 		return CheckStageHub, err.Error()

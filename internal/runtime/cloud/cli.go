@@ -75,9 +75,13 @@ func (bounds Bounds) withDefaults() Bounds {
 // have, which the runner answers by starting a fresh one.
 const sessionLost = "No conversation found with session ID: "
 
-// The bound on a start, and on a send's CLI run.
+// The bound on a start, on the setup before a start's CLI runs, and on a
+// send's CLI run. The setup, confirming the environment and making the
+// start directory, is bounded on its own, so StartWithin is all the
+// session's (#1679).
 const (
 	defaultStartWithin = 2 * time.Minute
+	setupWithin        = 2 * time.Minute
 	sendWithin         = 2 * time.Minute
 )
 
@@ -629,23 +633,25 @@ func (session *cliSession) startSession(text string) error {
 	if within <= 0 {
 		within = defaultStartWithin
 	}
-	ctx, cancel := context.WithTimeout(session.ctx, within)
-	defer cancel()
+	setup, cancelSetup := context.WithTimeout(session.ctx, setupWithin)
+	defer cancelSetup()
 	settings, err := startSettings(session.source.EnvironmentID)
 	if err != nil {
 		return err
 	}
-	if err := session.cloud.confirmEnvironment(ctx, session.source); err != nil {
+	if err := session.cloud.confirmEnvironment(setup, session.source); err != nil {
 		return err
 	}
 	if err := cli.ownDir(); err != nil {
 		return err
 	}
-	dir, err := makeStartDir(ctx, cli.Dir, session.source)
+	dir, err := makeStartDir(setup, cli.Dir, session.source)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
+	ctx, cancel := context.WithTimeout(session.ctx, within)
+	defer cancel()
 	run, err := session.cloud.newCLIRun(ctx, session.source.Login, dir)
 	if err != nil {
 		return err

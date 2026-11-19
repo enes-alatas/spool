@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -295,6 +296,28 @@ func TestCLIStartFailsWhenNoSessionStartsInTime(t *testing.T) {
 				t.Error("a SessionStart after the start failed was taken")
 			}
 		})
+	}
+}
+
+// A git slow enough to use up the start's bound making the start
+// directory leaves the session its whole bound: the start fails on the
+// session that never posted, not on git (#1679).
+func TestCLIStartGivesTheSessionItsBoundAfterASlowSetup(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH")
+	}
+	slow := t.TempDir()
+	if err := os.WriteFile(filepath.Join(slow, "git"), []byte("#!/bin/sh\nsleep 0.2\nexec "+git+" \"$@\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", slow+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cloud := cliRuntime(t, `echo "Uploading the repository"; exit 0`)
+	cloud.CLI.StartWithin = 300 * time.Millisecond
+	proc := startCLI(t, cloud, testSpec())
+	_, result := turnResult(t, proc, "hello")
+	if want := "the session never reached the hub within 300ms"; !result.IsError || !strings.Contains(result.ResultText, want) {
+		t.Errorf("the turn ended as %q, want an error saying %q", result.ResultText, want)
 	}
 }
 
