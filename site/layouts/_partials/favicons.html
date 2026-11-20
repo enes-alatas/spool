@@ -1,0 +1,9 @@
+{{- /* Spool's mark in the tab, bookmarks and on a home screen (#1705), the
+same three files the control room serves (web/index.html), copied into
+site/static. This shadows the theme's partial, which links Hextra's icons
+and its web manifest; the theme itself is untouched. The SVG follows the
+browser's light or dark scheme; the PNGs are for browsers that take no SVG
+icon, and for iOS, which wants an opaque square. */ -}}
+<link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml" />
+<link rel="icon" href="{{ "favicon-32.png" | relURL }}" type="image/png" sizes="32x32" />
+<link rel="apple-touch-icon" href="{{ "apple-touch-icon.png" | relURL }}" sizes="180x180" />
