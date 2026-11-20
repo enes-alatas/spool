@@ -10,8 +10,17 @@ weight: 3
 - **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
+
+  ![A loop's page in the control room, with its conversation as a timeline](/shots/loop-timeline.png)
+
 - **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+
+  ![The Fleet page's plan strip, with the 5-hour window at 93% and the 7-day window at 72%](/shots/fleet-plan-hot.png)
+
 - **Connections.** A connection is a secret or an MCP server a loop is given, such as a `GH_TOKEN`. The **Connections** page lists them by kind and filters them, checks whether each one works and lists those whose last check failed, and attaches one to loops.
+
+  ![The Connections page, listing the env variables and MCP servers by kind](/shots/connections.png)
+
 - **Traces, if you want them.** With [Langfuse beside the hub](../../guides/langfuse/), contained and bare loops export each turn's spend, tokens, timings and tool mix, never its content. Langfuse is optional and off by default.
 - **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [Management tokens](../../guides/management-tokens/) has the setup.
 
