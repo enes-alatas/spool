@@ -247,6 +247,7 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 const loopReadCols = loopCols + `,
 	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
 	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check, cloud_script_digest, paused_by, COALESCE(team, ''),
+	background_running, background_ended, background_ended_by,
 	COALESCE((SELECT claude_login FROM teams WHERE teams.name=loops.team), '')`
 
 // scanLoop reads a loops row, opening its sealed tokens.
@@ -266,7 +267,8 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName,
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
-		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy, &loopRecord.Team, &loopRecord.TeamClaudeLogin)
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck, &loopRecord.CloudScriptDigest, &loopRecord.PausedBy, &loopRecord.Team,
+		&loopRecord.BackgroundRunning, &loopRecord.BackgroundEnded, &loopRecord.BackgroundEndedBy, &loopRecord.TeamClaudeLogin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -608,6 +610,13 @@ func (table loops) SetRuntime(ctx context.Context, id, sessionID string, pid int
 func (table loops) SetRotation(ctx context.Context, id string, pending bool, reason, note string) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET rotate_pending=?, rotate_reason=?, handoff_note=? WHERE id=?`, pending, reason, note, id)
+	return err
+}
+
+func (table loops) SetBackground(ctx context.Context, id string, running, ended int, endedBy string) error {
+	_, err := table.db.ExecContext(ctx,
+		`UPDATE loops SET background_running=?, background_ended=?, background_ended_by=? WHERE id=?`,
+		running, ended, endedBy, id)
 	return err
 }
 

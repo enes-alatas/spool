@@ -52,6 +52,11 @@ func Args(opts Opts) ([]string, error) {
 		"-p", "--verbose", // --verbose is mandatory with -p + stream-json output
 		"--input-format", "stream-json",
 		"--output-format", "stream-json",
+		// each user message the hub writes comes back as the turn that
+		// takes it starts, under the uuid the hub gave it: how a turn of
+		// the hub's is told from one the CLI starts itself when a
+		// background command exits (#1709)
+		"--replay-user-messages",
 		"--permission-mode", "bypassPermissions",
 	}
 	if opts.Model != "" {

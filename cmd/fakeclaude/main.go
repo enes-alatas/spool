@@ -33,6 +33,15 @@
 // the exit holds the loop's actor for the exit grace (#1143, #1247). A "!send" directive may write "$ref" where the reference of the message
 // being answered belongs; the fake substitutes it from the envelope header.
 //
+// A "!bg <seconds>" prefix makes the turn leave a command running in the
+// background for that long, as a Bash call with run_in_background does: a
+// system/background_tasks_changed event lists it before the turn's
+// result, and its exit, while stdin is open, starts a turn of the fake's
+// own whose input is a task notification, with no stdin message (#1709,
+// background.go). Under --replay-user-messages each stdin message comes
+// back as a replayed user event, under the uuid it was written with, as
+// the turn that takes it starts.
+//
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API
 // step — how a filling context looks from outside — and composes with the
 // rest of the line ("!ctx 120000 !hang 2"). A "!steps <k>" prefix makes the
@@ -193,7 +202,7 @@ const costPerTurn = 0.001
 
 func main() {
 	var sessionID, resumeID, model, systemPrompt, mcpConfig, settings string
-	partials := false
+	partials, replay := false, false
 
 	args := os.Args[1:]
 	if slices.Contains(args, "--cloud") || (len(args) > 0 && args[0] == cloudVMArg) {
@@ -224,6 +233,8 @@ func main() {
 			resumeID = args[i]
 		case "--include-partial-messages":
 			partials = true
+		case "--replay-user-messages":
+			replay = true
 		case "--model":
 			i++
 			model = args[i] // echoed back at init, as the real CLI resolves and reports it
@@ -295,24 +306,35 @@ func main() {
 		out.Flush()
 	}
 
-	in := bufio.NewScanner(os.Stdin)
-	in.Buffer(make([]byte, 64*1024), 10*1024*1024)
+	// Turns start from the hub's messages on stdin, and from background
+	// commands exiting, which start a turn of the CLI's own (#1709).
+	commands := newBackgrounds(stateDir)
+	go commands.readStdin(os.Stdin)
 
 	first := true
-	for in.Scan() {
-		var msg struct {
-			Message struct {
-				Content []struct {
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"message"`
+	for in := range commands.inputs {
+		text := in.text
+		// the CLI's level event, then the notification a turn reads
+		// (observed on 2.1.326, FIDELITY.md)
+		notify := func(exited []string) {
+			emit(map[string]any{"type": "system", "subtype": "background_tasks_changed", "tasks": commands.tasks(), "session_id": id})
+			for _, task := range exited {
+				emit(map[string]any{
+					"type": "system", "subtype": "task_notification", "task_id": task,
+					"status": "completed", "output_file": "/tmp/" + task + ".output",
+					"summary": "Background command \"" + task + "\" completed (exit code 0)", "session_id": id,
+				})
+			}
 		}
-		if err := json.Unmarshal(in.Bytes(), &msg); err != nil {
-			continue
-		}
-		text := ""
-		for _, block := range msg.Message.Content {
-			text += block.Text
+		if len(in.exited) > 0 {
+			if !in.told {
+				notify(in.exited)
+			}
+			notes := ""
+			for _, task := range in.exited {
+				notes += "<task-notification><task-id>" + task + "</task-id><status>completed</status></task-notification>"
+			}
+			text = notes + text
 		}
 
 		if first {
@@ -341,6 +363,14 @@ func main() {
 			}
 			init["tools"] = tools
 			emit(init)
+		}
+		if replay && in.uuid != "" {
+			// the hub's message, back as the turn that takes it starts
+			// (assumed: FIDELITY.md)
+			emit(map[string]any{
+				"type": "user", "isReplay": true, "uuid": in.uuid, "session_id": id,
+				"message": map[string]any{"role": "user", "content": in.message},
+			})
 		}
 
 		if _, err := os.Stat(filepath.Join(stateDir, "login-slow")); err == nil {
@@ -434,6 +464,7 @@ func main() {
 		var planUsage []float64    // the turn's five-hour and seven-day utilization, when scripted
 		wedge := 0                 // seconds to live on with stdout closed after the result, when scripted
 		var fiveHourResetSec int64 // how far off the five-hour window's reset is, when scripted
+		var started []int          // seconds each background command this turn starts runs for, when scripted
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
 			for {
@@ -456,6 +487,13 @@ func main() {
 						fiveHourResetSec, _ = strconv.ParseInt(strings.TrimPrefix(field, "resets="), 10, 64)
 						rest = after
 					}
+					line = strings.TrimSpace(rest)
+					continue
+				}
+				if strings.HasPrefix(line, "!bg ") {
+					numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!bg "), " ")
+					seconds, _ := strconv.Atoi(numStr)
+					started = append(started, seconds)
 					line = strings.TrimSpace(rest)
 					continue
 				}
@@ -664,6 +702,33 @@ func main() {
 				},
 				"session_id": id,
 			})
+		}
+		if len(started) > 0 {
+			// the turn's Bash calls left commands running in the
+			// background: the level event says so before the turn ends
+			for _, seconds := range started {
+				commands.start(time.Duration(seconds) * time.Second)
+			}
+			emit(map[string]any{"type": "system", "subtype": "background_tasks_changed", "tasks": commands.tasks(), "session_id": id})
+		}
+		if len(in.exitsDuring) > 0 {
+			// commands that exited while this turn ran (bg-race "during"
+			// and "inject")
+			notify(in.exitsDuring)
+		}
+		if in.injected {
+			// the turn reads them itself: a replayed user event under a
+			// uuid of the CLI's own, then an answer in the same result
+			// (observed on 2.1.326, FIDELITY.md)
+			notes := ""
+			for _, task := range in.exitsDuring {
+				notes += "<task-notification><task-id>" + task + "</task-id><status>completed</status></task-notification>"
+			}
+			emit(map[string]any{
+				"type": "user", "isReplay": true, "uuid": "cli-" + in.exitsDuring[0], "session_id": id,
+				"message": map[string]any{"role": "user", "content": notes},
+			})
+			reply += "\n\n" + notes
 		}
 		state.CostUSD += costPerTurn
 		emit(map[string]any{

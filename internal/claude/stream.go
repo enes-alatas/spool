@@ -43,9 +43,15 @@ func Attach(stdin io.WriteCloser, stdout, stderr io.Reader) *Stream {
 
 // Send writes one user message. Never call while a previous turn is in
 // flight; turn serialization is the caller's job.
-func (stream *Stream) Send(text string) error {
+func (stream *Stream) Send(text string) error { return stream.SendTagged("", text) }
+
+// SendTagged is Send with the message's uuid set, so the CLI's replay of
+// it names the turn that took it (--replay-user-messages, #1709). An empty
+// uuid leaves it to the CLI.
+func (stream *Stream) SendTagged(uuid, text string) error {
 	var msg userMessage
 	msg.Type = "user"
+	msg.UUID = uuid
 	msg.Message.Role = "user"
 	msg.Message.Content = []struct {
 		Type string `json:"type"`
@@ -184,6 +190,7 @@ func trimNewline(line []byte) []byte {
 
 type userMessage struct {
 	Type    string `json:"type"`
+	UUID    string `json:"uuid,omitempty"`
 	Message struct {
 		Role    string `json:"role"`
 		Content []struct {

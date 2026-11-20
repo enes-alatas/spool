@@ -44,10 +44,19 @@ const (
 	EndReasonRotated = "rotated" // retired by a deliberate context rotation (ADR-0022)
 	EndReasonPaused  = "paused"  // ended by a pause, as a cloud loop's session refused its connections is (#1278)
 
-	TriggerTick     = "tick"
-	TriggerMessage  = "message"
-	TriggerManual   = "manual"
-	TriggerRotation = "rotation" // the handoff turn a context rotation injects
+	TriggerTick       = "tick"
+	TriggerMessage    = "message"
+	TriggerManual     = "manual"
+	TriggerRotation   = "rotation"   // the handoff turn a context rotation injects
+	TriggerBackground = "background" // a turn the CLI started itself when a background command exited (#1709)
+
+	// Why the hub ended a loop's background commands, which its next wake is
+	// told (#1709).
+	BackgroundEndedHold    = "hold"    // the loop's process stayed idle with commands running for the whole hold
+	BackgroundEndedPause   = "pause"   // the operator paused or killed the loop, or switched its workstation off
+	BackgroundEndedCap     = "cap"     // a plan cap, the daily cap or the usage limit took hold
+	BackgroundEndedRestart = "restart" // the hub stopped, and its processes with it
+	BackgroundEndedExit    = "exit"    // the process ended another way: a crash, a changed connection, a rotation
 
 	// Why a context rotation was taken, which decides what the handoff turn
 	// and the fresh session after it are told (#272).
@@ -552,6 +561,14 @@ type Loop struct {
 	// rule or catalog change is noticed. Engine bookkeeping like the pair
 	// above, and json:"-" for the same reason.
 	PromptHash string `json:"-"`
+	// BackgroundRunning is how many background commands the loop's live
+	// claude process last reported running; BackgroundEnded and
+	// BackgroundEndedBy are the commands the hub ended and why (a
+	// BackgroundEnded* value), owed to the loop's next wake (#1709). Engine
+	// bookkeeping like the fields above, kept from every API response.
+	BackgroundRunning int    `json:"-"`
+	BackgroundEnded   int    `json:"-"`
+	BackgroundEndedBy string `json:"-"`
 	// ModelRefusal is what the CLI said when the API did not recognize the
 	// loop's model: a sentence naming it, "" while the model has not been
 	// refused (#289). A loop with one takes no turns until its model is
@@ -1151,6 +1168,10 @@ type LoopStore interface {
 	// its mind, so a restart reads the decision rather than starting the loop
 	// over.
 	SetRotation(ctx context.Context, id string, pending bool, reason, note string) error
+	// SetBackground records the loop's background commands: how many its live
+	// process runs, and how many the hub ended and why, owed to its next
+	// wake (#1709). Narrow, as the setters around it are.
+	SetBackground(ctx context.Context, id string, running, ended int, endedBy string) error
 	// SetPromptHash records the system prompt the loop's current session was
 	// created with, so a later wake can tell whether the prompt it renders is
 	// the one that session is running (#162). Narrow for the same reason as
