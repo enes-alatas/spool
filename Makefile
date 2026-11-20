@@ -215,6 +215,7 @@ workflow-lint:
 	bash scripts/workflow-lint-test.sh
 	bash scripts/community-welcome-test.sh
 	bash scripts/community-pr-test.sh
+	bash scripts/community-stale-test.sh
 	bash scripts/ci-health-test.sh
 	bash scripts/diff-coverage-test.sh
 	bash scripts/test-failures-test.sh
