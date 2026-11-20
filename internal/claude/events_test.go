@@ -41,3 +41,29 @@ func TestMCPTools(t *testing.T) {
 		}
 	}
 }
+
+// TestBackgroundEvents: the level of running background commands, and the
+// replay of the hub's own message, are read off the lines the CLI writes
+// for them (#1709); a replay of anything else, and every other event, say
+// neither.
+func TestBackgroundEvents(t *testing.T) {
+	two := DecodeEvent([]byte(`{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash"},{"task_id":"b2"}]}`))
+	if two.BackgroundTasks == nil || *two.BackgroundTasks != 2 {
+		t.Fatalf("two running commands read as %v", two.BackgroundTasks)
+	}
+	none := DecodeEvent([]byte(`{"type":"system","subtype":"background_tasks_changed","tasks":[]}`))
+	if none.BackgroundTasks == nil || *none.BackgroundTasks != 0 {
+		t.Fatalf("an empty level read as %v", none.BackgroundTasks)
+	}
+	if init := DecodeEvent([]byte(`{"type":"system","subtype":"init","session_id":"s"}`)); init.BackgroundTasks != nil {
+		t.Fatalf("init read as a level of %d", *init.BackgroundTasks)
+	}
+	replay := DecodeEvent([]byte(`{"type":"user","isReplay":true,"uuid":"u-1","message":{"role":"user","content":"hi"}}`))
+	if replay.ReplayUUID != "u-1" {
+		t.Fatalf("the replay's uuid read as %q", replay.ReplayUUID)
+	}
+	toolResult := DecodeEvent([]byte(`{"type":"user","uuid":"u-2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t"}]}}`))
+	if toolResult.ReplayUUID != "" {
+		t.Fatalf("a tool result read as the replay of %q", toolResult.ReplayUUID)
+	}
+}

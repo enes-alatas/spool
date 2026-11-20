@@ -103,6 +103,11 @@ const (
 	// drainGrace bounds a stdin-close drain; a process that ignores EOF is
 	// killed rather than left parking the loop (and any queued work) forever.
 	drainGrace = 30 * time.Second
+	// backgroundHold is how long a loop's process is held open past the
+	// end of its last turn while background commands it started run: a
+	// command's exit wakes the loop only while the process lives (#1709).
+	// Four hours, the longest next-wake a loop may ask for.
+	backgroundHold = 4 * time.Hour
 
 	defaultHealthInterval = 45 * time.Second
 	healthCheckTimeout    = 10 * time.Second
@@ -138,6 +143,9 @@ type Deps struct {
 	// ExitGrace is how long a claude that has closed its output is given to
 	// exit before the hub ends it (#1247); 0 means the drain's grace.
 	ExitGrace time.Duration
+	// BackgroundHold is how long an idle process is held open while
+	// background commands it started run (#1709); 0 means backgroundHold.
+	BackgroundHold time.Duration
 	// SendOutage reports whether the surface the loop's latest send failed
 	// on looks down, which holds its send_failed wake and notice (#1144).
 	// NewManager sets it; nil holds nothing.
@@ -297,7 +305,19 @@ type Actor struct {
 	spawnModel   string       // model the running process was started on, which an edit does not change
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	killedFor    string       // why the hub killed the current process, for the turn it ends
-	backoff      time.Duration
+	// The live process's background commands (#1709): how many it last
+	// reported running, why the hub is ending them when it is, and when
+	// the last turn the hub started ended, which the hold is counted from:
+	// a turn of the CLI's own does not move it, so a chain of commands
+	// started from background turns ends with the hold too.
+	background int
+	endingBy   string
+	holdFrom   time.Time
+	notified   bool // the CLI said a command exited, and no turn of its own has taken it yet
+	turnTaken  bool // the CLI replayed the hub's message for the turn in flight
+	replays    bool // the live process replays the hub's messages, so turnTaken can be read
+	endedTold  int  // ended background commands the turn in flight was told of
+	backoff    time.Duration
 	// unwritten is the session id mintSession chose, while nothing says the
 	// CLI has written it: a process killed at its init leaves no session
 	// (FIDELITY.md). So a wake whose spawn failed, or whose process died
@@ -665,6 +685,8 @@ func (actor *Actor) Shutdown() {
 
 func (actor *Actor) run() {
 	defer close(actor.stopped)
+	// commands a process ran when the hub last stopped ended with it
+	actor.restoreBackground(context.Background())
 	if actor.cloudUnset() {
 		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudSetup, Since: now()})
 	}
@@ -746,6 +768,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.paused = true
 		actor.noteWakeFailure("")
 		actor.pauseCloud(context.Background())
+		actor.endHeldCommands(store.BackgroundEndedPause)
 		actor.publishState()
 		command.reply <- nil
 	case "resume":
@@ -797,6 +820,10 @@ func (actor *Actor) handleCmd(command cmd) {
 		// edit's own row is what the next wake must be compared against,
 		// but only the actor knows what it last spawned with (#162)
 		actor.loop.PromptHash = token.PromptHash
+		// and the background commands, which only the actor follows (#1709)
+		actor.loop.BackgroundRunning = token.BackgroundRunning
+		actor.loop.BackgroundEnded = token.BackgroundEnded
+		actor.loop.BackgroundEndedBy = token.BackgroundEndedBy
 		// and a cloud loop's hub token, which a kill revokes and Rotate
 		// token tells the actor of: the edit's row may carry one already
 		// revoked
@@ -876,6 +903,10 @@ func (actor *Actor) capChanged() {
 	capped := actor.capped()
 	lifted := actor.wasCapped && !capped
 	actor.wasCapped = capped
+	if capped {
+		// a command's exit would start a turn the cap forbids
+		actor.endHeldCommands(store.BackgroundEndedCap)
+	}
 	if lifted && !actor.holdsWork() {
 		actor.drainStoredInbox()
 		if len(actor.inbox) == 0 && (actor.state == StateAsleep || actor.state == StateIdle) {
@@ -1619,6 +1650,12 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	if actor.deps.OnTurnStart != nil {
 		actor.deps.OnTurnStart(&actor.loop)
 	}
+	if !actor.handoffTurn {
+		if note := actor.takeEndedNote(); note != "" {
+			// what the loop left running that will not wake it now (#1709)
+			text = note + "\n\n---\n\n" + text
+		}
+	}
 	if actor.promptDelta != "" && !actor.handoffTurn {
 		// Ahead of everything else: the loop must read what now binds it
 		// before it reads the work it binds, and before news about work it
@@ -1666,7 +1703,8 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		text = notes + "\n\n---\n\n" + text
 	}
 
-	if err := actor.proc.Send(text); err != nil {
+	actor.turnTaken = false
+	if err := sendTagged(actor.proc, turn.ID, text); err != nil {
 		actor.log().Error("send failed", "err", err)
 		actor.killProc(fmt.Sprintf("the hub could not hand the turn to claude: %v", err))
 		// exit path will requeue currentBatch if the session was lost
@@ -1716,10 +1754,29 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 		if actor.state == StateWaking && actor.turn == nil {
 			// spawned with no work (shouldn't normally happen)
 			actor.state = StateIdle
+			actor.holdFrom = time.Now()
 			actor.armIdleTimer()
 			actor.publishState()
 		}
+	case ev.BackgroundTasks != nil:
+		actor.storeClaudeEvent(ev)
+		actor.backgroundChanged(*ev.BackgroundTasks)
+	case ev.Type == "system" && ev.Subtype == "task_notification":
+		// a command the loop left running exited: the CLI takes it into a
+		// turn of its own, or into the turn in flight (#1709)
+		actor.notified = true
+		actor.openBackgroundTurn()
+		actor.storeClaudeEvent(ev)
+	case ev.ReplayUUID != "":
+		// the CLI took the hub's message into the turn it starts now; not
+		// stored, since the envelope it carried already is
+		actor.replays = true
+		if actor.turn != nil && ev.ReplayUUID == actor.turn.ID {
+			actor.turnTaken = true
+		}
 	case ev.Type == "assistant":
+		// a turn nobody asked for is one the CLI started itself
+		actor.openBackgroundTurn()
 		// the API answered, so the CLI may have written the session
 		actor.unwritten = ""
 		// each API call of the turn reports its own usage here; the latest
@@ -1760,6 +1817,23 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			// is back in the queue, and it ran without the hub's tools
 			return
 		}
+		if actor.replays && actor.turn != nil && actor.notified && !actor.turnTaken && actor.turn.Trigger != store.TriggerBackground {
+			// The CLI ran a turn of its own for a command that exited
+			// before it took the hub's message: that turn is this result,
+			// and the hub's is still to come (#1709).
+			actor.notified = false
+			actor.finishBackgroundTurn(ev.Result)
+			return
+		}
+		// Only a turn of the CLI's own takes a notification. One heard
+		// during the hub's turn waits for its own, which may run before
+		// the hub's next message does. A notification the hub's turn
+		// took with its message stays set, which is harmless: once the
+		// CLI replays, a result before the replay is never the hub's.
+		if actor.turn != nil && actor.turn.Trigger == store.TriggerBackground {
+			actor.notified = false
+		}
+		actor.turnTaken = false
 		actor.finishTurn(ev)
 	default:
 		actor.storeClaudeEvent(ev)
@@ -1768,6 +1842,9 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 
 func (actor *Actor) finishTurn(ev claude.Event) {
 	res := ev.Result
+	// a result with no turn is one nobody accounted for, so it does not
+	// restart the hold either (#1709)
+	hubsTurn := actor.turn != nil && actor.turn.Trigger != store.TriggerBackground
 	loginRejected := actor.turnRefusal != "" && res != nil && res.IsError && !actor.handoffTurn
 	// a turn the plan's usage limit refused is held like a capped one
 	limitRefused := !loginRejected && actor.turnLimited && res != nil && res.IsError && !actor.handoffTurn
@@ -1781,73 +1858,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.recordOversizedBatch()
 	}
 	if actor.turn != nil && res != nil {
-		turn := actor.turn
-		turn.EndedAt = now()
-		turn.IsError = res.IsError
-		turn.ResultText = res.ResultText
-		// The CLI reports the session's running total, not this turn's price
-		// (#191). The turn cost what the total gained, measured against the
-		// store rather than a remembered value so a restart mid-session
-		// prices the next turn correctly. Clamped at zero: a total that
-		// failed to grow means nothing was spent — an errored turn repeats
-		// the previous figure — never that a turn earned money back.
-		// A cloud turn's result carries the hub's estimate of the turn
-		// alone, and no running total (ADR-0059).
-		if res.CostEstimated {
-			turn.CostUSD, turn.CostEstimated = res.TurnCostUSD, true
-		} else {
-			turn.SessionCostUSD = res.CostUSD
-			prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, turn.SessionID)
-			if err != nil {
-				// Price it as a first turn: the whole total. Wrong when the
-				// session had earlier turns, and wrong in the direction that
-				// shows up as too much rather than as free work.
-				actor.log().Error("session cost unavailable", "err", err)
-				prior = 0
-			}
-			cost := max(0, res.CostUSD-prior)
-			turn.CostUSD = &cost
-		}
-		turn.InputTokens = res.Usage.InputTokens
-		turn.OutputTokens = res.Usage.OutputTokens
-		turn.CacheReadTokens = res.Usage.CacheReadTokens
-		turn.CacheWriteTokens = res.Usage.CacheCreationTokens
-		turn.ContextTokens = contextOccupancy(actor.lastCall)
-		turn.DurationMS = res.DurationMS
-		turn.Model = actor.activeModel
-		if err := actor.deps.Store.Turns().Finish(context.Background(), turn); err != nil {
-			actor.log().Error("turn finish", "err", err)
-		}
-		actor.spendStale = true
-		actor.armDailyCap()
-		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
-		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
-		actor.watchSends()
-		switch {
-		case loginRejected, limitRefused:
-			// told by the workstation's state, or the loop's, instead
-		case turn.IsError:
-			actor.noteWakeFailure(WakeFailureTurn)
-		default:
-			actor.noteWakeFailure("")
-		}
-
-		// The final reply is the turn's status note (ADR-0026): stored and
-		// published above, delivered to no conversation — a loop that wants
-		// to say something sends it explicitly. Only the trailers are read
-		// (the handoff turn's reply is a note to the loop's successor and
-		// is not even that).
-		var trailer time.Duration
-		var hasTrailer bool
-		if !res.IsError && !actor.handoffTurn {
-			trailer, hasTrailer = ParseTrailer(res.ResultText)
-			if doing, set := ParseDoing(res.ResultText); set {
-				actor.setDoing(doing)
-			}
-		}
-		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
-			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
-		}
+		actor.recordTurnEnd(actor.turn, res, loginRejected, limitRefused)
 	}
 	if loginRejected {
 		actor.rejectLogin(actor.turnRefusal)
@@ -1892,6 +1903,8 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.handoffNote, actor.handoffReason = "", ""
 		actor.setRotationState(actor.loop.RotatePending, "")
 	}
+	// Told on completion for the same reason as the notes below.
+	actor.endedNoteTold()
 	if len(actor.sendFailureIDs) > 0 {
 		// The news is in the session's history now. Marked on completion
 		// rather than when it was rendered, so a turn that never finished
@@ -1934,7 +1947,10 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	// takes hold at (ADR-0047). So is it for a cloud loop its public
 	// address holds (ADR-0056).
 	held := actor.held()
-	rotationDue := (actor.armed || actor.rotateAsked != "") && !actor.paused && !held && !actor.hasWork()
+	// A rotation the fill arms waits while background commands run, since
+	// the fresh process would end them; one the operator asks for does not
+	// (#1709).
+	rotationDue := (actor.armed && actor.background == 0 || actor.rotateAsked != "") && !actor.paused && !held && !actor.hasWork()
 	if actor.envStale && !rotationDue {
 		// the env changed during the turn: the queued work, if any, waits
 		// for the process its next turn spawns with the new env (#640). A
@@ -1955,6 +1971,15 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		return
 	}
 	actor.state = StateIdle
+	if hubsTurn || actor.holdFrom.IsZero() {
+		// only a turn the hub started restarts the hold (#1709)
+		actor.holdFrom = time.Now()
+	}
+	if actor.background > 0 && !actor.mayHoldCommands() {
+		// a command's exit would start a turn the loop may not take
+		actor.endHeldCommands(actor.stopHoldingWhy())
+		return
+	}
 	actor.armIdleTimer()
 	actor.publishState()
 }
@@ -2021,6 +2046,12 @@ func (actor *Actor) measureContext() {
 }
 
 func (actor *Actor) armIdleTimer() {
+	if actor.background > 0 {
+		// held open while its background commands run, for the hold
+		// counted from the end of the last turn the hub started (#1709)
+		actor.idleTimer.Reset(max(0, time.Until(actor.holdFrom.Add(actor.backgroundHold()))))
+		return
+	}
 	timeout := time.Duration(actor.loop.IdleTimeoutSec) * time.Second
 	if timeout <= 0 {
 		timeout = 90 * time.Second
@@ -2034,6 +2065,9 @@ func (actor *Actor) handleIdleTimeout() {
 	}
 	switch actor.state {
 	case StateIdle:
+		if actor.background > 0 {
+			actor.endingBy = store.BackgroundEndedHold
+		}
 		actor.closeIdleProcess()
 	case StateDraining:
 		// the process ignored EOF past the grace: kill it — the exit path
@@ -2082,6 +2116,7 @@ func (actor *Actor) handleProcExit() {
 	actor.handoffTurn = false
 	killedFor := actor.killedFor
 	actor.killedFor = ""
+	actor.commandsEnded(killedFor)
 	sessionLost := claude.IsSessionNotFound(exit)
 	// A resume that dies before the CLI announces itself never loaded the
 	// session at all. One can be a blip; a run of them means this session
@@ -3412,4 +3447,77 @@ func newUUID() string {
 func (actor *Actor) login() string {
 	login, _ := actor.loop.Login()
 	return login
+}
+
+// recordTurnEnd stores the end of a turn the result closes: its outcome,
+// cost and usage, the failures and wake trailers it reports. finishTurn
+// goes on from here to the loop's next state; a background turn that
+// ran ahead of the hub's own stops here (#1709).
+func (actor *Actor) recordTurnEnd(turn *store.Turn, res *claude.ResultInfo, loginRejected, limitRefused bool) {
+	turn.EndedAt = now()
+	turn.IsError = res.IsError
+	turn.ResultText = res.ResultText
+	// The CLI reports the session's running total, not this turn's price
+	// (#191). The turn cost what the total gained, measured against the
+	// store rather than a remembered value so a restart mid-session
+	// prices the next turn correctly. Clamped at zero: a total that
+	// failed to grow means nothing was spent — an errored turn repeats
+	// the previous figure — never that a turn earned money back.
+	// A cloud turn's result carries the hub's estimate of the turn
+	// alone, and no running total (ADR-0059).
+	if res.CostEstimated {
+		turn.CostUSD, turn.CostEstimated = res.TurnCostUSD, true
+	} else {
+		turn.SessionCostUSD = res.CostUSD
+		prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, turn.SessionID)
+		if err != nil {
+			// Price it as a first turn: the whole total. Wrong when the
+			// session had earlier turns, and wrong in the direction that
+			// shows up as too much rather than as free work.
+			actor.log().Error("session cost unavailable", "err", err)
+			prior = 0
+		}
+		cost := max(0, res.CostUSD-prior)
+		turn.CostUSD = &cost
+	}
+	turn.InputTokens = res.Usage.InputTokens
+	turn.OutputTokens = res.Usage.OutputTokens
+	turn.CacheReadTokens = res.Usage.CacheReadTokens
+	turn.CacheWriteTokens = res.Usage.CacheCreationTokens
+	turn.ContextTokens = contextOccupancy(actor.lastCall)
+	turn.DurationMS = res.DurationMS
+	turn.Model = actor.activeModel
+	if err := actor.deps.Store.Turns().Finish(context.Background(), turn); err != nil {
+		actor.log().Error("turn finish", "err", err)
+	}
+	actor.spendStale = true
+	actor.armDailyCap()
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
+	actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
+	actor.watchSends()
+	switch {
+	case loginRejected, limitRefused:
+		// told by the workstation's state, or the loop's, instead
+	case turn.IsError:
+		actor.noteWakeFailure(WakeFailureTurn)
+	default:
+		actor.noteWakeFailure("")
+	}
+
+	// The final reply is the turn's status note (ADR-0026): stored and
+	// published above, delivered to no conversation — a loop that wants
+	// to say something sends it explicitly. Only the trailers are read
+	// (the handoff turn's reply is a note to the loop's successor and
+	// is not even that).
+	var trailer time.Duration
+	var hasTrailer bool
+	if !res.IsError && !actor.handoffTurn {
+		trailer, hasTrailer = ParseTrailer(res.ResultText)
+		if doing, set := ParseDoing(res.ResultText); set {
+			actor.setDoing(doing)
+		}
+	}
+	if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
+		actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
+	}
 }

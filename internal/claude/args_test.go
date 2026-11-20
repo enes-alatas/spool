@@ -14,6 +14,7 @@ var base = []string{
 	"-p", "--verbose",
 	"--input-format", "stream-json",
 	"--output-format", "stream-json",
+	"--replay-user-messages",
 	"--permission-mode", "bypassPermissions",
 }
 

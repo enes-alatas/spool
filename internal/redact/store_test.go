@@ -352,6 +352,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"GetByName": false, "List": false,
 			"SetOwner": false, "AdoptOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
 			"SetRuntime": false, "SetWorkstationOff": false,
+			// counts, and a store.BackgroundEnded* value, never text
+			"SetBackground": false,
 			// the pauser is a user's name, "operator" or a token's actor, never text
 			"Pause": false, "Resume": false,
 			// mints the hub token itself, which is the secret, from no text

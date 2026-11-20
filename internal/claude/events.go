@@ -19,6 +19,15 @@ type Event struct {
 	Assistant *AssistantInfo `json:"-"`
 	Result    *ResultInfo    `json:"-"`
 	RateLimit *RateLimitInfo `json:"-"`
+
+	// BackgroundTasks is how many background commands are running, from a
+	// system/background_tasks_changed event: a level the CLI sends whole
+	// each time it changes, never a delta (#1709). Nil on every other event.
+	BackgroundTasks *int `json:"-"`
+	// ReplayUUID is the uuid of a user message the hub wrote, from the
+	// CLI's replay of it as the turn that takes it starts
+	// (--replay-user-messages). Empty on every other event.
+	ReplayUUID string `json:"-"`
 }
 
 type InitInfo struct {
@@ -156,11 +165,28 @@ func DecodeEvent(line []byte) Event {
 
 	switch probe.Type {
 	case "system":
-		if probe.Subtype == "init" {
+		switch probe.Subtype {
+		case "init":
 			var init InitInfo
 			if json.Unmarshal(line, &init) == nil {
 				ev.Init = &init
 			}
+		case "background_tasks_changed":
+			var body struct {
+				Tasks []json.RawMessage `json:"tasks"`
+			}
+			if json.Unmarshal(line, &body) == nil {
+				count := len(body.Tasks)
+				ev.BackgroundTasks = &count
+			}
+		}
+	case "user":
+		var body struct {
+			UUID     string `json:"uuid"`
+			IsReplay bool   `json:"isReplay"`
+		}
+		if json.Unmarshal(line, &body) == nil && body.IsReplay {
+			ev.ReplayUUID = body.UUID
 		}
 	case "assistant":
 		var body struct {

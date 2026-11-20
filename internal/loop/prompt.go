@@ -519,7 +519,7 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	text.WriteString("WORKSPACE\n")
 	switch {
 	case loopRecord.Runtime == store.RuntimeDocker:
-		fmt.Fprintf(&text, "You work in %s inside your own persistent workstation: your home directory,\nanything you install, and processes you leave running survive across wakes.\n\n", loopRecord.WorkspacePath)
+		fmt.Fprintf(&text, "You work in %s inside your own persistent workstation: your home directory\nand anything you install survive across wakes.\n\n", loopRecord.WorkspacePath)
 	case loopRecord.Runtime == store.RuntimeCloud:
 		fmt.Fprintf(&text, "You work in a Claude Code cloud session on Anthropic's machines, which\nstarts in a checkout of %s on branch %s.\nYour files survive across wakes, but a process you leave running does not\noutlive the machine, which idles between your turns.\n", loopRecord.CloudRepo, loopRecord.CloudBranch)
 		// a session attaches the loop's other repos itself (ADR-0061)
@@ -533,6 +533,9 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 		fmt.Fprintf(&text, "You work in %s (not a git repo managed by Spool).\n\n", loopRecord.WorkspacePath)
 	default:
 		text.WriteString("You have no workspace; you are a conversational loop.\n\n")
+	}
+	if loopRecord.Runtime != store.RuntimeCloud {
+		text.WriteString(backgroundCommands())
 	}
 
 	text.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
@@ -1398,3 +1401,45 @@ func dur(sec int) string {
 // should spend as little as it can.
 const CloudCheckMessage = "Spool is checking that this environment reaches its hub. Nothing is " +
 	"asked of you: reply with the single word ok, run no tool, and end your turn."
+
+// backgroundCommands is what outlives a turn on a loop whose claude process
+// runs on the hub's side: the hub holds the process open while a background
+// command runs, so the command's exit wakes the loop, within bounds the
+// loop is told of when they end it (#1709). A cloud loop's process idles
+// with its machine, so its WORKSPACE says so instead.
+func backgroundCommands() string {
+	return fmt.Sprintf(`A command you start in the background keeps running after your turn ends,
+for up to %s after your last wake that was not a command's exit, and its
+exit wakes you with a task notification. A pause, a cap, a hub restart
+or the end of those %s ends it, and your next wake says so. A process
+you detach yourself survives all of those, but its exit wakes nobody:
+set your next-wake for when it should be done.
+
+`, durOf(backgroundHold), durOf(backgroundHold))
+}
+
+// BackgroundEndedNote tells a loop the hub ended background commands it
+// left running, and why, at the wake after (#1709): their exits will never
+// wake it, so what it waited on has to be looked at or run again.
+func BackgroundEndedNote(count int, endedBy string, hold time.Duration) string {
+	commands, ran, exits := "a background command", "it ran", "Its exit"
+	if count > 1 {
+		commands, ran, exits = fmt.Sprintf("%d background commands", count), "they ran", "Their exits"
+	}
+	var why string
+	switch endedBy {
+	case store.BackgroundEndedHold:
+		why = fmt.Sprintf("%s passed since your last wake that was not a command's exit, while %s", durOf(hold), ran)
+	case store.BackgroundEndedPause:
+		why = "you were paused, killed or switched off"
+	case store.BackgroundEndedCap:
+		why = "a cap took hold, and no turn may start until it lifts"
+	case store.BackgroundEndedRestart:
+		why = "the hub restarted"
+	default:
+		why = "your claude process ended (a crash, a changed connection or a context rotation)"
+	}
+	return fmt.Sprintf("[system note · the hub ended %s you left running, because %s. %s will not wake you: check on what you were waiting for, or start it again]", commands, why, exits)
+}
+
+func durOf(duration time.Duration) string { return dur(int(duration / time.Second)) }

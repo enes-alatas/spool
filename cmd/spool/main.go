@@ -111,6 +111,7 @@ func main() {
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	downGraceSec := flag.Int("problem-down-grace-sec", 300, "seconds a workstation stays down before the health check tells the loop's owner (ADR-0053)")
 	exitGraceSec := flag.Int("exit-grace-sec", 0, "seconds a claude that has closed its output is given to exit before the hub ends it (0 = the production 30s; tests lengthen it to hold a loop)")
+	backgroundHoldSec := flag.Int("background-hold-sec", 0, "seconds an idle loop's process is held open while background commands it started run (0 = the production 4h; tests shorten it, #1709)")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
@@ -477,6 +478,7 @@ func main() {
 		WorkstationHealthInterval: healthInterval,
 		ProblemDownGrace:          time.Duration(*downGraceSec) * time.Second,
 		ExitGrace:                 time.Duration(*exitGraceSec) * time.Second,
+		BackgroundHold:            time.Duration(*backgroundHoldSec) * time.Second,
 		PartialMessages:           *partials,
 		Logger:                    log,
 		DataDir:                   *dataDir,
