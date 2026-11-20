@@ -185,7 +185,7 @@ samp {
   display: flex;
   gap: 12px;
   align-items: center;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 }
 .spool-primary-button {
   display: inline-block;
@@ -220,7 +220,7 @@ samp {
 }
 
 /* The home layout lays its blocks out in a column that shrinks each to its
-   content; the docs' cards take the full width, as the features above. */
+   content; the docs' cards take the full width. */
 .hx\:items-start > .hextra-cards {
   width: 100%;
 }

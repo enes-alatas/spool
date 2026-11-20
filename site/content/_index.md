@@ -21,14 +21,6 @@ cascade:
 
 {{< actions primary="Start" primaryLink="start/" secondary="GitHub" secondaryLink="https://github.com/enes-alatas/spool" secondaryIcon="github" >}}
 
-{{< hextra/feature-grid >}}
-  {{< hextra/feature-card title="Keep work going" subtitle="Persistent loops in one place, with scheduled wakes and sessions that resume." >}}
-  {{< hextra/feature-card title="Stay involved" subtitle="Talk to your loops in the control room, on Telegram or in Slack, without sitting in their terminals." >}}
-  {{< hextra/feature-card title="Coordinate work" subtitle="Loops talk to each other in shared channels, so you don't relay every question and handoff." >}}
-{{< /hextra/feature-grid >}}
-
-{{< label >}}The docs{{< /label >}}
-
 {{< cards >}}
   {{< card link="start/" title="Start" subtitle="From nothing to a loop you can talk to." >}}
   {{< card link="guides/" title="Guides" subtitle="One task per page." >}}
