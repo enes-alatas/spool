@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke ui-align demo image image-multiarch site clean
+.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots site-shots ui-smoke ui-align demo image image-multiarch site clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -155,6 +155,12 @@ site:
 # and deletes both whatever happens.
 ui-shots: build
 	bash scripts/fixture-hub.sh node scripts/ui-shots.mjs
+
+# The shots the docs site shows, from the same fixture run, copied into
+# site/static/shots/ to be committed: the site's build runs no browser
+# (ADR-0071, #1700).
+site-shots: build
+	bash scripts/site-shots.sh
 
 # A browser walk of the room on the same kind of hub: login, each page, the
 # stream (#356). CI runs it on a web change. A failure leaves its Playwright

@@ -225,6 +225,12 @@ the gate and the roles are the release plan the operator agreed on
   against a live fleet. The Activity page is never shot, not even from the
   fixture: that is the operator's decision (#277). Procedure:
   `/visual-pr-shots` (`.claude/skills/visual-pr-shots/`).
+- **The docs site's shots are committed**: `make site-shots` (#1700) takes
+  the same set and copies the shots the site's pages link into
+  `site/static/shots/`, and nothing else writes there. The site's build
+  takes them as they are, with no browser in it (ADR-0071). A retake is
+  its own commit, and a page that links a new shot adds its name to
+  `scripts/site-shots.sh`.
 - **Videos too**: `make demo` (#447) records the README videos on a fixture
   hub; the mp4s are uploaded as attachments, never committed. Remotion is
   source-available: companies of more than three people need a licence from

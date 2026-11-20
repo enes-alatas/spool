@@ -62,6 +62,25 @@ else
 fi
 
 "$hugo" version
+
+# Each control room shot a page links is one scripts/site-shots.sh retakes,
+# and is committed: Hugo would publish a page whose image is missing, and a
+# shot outside the script's list would never be retaken (#1700). Any link
+# under /shots/ is read, whatever its name or extension, so one the script
+# couldn't have taken is refused rather than missed.
+retaken=" $(sed -n 's/^names=(\(.*\))$/\1/p' scripts/site-shots.sh) "
+for shot in $(grep -rhoE "/shots/[^)\"'[:space:]]+" site/content | sort -u); do
+	name=${shot#/shots/}
+	if [[ $name != *.png || $retaken != *" ${name%.png} "* ]]; then
+		echo "site-build: a page links $shot, which scripts/site-shots.sh doesn't retake" >&2
+		exit 1
+	fi
+	if [ ! -f "site/static$shot" ]; then
+		echo "site-build: a page links $shot, which isn't committed; run make site-shots" >&2
+		exit 1
+	fi
+done
+
 configs=hugo.yaml
 if [ -n "${SITE_BANNER:-}" ]; then
 	printf 'params:\n  banner:\n    key: unreleased\n    message: %s\n' "$(yaml_string "$SITE_BANNER")" > "$tmp/banner.yaml"
