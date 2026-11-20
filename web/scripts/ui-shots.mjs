@@ -709,6 +709,52 @@ taken.push(guardrailsLoginFile)
 await page.unroute('**/api/settings')
 await page.unroute('**/api/loops')
 await page.unroute('**/api/plan-usage')
+// Cap again (#1688): a Resume now holding the cap off, on a hub with one
+// login the Fleet banner in the capped one's place, and on one login of
+// three the ring's details. The cap is the one above, still over its
+// threshold, so there is a cap to put back.
+const resumedOf = (view) => ({
+  five_hour: { used_percent: 93, resets_at: capUntil, cap_percent: 90 },
+  seven_day: { ...defaultOf(view).seven_day, cap_percent: 90 },
+  cap: null,
+  resumed_until: capUntil,
+  resumed_cap: { windows: ['five_hour'], until: capUntil },
+})
+await page.route('**/api/plan-usage', async (route) => {
+  const view = await (await route.fetch()).json()
+  route.fulfill({ json: withDefault(view, resumedOf(view)) })
+})
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.locator('.cap-banner-resumed').waitFor({ timeout: 15000 })
+const fleetResumedFile = `${outDir}/fleet-resumed.png`
+await page.screenshot({ path: fleetResumedFile, clip: { x: 0, y: 0, width: 1180, height: 560 } })
+taken.push(fleetResumedFile)
+await page.unroute('**/api/plan-usage')
+await page.route('**/api/plan-usage', async (route) => {
+  const view = await (await route.fetch()).json()
+  route.fulfill({
+    json: {
+      logins: [
+        defaultOf(view),
+        { name: 'ada', as_of: Date.now() - 3 * 60000, ...resumedOf(view) },
+        {
+          name: 'robin',
+          five_hour: null,
+          seven_day: null,
+          unknown: "no loop has reported the plan's usage yet",
+        },
+      ],
+    },
+  })
+})
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Plan usage of the Claude login ada' }).click()
+await page.locator('.login-ring-resumed-row').waitFor({ timeout: 15000 })
+const loginResumedFile = `${outDir}/fleet-login-resumed.png`
+await page.screenshot({ path: loginResumedFile, clip: { x: 0, y: 0, width: 1180, height: 560 } })
+taken.push(loginResumedFile)
+await page.unroute('**/api/plan-usage')
+
 // A loop at its own daily cap (#652), the fleet's plan cap not holding:
 // the pane names the cap and that raising it past today's spend, or
 // removing it, wakes the loop, the chips to change it under that spend.

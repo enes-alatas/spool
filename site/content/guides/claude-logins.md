@@ -43,7 +43,9 @@ move it. Moving a capped loop to a login that isn't capped wakes it.
 With more than one login, the Fleet page's plan strip shows a ring for
 each, named, whose figures open on a click. A capped login's ring wears a red rim in place
 of a cap banner, and its figures name the loops on it that sleep, with a
-Resume now for that login alone.
+Resume now for that login alone. While Resume now holds that cap off,
+its figures say so, with a Cap again for that login; with one login,
+the Fleet page says it in a banner instead.
 
 ## Whose subscription a login is
 

@@ -45,6 +45,30 @@ function sleepers(loops: string[] | undefined): string {
   return `${loops.slice(0, -1).join(', ')} and ${loops[loops.length - 1]} sleep`
 }
 
+// That a Resume now is holding, and until when: the Settings status line
+// and, beside Cap again, a resumed ring's details (#1688). Undefined while
+// no Resume now holds.
+export function resumedLine(usage: PlanUsage | undefined, now: number): string | undefined {
+  const hold = resumedHold(usage, now)
+  return hold === undefined ? undefined : `Resumed: ${hold}`
+}
+
+// The hold alone, "the cap holds off until the window resets in 41m.", which
+// the Fleet page's resumed banner says after its own lead (#1688).
+export function resumedHold(usage: PlanUsage | undefined, now: number): string | undefined {
+  if (!usage?.resumed_until || usage.resumed_until <= now) return undefined
+  return `the cap holds off until the window ${formatResets(usage.resumed_until, now)}.`
+}
+
+// Whether Cap again is offered for a login (#1688): no cap holds, the hub
+// says a Resume now holds one off, and that hold is still ahead on this
+// clock. The hub's resumed_cap is as of the last read, so between the hold
+// running out here and the next read the words would be gone while the
+// button stayed; one test keeps them together everywhere it shows.
+export function capAgainOffered(usage: PlanUsage | undefined, now: number): boolean {
+  return !!usage && !usage.cap && !!usage.resumed_cap && resumedHold(usage, now) !== undefined
+}
+
 // The status line over the Settings thresholds when nothing is capped:
 // where usage stands, a Resume now that is holding, or that the cap cannot
 // fire because nothing has been read. Undefined while the read is loading,
@@ -54,16 +78,15 @@ export function capIdleStatus(usage: PlanUsage | undefined, now: number): string
   if (usage.unknown !== undefined || (!usage.five_hour && !usage.seven_day)) {
     return 'Usage is unknown, so the cap cannot fire.'
   }
-  if (usage.resumed_until && usage.resumed_until > now) {
-    return `Resumed: the cap holds off until the window ${formatResets(usage.resumed_until, now)}.`
-  }
+  const resumed = resumedLine(usage, now)
+  if (resumed) return resumed
   const reading = (['five_hour', 'seven_day'] as const)
     .filter((key) => usage[key])
     .map((key) => `${WINDOW_NAME[key]} at ${Math.round(usage[key]!.used_percent)}%`)
   return `Not capped: ${reading.join(', ')}.`
 }
 
-function capitalize(s: string): string {
+export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 

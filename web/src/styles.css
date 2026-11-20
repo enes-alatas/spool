@@ -1140,6 +1140,12 @@ textarea {
   font-size: var(--fs-body);
   color: var(--text);
 }
+/* A Resume now holding the cap off (#1688): the banner's place and
+   shape, without the alarm, since nothing sleeps. */
+.cap-banner-resumed {
+  border-color: var(--hairline);
+  background: transparent;
+}
 .cap-banner .cap-reason {
   color: var(--text-muted);
 }
@@ -1264,14 +1270,24 @@ textarea {
   font-family: var(--mono);
   font-size: 8px; /* off-scale: SVG text inside a fixed 80px ring */
 }
-.login-ring-capped-row {
+/* The last row of a ring's details while its cap holds, in red, or while a
+   Resume now holds it off (#1688), in the muted text the Settings line
+   says it in: the words, then the control that undoes it. */
+.login-ring-capped-row,
+.login-ring-resumed-row {
   align-items: center;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--hairline);
+}
+.login-ring-capped-row {
   color: var(--danger);
 }
-.login-ring-capped-note {
+.login-ring-resumed-row {
+  color: var(--text-muted);
+}
+.login-ring-capped-note,
+.login-ring-resumed-note {
   max-width: 24rem;
   white-space: normal;
 }

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, LoginPlanUsage, PlanUsages, PlanWindow } from '../api'
+import { api, LoginPlanUsage, PlanUsage, PlanUsages, PlanWindow } from '../api'
 import { formatAgo, formatResets, formatUsd, gradedColor } from '../format'
 import {
+  capAgainOffered,
   capIdleStatus,
   cappedLogins,
   capReason,
@@ -14,6 +15,8 @@ import {
   cloudReading,
   defaultUsage,
   loopLogin,
+  resumedHold,
+  capitalize,
   usageLogins,
 } from '../planCap'
 import { LoginRings } from './LoginRings'
@@ -102,6 +105,7 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
               now={now}
               sleeps={sleeps}
               resume={(login) => <ResumeButton login={login} />}
+              capAgain={(login) => <CapAgainButton login={login} />}
             />
           ) : cloud === 'unknown' ? (
             // a hub with one login whose loops all run in the cloud, and no
@@ -162,15 +166,29 @@ export function CapBanners({
   // that can fire; the line beside the thresholds says so (#1303)
   const noReading = (login: LoginPlanUsage | undefined) =>
     cloudReading(login, cloudOnly.has(login?.name ?? 'default')) === 'unknown'
-  const idleLines = !idle
+  // Each line with the login it is about, so a resumed one carries Cap
+  // again (#1688): undefined for the default on a hub with one login.
+  const idleLines: { line: string; login?: string; resumed: boolean }[] = !idle
     ? []
     : several
       ? logins
           .filter((login) => !login.cap && !noReading(login))
-          .map((login) => `${login.name} · ${capIdleStatus(login, now)}`)
+          .map((login) => ({
+            line: `${login.name} · ${capIdleStatus(login, now)}`,
+            login: login.name,
+            resumed: capAgainOffered(login, now),
+          }))
       : capped.length === 0 && !noReading(defaultUsage(usages))
-        ? [capIdleStatus(defaultUsage(usages), now)].filter((line) => line !== undefined)
+        ? [defaultUsage(usages)].flatMap((usage) => {
+            const line = capIdleStatus(usage, now)
+            return line === undefined ? [] : [{ line, resumed: capAgainOffered(usage, now) }]
+          })
         : []
+  // On Fleet, a hub with one login says that a Resume now holds a cap off,
+  // in the cap banner's place, with Cap again (#1688, Enes's pick of the
+  // mockups). Several logins say it in the ring's details instead, and
+  // Settings on its status line.
+  const hold = idle || several ? undefined : resumedBannerHold(defaultUsage(usages), now)
   return (
     <>
       {capped.map((login) => (
@@ -180,10 +198,19 @@ export function CapBanners({
           reason={capReason(login, now, sleeps(login.name))!}
         />
       ))}
+      {hold !== undefined && <ResumedBanner hold={hold} />}
       {idleLines.length > 0 && (
         <div className="cap-idle">
-          {idleLines.map((line) => (
-            <div key={line}>{line}</div>
+          {idleLines.map(({ line, login, resumed }) => (
+            <div key={line}>
+              {line}
+              {resumed && (
+                <>
+                  {' '}
+                  <CapAgainButton login={login} />
+                </>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -267,6 +294,67 @@ function ResumeButton({ login }: { login: string }) {
         </span>
       )}
     </span>
+  )
+}
+
+// Cap again (#1688), for those who may lift a cap and so put it back: the
+// cap a Resume now holds off on a login, or the default's without one,
+// holds again until its own reset.
+function CapAgainButton({ login }: { login?: string }) {
+  const capAgain = useCapAgain()
+  if (!useMay()('manage')) return null
+  return (
+    <span>
+      <button
+        className="btn"
+        aria-label={login === undefined ? undefined : `Cap again: put back ${login}'s plan cap`}
+        onClick={() => capAgain.mutate(login)}
+        disabled={capAgain.isPending}
+      >
+        {capAgain.isPending ? 'Capping…' : 'Cap again'}
+      </button>
+      {capAgain.error && (
+        <span className="form-error" role="alert">
+          {' '}
+          {capAgain.error.message}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// Cap again's answer is the plan read, as Resume now's is, and the loops
+// on that login change state with it.
+function useCapAgain() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: api.capAgainPlanCap,
+    onSuccess: (usages) => {
+      qc.setQueryData(['plan-usage'], usages)
+      void qc.invalidateQueries({ queryKey: ['loops'] })
+    },
+  })
+}
+
+// The hold a one-login Fleet's resumed banner says, while Resume now holds
+// off a cap the login is still over: undefined otherwise, as when the login
+// is back under its thresholds and there is no cap left to put back.
+function resumedBannerHold(usage: PlanUsage | undefined, now: number): string | undefined {
+  if (!capAgainOffered(usage, now)) return undefined
+  return capitalize(resumedHold(usage, now)!)
+}
+
+// A Resume now holding the fleet's cap off (#1688): the cap banner's place
+// and shape without its alarm, since nothing sleeps, and Cap again for
+// those who may lift a cap and so put it back.
+function ResumedBanner({ hold }: { hold: string }) {
+  return (
+    <div className="cap-banner cap-banner-resumed" role="status">
+      <span>
+        <b>Fleet resumed.</b> <span className="cap-reason">{hold}</span>
+      </span>
+      <CapAgainButton />
+    </div>
   )
 }
 
