@@ -128,7 +128,11 @@ samp {
 .content a:not(.hextra-card):hover {
   text-decoration-color: var(--text);
 }
-.content code {
+/* Inline code only. A code block's <code> is inline too, so an edge on it
+   drew a 1px stroke at the start of its first line and the end of its
+   last, which read as a stray pipe (#1694); the block's <pre> has the
+   edge. The theme leaves code blocks out the same way. */
+.content :not(pre) > code {
   background: var(--surface);
   border: 1px solid var(--hairline);
 }
