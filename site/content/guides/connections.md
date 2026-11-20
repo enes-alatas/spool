@@ -6,6 +6,8 @@ weight: 3
 
 A connection is a secret or a tool you give your loops: a `GH_TOKEN`, an MCP server, a GitHub App. You define it once on the **Connections** page and attach it to the loops, or the teams, that need it. Only an admin adds, attaches or changes one. A member sees each connection's name and who holds it, but not what it points at.
 
+![The Connections page, listing the env variables and MCP servers by kind](/shots/connections.png)
+
 ## The kinds
 
 | Kind | What it holds | What a loop gets |
