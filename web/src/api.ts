@@ -937,6 +937,11 @@ export interface PlanUsage {
   cap?: PlanCap | null
   // While a Resume now holds (#650): the cap stays off until this reset.
   resumed_until?: number
+  // The cap a Resume now is holding off right now, and null otherwise: null
+  // too once the login is under its thresholds, though resumed_until may
+  // still be ahead. Cap again is offered while it is set (#1651) and the
+  // hold is still ahead on this clock (capAgainOffered).
+  resumed_cap?: PlanCap | null
 }
 
 // GET /api/plan-usage and Resume now's answer (planUsagesView): every
@@ -1754,6 +1759,14 @@ export const api = {
   // login named. Answers with the plan read.
   resumePlanCap: (login?: string) =>
     req<PlanUsages>('/api/plan-cap/resume', {
+      method: 'POST',
+      body: login === undefined ? undefined : JSON.stringify({ claude_login: login }),
+    }),
+  // Puts back the cap a Resume now is holding off on a login, the inverse
+  // of resumePlanCap (#1651): the loops on it sleep at their next quiet
+  // boundary until the cap's own reset. Answers with the plan read.
+  capAgainPlanCap: (login?: string) =>
+    req<PlanUsages>('/api/plan-cap/cap-again', {
       method: 'POST',
       body: login === undefined ? undefined : JSON.stringify({ claude_login: login }),
     }),

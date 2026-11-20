@@ -60,6 +60,7 @@ Two thresholds, a percentage of each Claude login's 5-hour and 7-day plan window
 - **Scope:** the same two thresholds apply to every login.
 - **Until a loop reports usage:** a login's cap does not fire until one of its loops has reported its usage.
 - **Resume now:** while a cap holds, lifts it until the window resets, without changing the thresholds.
+- **Cap again:** while Resume now holds off a cap the login is still over, puts it back until its windows reset. It sits beside the Resumed line here, and on the Fleet page.
 
 ## Health check
 

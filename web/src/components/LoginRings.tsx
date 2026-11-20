@@ -2,7 +2,9 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { LoginPlanUsage, PlanWindow } from '../api'
 import { formatAgo, formatResets, gradedColor } from '../format'
 import {
+  capAgainOffered,
   capWake,
+  resumedLine,
   CLOUD_ONLY_FROZEN,
   CLOUD_ONLY_FROZEN_WHY,
   CLOUD_ONLY_USAGE,
@@ -23,7 +25,9 @@ import {
 // A login whose plan cap holds (#1076) wears a red rim and says "capped"
 // under its name, and its details name the loops that sleep (sleeps) and
 // when they wake, with resume (Resume now, for those who may) beside it.
-// The Fleet page has no cap banner then: the ring says it.
+// The Fleet page has no cap banner then: the ring says it. While a Resume
+// now holds that cap off (resumed_cap, #1688), the details say so, with
+// capAgain (Cap again, for those who may) beside it.
 //
 // A login whose loops all run in the cloud (cloudOnly, #1303) gets no new
 // reading. While its last one still counts, the cap acts on it, so the ring
@@ -35,12 +39,14 @@ export function LoginRings({
   now,
   sleeps,
   resume,
+  capAgain,
 }: {
   logins: LoginPlanUsage[]
   cloudOnly: Set<string>
   now: number
   sleeps: (login: string) => string[] | undefined
   resume?: (login: string) => ReactNode
+  capAgain?: (login: string) => ReactNode
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const frame = useRef<HTMLDivElement>(null)
@@ -89,6 +95,7 @@ export function LoginRings({
                 now={now}
                 sleeps={sleeps(login.name)}
                 resume={resume}
+                capAgain={capAgain}
               />
             )}
           </div>
@@ -163,18 +170,20 @@ function Arc({ r, window }: { r: number; window: PlanWindow | null }) {
   )
 }
 
-function RingDetails({
+export function RingDetails({
   login,
   cloud,
   now,
   sleeps,
   resume,
+  capAgain,
 }: {
   login: LoginPlanUsage
   cloud: CloudReading
   now: number
   sleeps?: string[]
   resume?: (login: string) => ReactNode
+  capAgain?: (login: string) => ReactNode
 }) {
   return (
     <div className="login-ring-details" role="dialog" aria-label={`Plan usage of ${login.name}`}>
@@ -205,6 +214,12 @@ function RingDetails({
         <div className="login-ring-row login-ring-capped-row">
           <span className="login-ring-capped-note">Capped. {capWake(login.cap, now, sleeps)}</span>
           {resume?.(login.name)}
+        </div>
+      )}
+      {capAgainOffered(login, now) && (
+        <div className="login-ring-row login-ring-resumed-row">
+          <span className="login-ring-resumed-note">{resumedLine(login, now)}</span>
+          {capAgain?.(login.name)}
         </div>
       )}
     </div>
