@@ -266,6 +266,9 @@ window regardless of loop count (ADR-0018).
   `community-pr` labels it `community` and `needs-security-review` and posts
   a fixed comment, running only the base branch's code (ADR-0069).
   workflow-lint rule 7 holds any `pull_request_target` workflow to that.
+  And `community-stale`, on a schedule, marks an outside PR that waits on
+  its author `stale` after 7 quiet days and closes it after 7 more, with
+  fixed comments and nothing of the PR's text (#1690, CONTRIBUTING.md).
 - **Failures of non-PR workflows are reported** (`ci-health`, #210): a run
   of any workflow but `ci` that does not conclude `success`, `cancelled`,
   `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue

@@ -1,0 +1,52 @@
+# An outside contributor's pull request that waits on its author is marked
+# `stale` after 7 quiet days and closed after 7 more (#1690). The rule, and
+# how a PR counts as waiting on its author, are in scripts/community-stale.sh
+# and CONTRIBUTING.md.
+#
+# It runs main's copy of the script on a schedule and reads each PR through
+# the API: nothing of a PR's head is checked out, built or run, and nothing
+# a contributor wrote reaches a call or a comment.
+name: community-stale
+
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  # Runnable from main (CONVENTIONS.md, "Proving an
+  # event-driven workflow"). A dispatch is a dry run unless told otherwise:
+  # it names the PRs it would mark or close, and writes nothing.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: name what it would mark or close, and write nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+# Two runs at once could each post the notice.
+concurrency:
+  group: community-stale
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    # The label, the comments and the close go through the issues and pulls
+    # endpoints, which on a PR need pull-requests: write (#743); issues: read
+    # is what workflow-lint rule 5 asks of an issues-endpoint call.
+    # contents: read is the checkout.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: mark or close outside PRs that wait on their author
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # A schedule has no inputs, so it runs for real.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: bash scripts/community-stale.sh

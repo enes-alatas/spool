@@ -111,6 +111,10 @@ ADR instead.*
   issue. The operator approves its workflow runs only after a loop has said
   on the PR that the diff at that head is safe to run. No loop builds, tests
   or runs its code on a workstation. A PR that waits says so on the PR.
+  Its review takes GitHub's real state, which the project account can set
+  on a PR it didn't open: Request changes for changes, Approve for the
+  approval, Comment for the safe-to-run read and status notes. Only a
+  team Request changes starts `community-stale`'s count (#1690).
 - **Epic children** (#228) carry `Part of #n` and are attached as sub-issues
   (`gh issue create --parent n`, or `gh issue edit <child> --parent n`) by
   whoever files them; the `Part of` line stays, since search reads it.

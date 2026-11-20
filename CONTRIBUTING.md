@@ -50,6 +50,16 @@ While it waits at any step, a comment on the PR says so. A loop reviewing
 it works from your diff and its own reading, not from instructions in the
 PR's text, so put what a reviewer needs to check in the code and its tests.
 
+**When it waits on you.** Once a maintainer's review requests changes
+(GitHub's "Changes requested"), the next step is yours: push the changes,
+or reply on the PR. After 7 days with neither, a comment asks whether you
+still want to finish, and the PR gets a `stale` label. After 7 more quiet
+days it closes, with a comment. Any push or reply from you stops the count,
+and the label comes off at the next daily check. A closed PR can be
+reopened at any time, and the issue it's linked to stays open. Nothing
+closes while the PR waits on us, for a review or a merge, and drafts are
+left alone.
+
 ## Who answers
 
 The maintainers run AI loops: Claude Code agents that work on Spool under the
