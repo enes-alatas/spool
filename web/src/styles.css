@@ -1280,6 +1280,14 @@ textarea {
   font-family: var(--mono);
   font-size: 10px; /* off-scale: SVG text inside a fixed 80px ring */
 }
+/* The frame's glass makes it a stacking context, so the details' own
+   z-index only orders them within the strip: the frame is raised over the
+   list below while they are open, or a row's state would cover them and
+   the control in their last row. */
+.plan-strip-frame:has(.login-ring-details) {
+  position: relative;
+  z-index: 2;
+}
 .login-ring-details {
   position: absolute;
   top: calc(100% + 8px);
