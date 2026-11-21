@@ -692,7 +692,8 @@ export interface CloudLoopSetup {
 export type CloudScriptState = 'current' | 'outdated' | 'unheard'
 
 // `settings` first, then the loop's own, in the order the view lists them.
-export type CloudLoopStep = 'settings' | 'repo' | 'environment' | 'token' | 'allowlist' | 'check'
+// A loop may name no repo (#1712), so no step asks for one.
+export type CloudLoopStep = 'settings' | 'environment' | 'token' | 'allowlist' | 'check'
 
 // The environment's allowed domains, built from the hub's allowlist on each
 // read, and whether the operator confirmed pasting them as they are now.
@@ -1933,7 +1934,7 @@ export const api = {
     }),
   // Starts the check and answers 202 with it running. Refused with 409
   // `cloud_check_refused` naming what to finish first: Settings → Cloud,
-  // the repo and environment, the token, or a stopped loop.
+  // the environment, the token, or a stopped loop.
   checkCloudLoop: (name: string) => req<CloudLoopSetup>(`/api/loops/${name}/cloud/check`, { method: 'POST' }),
   clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
   checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),

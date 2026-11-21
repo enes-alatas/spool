@@ -1234,5 +1234,54 @@ taken.push(menuFile)
 await page.keyboard.press('Escape')
 await page.evaluate(() => globalThis.localStorage.removeItem('spool.fleet.layout'))
 
+// A cloud loop that names no repo (#1717): its Workstation card and the
+// setup walk's repo step. The fixture hub has no cloud loop, so gardener
+// is served as one, stopped, with its setup done.
+const noRepo = {
+  runtime: 'cloud',
+  status: 'paused',
+  cloud_repo: '',
+  cloud_branch: '',
+  cloud_repos: [],
+  cloud_environment_id: 'env_01AbCdEfGh',
+}
+const gardenerLoop = /\/api\/loops\/gardener$/
+await page.route(gardenerLoop, async (route) =>
+  route.fulfill({ json: { ...(await (await route.fetch()).json()), ...noRepo } }),
+)
+await page.route('**/api/loops/gardener/cloud/setup', (route) =>
+  route.fulfill({
+    json: {
+      steps: [],
+      script: '#!/bin/sh\n',
+      script_state: 'current',
+      secret_host: 'spool.example.com',
+      token: { set: true },
+      allowlist: {
+        text: 'spool.example.com',
+        not_applied: [],
+        digest: 'd',
+        confirmed: true,
+        confirmed_at: Date.now(),
+      },
+      check: { state: 'ok', current: true, checked_at: Date.now() - 10 * 60000 },
+    },
+  }),
+)
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+const cloudCard = page.locator('aside .side-panel', { has: page.locator('h3', { hasText: 'Workstation' }) })
+await cloudCard.locator('.row', { hasText: 'no repo' }).waitFor({ timeout: 15000 })
+const cloudCardFile = `${outDir}/loop-cloud-no-repo.png`
+await cloudCard.screenshot({ path: cloudCardFile })
+taken.push(cloudCardFile)
+await page.goto(base + '/loops/gardener?setup', { waitUntil: 'networkidle' })
+const repoStep = page.locator('.cloud-loop-steps > li').first()
+await repoStep.locator('.cloud-step-optional').waitFor({ timeout: 15000 })
+const repoStepFile = `${outDir}/cloud-setup-no-repo.png`
+await repoStep.screenshot({ path: repoStepFile })
+taken.push(repoStepFile)
+await page.unroute('**/api/loops/gardener/cloud/setup')
+await page.unroute(gardenerLoop)
+
 await browser.close()
 for (const file of taken) console.log(file)
