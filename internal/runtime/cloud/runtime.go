@@ -191,22 +191,43 @@ func (cloud *Runtime) Kind() string { return "cloud" }
 // run too.
 func (cloud *Runtime) Preflight(context.Context) (string, error) { return "", nil }
 
-// startFrom is the loop's source as the spec names it. A loop whose repo,
-// branch or environment isn't set has none, and starts no session.
+// startFrom is the loop's source as the spec names it. A loop whose
+// environment isn't set, or that names a repo without its branch or a
+// branch without its repo, has none, and starts no session. One that
+// names neither starts with no repo (#1712).
 func startFrom(spec runtime.Spec) (runtime.CloudStart, error) {
 	source := spec.Cloud
-	if source.Repo == "" || source.Branch == "" || source.EnvironmentID == "" {
-		return source, errors.New("cloud: the loop's repo, branch and environment aren't all set")
+	if source.EnvironmentID == "" || (source.Repo == "") != (source.Branch == "") {
+		return source, errors.New("cloud: the loop's environment isn't set, or it names one of a repo and a branch without the other")
 	}
 	return source, nil
 }
 
-// checkTitle is what a setup check's session is titled on claude.ai.
-const checkTitle = "setup check"
+// repoless reports whether source names no repo: its sessions start
+// empty, from no GitHub source (#1712).
+func repoless(source runtime.CloudStart) bool {
+	return source.Repo == "" && source.Branch == ""
+}
+
+// sessionTitle is what follows the loop's name in the title of its own
+// sessions on claude.ai: its repo, or noRepoTitle for a loop with none.
+func sessionTitle(source runtime.CloudStart) string {
+	if repoless(source) {
+		return noRepoTitle
+	}
+	return source.Repo
+}
+
+// checkTitle is what a setup check's session is titled on claude.ai, and
+// noRepoTitle what a loop with no repo titles its own sessions.
+const (
+	checkTitle  = "setup check"
+	noRepoTitle = "conversation"
+)
 
 // nameArgs names a session a start makes, for claude.ai's session list,
 // which otherwise titles it by its first message (#1283): "<loop> · what",
-// where what is the loop's repo for its own sessions and checkTitle for a
+// where what is sessionTitle for its own sessions and checkTitle for a
 // check's. The CLI's --name sends it as the session's title, and its
 // --cloud argument stays the session's description (probed on CLI
 // 2.1.310 and 2.1.318). A start for no loop's name names nothing. The
@@ -242,8 +263,8 @@ func shellQuote(value string) string {
 }
 
 // Ensure checks the loop has a source to start from. There is nothing of
-// the loop's own to build: its session starts from its repo, in its
-// environment (ADR-0061).
+// the loop's own to build: its session starts from its repo, or from none
+// for a loop with no repo (#1712), in its environment (ADR-0061).
 func (cloud *Runtime) Ensure(_ context.Context, spec runtime.Spec) error {
 	_, err := startFrom(spec)
 	return err

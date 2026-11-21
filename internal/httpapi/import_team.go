@@ -89,8 +89,8 @@ func (server *Server) handleImportTeam(w http.ResponseWriter, r *http.Request) {
 	req.Description = strings.TrimSpace(req.Description)
 	switch {
 	case req.Runtime == store.RuntimeCloud:
-		// a cloud loop needs a repo, branch and environment of its own,
-		// which a team create has none of
+		// a cloud loop needs an environment of its own, which a team
+		// create has none of
 		server.jsonErr(w, 400, "a team's loops run on bare or docker; make a cloud loop one at a time")
 		return
 	case len(req.Loops) == 0 || len(req.Loops) > maxTeamLoops:

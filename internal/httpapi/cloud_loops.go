@@ -82,7 +82,8 @@ const codeCloudLoopRunning = "cloud_loop_running"
 
 // cloudSetup is the loop's setup after req: what it names over what the
 // loop has, trimmed, with the branch DefaultCloudBranch once a repo is
-// named without one. Each field is checked by ADR-0061's rule, and an
+// named without one, and none once the repo is left out without one. A
+// loop may name no repo (#1712). Each field is checked by ADR-0061's rule, and an
 // environment must be on the list of login, the Claude login the loop
 // runs on after the request, "" for the default: checked when the
 // environment changes, or when moved is set because the login does. One
@@ -106,8 +107,12 @@ func (server *Server) cloudSetup(ctx context.Context, login string, moved bool, 
 	if req.CloudEnvironmentID != nil {
 		setup.EnvironmentID = strings.TrimSpace(*req.CloudEnvironmentID)
 	}
-	if setup.Repo != "" && setup.Branch == "" {
+	switch {
+	case setup.Repo != "" && setup.Branch == "":
 		setup.Branch = store.DefaultCloudBranch
+	case setup.Repo == "" && req.CloudBranch == nil:
+		// a repo taken away takes its branch with it (#1712)
+		setup.Branch = ""
 	}
 	if err := setup.Check(); err != nil {
 		return setup, &requestError{status: http.StatusBadRequest, msg: err.Error()}

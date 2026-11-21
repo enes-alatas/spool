@@ -15,6 +15,13 @@ func TestCloudSetupCheck(t *testing.T) {
 	if err := (CloudSetup{}).Check(); err != nil {
 		t.Errorf("an empty setup is a loop with none yet: %v", err)
 	}
+	noRepo := CloudSetup{EnvironmentID: "env_01abc"}
+	if err := noRepo.Check(); err != nil || !noRepo.Complete() {
+		t.Errorf("a loop with an environment and no repo (#1712): Check() = %v, Complete() = %v, want nil and true", err, noRepo.Complete())
+	}
+	if (CloudSetup{Repo: "a/b", EnvironmentID: "env_1"}).Complete() || (CloudSetup{Branch: "main", EnvironmentID: "env_1"}).Complete() || (CloudSetup{}).Complete() {
+		t.Error("half a repo, or no environment, is Complete")
+	}
 	for _, testCase := range []struct {
 		name  string
 		setup CloudSetup
@@ -27,6 +34,8 @@ func TestCloudSetupCheck(t *testing.T) {
 		{"no branch", CloudSetup{Repo: "a/b", EnvironmentID: "env_1"}, "branch"},
 		{"a bridge ID", CloudSetup{Repo: "a/b", Branch: "main", EnvironmentID: "ccpool_1"}, "environment"},
 		{"no environment", CloudSetup{Repo: "a/b", Branch: "main"}, "environment"},
+		{"a branch with no repo", CloudSetup{Branch: "main", EnvironmentID: "env_1"}, "needs a repo"},
+		{"further repos with no first", CloudSetup{EnvironmentID: "env_1", Repos: []string{"a/b"}}, "first repo"},
 		{"a bad further repo", CloudSetup{Repo: "a/b", Branch: "main", EnvironmentID: "env_1", Repos: []string{"a b/c"}}, "further repo"},
 		{"the first repo again", CloudSetup{Repo: "a/b", Branch: "main", EnvironmentID: "env_1", Repos: []string{"A/B"}}, "twice"},
 		{"too many", CloudSetup{Repo: "a/b", Branch: "main", EnvironmentID: "env_1", Repos: strings.Split("a/1 a/2 a/3 a/4 a/5 a/6 a/7 a/8 a/9 a/10 a/11", " ")}, "at most"},

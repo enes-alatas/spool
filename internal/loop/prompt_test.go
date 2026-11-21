@@ -53,6 +53,12 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 			dontWant: "add_repo",
 		},
 		{
+			name:     "cloud session with no repo",
+			loop:     store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud, WorkspaceMode: store.WorkspaceNone},
+			want:     "which\nstarts empty: you have no checkout and no GitHub repository you can reach.\nIf you are asked to work in a repository, say you have none.\n",
+			dontWant: "checkout of",
+		},
+		{
 			name: "cloud session with other repos",
 			loop: store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud, WorkspaceMode: store.WorkspaceNone,
 				CloudRepo: "owner/first", CloudBranch: "main", CloudRepos: []string{"owner/second", "other/third"}},

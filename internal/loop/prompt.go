@@ -520,6 +520,9 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	switch {
 	case loopRecord.Runtime == store.RuntimeDocker:
 		fmt.Fprintf(&text, "You work in %s inside your own persistent workstation: your home directory\nand anything you install survive across wakes.\n\n", loopRecord.WorkspacePath)
+	case loopRecord.Runtime == store.RuntimeCloud && loopRecord.CloudRepo == "":
+		// its session starts empty, from no GitHub source (#1712)
+		text.WriteString("You work in a Claude Code cloud session on Anthropic's machines, which\nstarts empty: you have no checkout and no GitHub repository you can reach.\nIf you are asked to work in a repository, say you have none.\nYour files survive across wakes, but only on that machine: nothing you\nwrite outlasts it, and a process you leave running does not outlive the\nmachine, which idles between your turns.\n\n")
 	case loopRecord.Runtime == store.RuntimeCloud:
 		fmt.Fprintf(&text, "You work in a Claude Code cloud session on Anthropic's machines, which\nstarts in a checkout of %s on branch %s.\nYour files survive across wakes, but a process you leave running does not\noutlive the machine, which idles between your turns.\n", loopRecord.CloudRepo, loopRecord.CloudBranch)
 		// a session attaches the loop's other repos itself (ADR-0061)

@@ -816,3 +816,102 @@ func TestCLIMCPCallWaitsForAPendingStartsSession(t *testing.T) {
 		t.Errorf("a call when the start's line never came: %v, want refused", err)
 	}
 }
+
+// A loop with no repo starts from an empty directory that is no git
+// repo, with no --ref, and is denied the repo tools on top of the rest. A
+// directory inside a repo, bare or not, is refused, as the CLI would
+// start from that repo, and so is one it can't look into, and a branch
+// with no repo (#1712).
+func TestALoopWithNoRepoStartsFromAnEmptyDirectory(t *testing.T) {
+	parent := t.TempDir()
+	noRepo := runtime.CloudStart{EnvironmentID: "env_01Fixture"}
+	dir, err := makeStartDir(context.Background(), parent, noRepo)
+	if err != nil {
+		t.Fatalf("a start with no repo: %v", err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Errorf("the start directory holds %d entries (%v), want none", len(entries), err)
+	}
+	if refArgs(noRepo) != nil {
+		t.Errorf("a start with no repo runs with %q, want no --ref", refArgs(noRepo))
+	}
+	if got := refArgs(runtime.CloudStart{Repo: "example-org/cirrus", Branch: "main"}); strings.Join(got, " ") != "--ref main" {
+		t.Errorf("a start from a repo runs with %q, want --ref main", got)
+	}
+	if dir, err := makeStartDir(context.Background(), parent, runtime.CloudStart{Branch: "main", EnvironmentID: "env_01Fixture"}); err == nil {
+		t.Errorf("a branch with no repo made %s, want it refused", dir)
+	}
+
+	inRepo := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", inRepo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	if dir, err := makeStartDir(context.Background(), inRepo, noRepo); err == nil {
+		t.Errorf("a start with no repo inside a git repo made %s, want it refused", dir)
+	}
+	if left, _ := os.ReadDir(inRepo); len(left) != 1 {
+		t.Errorf("the refused start left %d entries beside .git", len(left)-1)
+	}
+	// a parent reached through a symlink into a repo is one git finds,
+	// as it discovers from the resolved path
+	linked := filepath.Join(t.TempDir(), "linked")
+	if err := os.Mkdir(filepath.Join(inRepo, "inner"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(inRepo, "inner"), linked); err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := makeStartDir(context.Background(), linked, noRepo); err == nil {
+		t.Errorf("a start with no repo under a symlink into a git repo made %s, want it refused", dir)
+	}
+	// a bare repo above is one git finds too
+	bare := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", "--bare", bare).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v: %s", err, out)
+	}
+	if dir, err := makeStartDir(context.Background(), filepath.Join(bare, "refs"), noRepo); err == nil {
+		t.Errorf("a start with no repo inside a bare repo made %s, want it refused", dir)
+	}
+	// one it can't look into is refused, as it can't tell
+	if os.Geteuid() != 0 {
+		shut := filepath.Join(t.TempDir(), "shut")
+		if err := os.MkdirAll(filepath.Join(shut, "start"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(shut, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(shut, 0o700) })
+		if err := outsideGitRepos(filepath.Join(shut, "start")); err == nil || !strings.Contains(err.Error(), "can't tell") {
+			t.Errorf("a directory under one that can't be searched: %v, want it refused as one it can't tell", err)
+		}
+	}
+
+	for _, testCase := range []struct {
+		source runtime.CloudStart
+		denied bool
+	}{
+		{noRepo, true},
+		{runtime.CloudStart{Repo: "example-org/cirrus", Branch: "main", EnvironmentID: "env_01Fixture"}, false},
+	} {
+		settings, err := startSettings(testCase.source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range repoTools() {
+			if strings.Contains(settings, `"`+tool+`"`) != testCase.denied {
+				t.Errorf("a start from %q denies %s: %v, want %v", testCase.source.Repo, tool, !testCase.denied, testCase.denied)
+			}
+		}
+	}
+}
+
+// The CLI's env for a start with no repo points git at no repo of its
+// own and stops git's search above the start directory (#1712).
+func TestAStartWithNoRepoWallsGitIn(t *testing.T) {
+	env := walledEnv([]string{"PATH=/usr/bin", "GIT_DIR=/srv/other/.git", "GIT_WORK_TREE=/srv/other", "GIT_CEILING_DIRECTORIES=/nowhere"}, "/tmp/spool-cloud-x/spool-start-1")
+	want := "PATH=/usr/bin GIT_CEILING_DIRECTORIES=/tmp/spool-cloud-x"
+	if got := strings.Join(env, " "); got != want {
+		t.Errorf("walledEnv = %q, want %q", got, want)
+	}
+}

@@ -77,6 +77,13 @@ func deniedTools() []string {
 	return denied
 }
 
+// repoTools is the claude-code-remote tools deniedTools leaves open for
+// attaching the loop's repos, which a loop with no repo is denied as
+// well: a session started with no repo still has the server (#1712).
+func repoTools() []string {
+	return []string{AddRepoTool, remoteServer + "register_repo_root", remoteServer + "list_repos"}
+}
+
 // SetupScript is the setup script of every cloud loop's environment on a
 // hub whose cloud listener's /mcp is at mcpURL (ADR-0061). The operator
 // pastes it into each loop's environment; it runs once per machine, as

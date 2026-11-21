@@ -27,9 +27,8 @@ const (
 	// cloudStepSettings: Settings → Cloud isn't green, so no cloud loop can
 	// be set up yet.
 	cloudStepSettings = "settings"
-	// cloudStepRepo and cloudStepEnvironment: the loop names no repo, or no
-	// environment.
-	cloudStepRepo        = "repo"
+	// cloudStepEnvironment: the loop names no environment. A loop needs no
+	// repo (#1712), so no step asks for one.
 	cloudStepEnvironment = "environment"
 	// cloudStepToken: the loop holds no hub token: never minted, or killed.
 	cloudStepToken = "token"
@@ -187,9 +186,6 @@ func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop
 		view.Settings = err.Error()
 		view.Steps = append(view.Steps, cloudStepSettings)
 	}
-	if loopRecord.CloudRepo == "" {
-		view.Steps = append(view.Steps, cloudStepRepo)
-	}
 	if loopRecord.CloudEnvironmentID == "" {
 		view.Steps = append(view.Steps, cloudStepEnvironment)
 	}
@@ -294,8 +290,8 @@ func (server *Server) handleCheckCloudLoop(w http.ResponseWriter, r *http.Reques
 	case server.CloudHooks == nil:
 		refuse("this hub runs no cloud loops")
 		return
-	case loopRecord.CloudRepo == "" || loopRecord.CloudBranch == "" || loopRecord.CloudEnvironmentID == "":
-		refuse("name the loop's repo and environment first")
+	case !store.CloudSetupOf(loopRecord).Complete():
+		refuse("name the loop's environment first")
 		return
 	case !loopRecord.HasHubToken:
 		refuse("mint the loop's hub token and set it as the environment's network secret first")
