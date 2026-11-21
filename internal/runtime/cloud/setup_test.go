@@ -440,7 +440,12 @@ func TestSetupScriptDeniesTheAccountsToolsAndGuardsAddRepo(t *testing.T) {
 	denied := strings.Join(settings.Permissions.Deny, " ")
 	for _, tool := range []string{"list_sessions", "get_session", "list_events", "list_triggers", "list_environments",
 		"send_later", "send_message", "create_session", "archive_session", "create_trigger", "fire_trigger",
-		"update_trigger", "delete_trigger", "check_repo_access"} {
+		"update_trigger", "delete_trigger", "check_repo_access",
+		"confirm_repository_trust", "create_environment", "get_environment", "get_event", "get_trigger",
+		"interrupt_session", "list_computer_folders", "read_documentation", "request_computer_folder",
+		"request_credential", "set_session_tags", "set_session_title", "subscribe_pr_activity",
+		"switch_environment", "unarchive_session", "unsubscribe_pr_activity", "unwatch_url",
+		"update_environment", "watch_url"} {
 		if !slices.Contains(settings.Permissions.Deny, "mcp__claude-code-remote__"+tool) {
 			t.Errorf("%s isn't denied: %s", tool, denied)
 		}
