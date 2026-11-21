@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -228,4 +229,83 @@ func TestAnAllowedPersonInvitingTheAppRecordsTheChannel(t *testing.T) {
 	srv.mustJSON("PUT", "/api/channels/backend/chat", map[string]any{"surface": "slack", "chat_id": backendRoom}, nil)
 	slack.pushJoined(t, slackAppToken, backendRoom, terraBot.UserID, slackOperator)
 	srv.waitRoomChannel("terra", backendRoom, "backend")
+}
+
+// joinsTaken are the conversations.join calls apps made, each "token
+// channel".
+func (slack *fakeSlack) joinsTaken() []string {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	return slices.Clone(slack.joins)
+}
+
+// A member loop whose Slack app holds channels:join joins a public
+// channel's chat on the operator's click, and its room binds through the
+// chat. An app without the scope, and a private chat, are offered no join
+// and refused one with nothing recorded; the hub never joins on its own
+// (ADR-0070).
+func TestAMemberLoopsAppJoinsTheChannelsChatOnTheOperatorsClick(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	const backendRoom, secretRoom = "C0BACKEND", "C0SECRET"
+	slack.mu.Lock()
+	slack.scopes[slackBotToken] = "channels:history,channels:read,channels:join,chat:write"
+	slack.scopes[slackMiloBotToken] = "channels:history,channels:read,chat:write"
+	slack.private[secretRoom] = true
+	slack.mu.Unlock()
+	for name, chatID := range map[string]string{"backend": backendRoom, "secret": secretRoom} {
+		srv.mustJSON("POST", "/api/channels", map[string]any{"name": name}, nil)
+		for _, loop := range []string{"terra", "milo"} {
+			srv.wantRefusal("PUT", "/api/channels/"+name+"/loops/"+loop, nil, 204, "")
+		}
+		srv.mustJSON("PUT", "/api/channels/"+name+"/chat", map[string]any{"surface": "slack", "chat_id": chatID}, nil)
+	}
+
+	backend := srv.channelChat("backend")
+	for loop, want := range map[string]string{"terra": "available", "milo": "needs_scope"} {
+		if got := backend.memberStatus(loop); got.Status != "not_in_chat" || got.Join != want {
+			t.Errorf("%s under backend's chat = %+v, want not_in_chat with join %s", loop, got, want)
+		}
+	}
+	if got := srv.channelChat("secret").memberStatus("terra"); got.Join != "private" {
+		t.Errorf("terra under the private chat = %+v, want join private", got)
+	}
+	if got := slack.joinsTaken(); len(got) != 0 {
+		t.Fatalf("reading the page joined %v: the hub joins only on a click", got)
+	}
+
+	srv.wantRefusal("POST", "/api/channels/backend/chat/members/milo/join", nil, 409, "needs_scope")
+	srv.wantRefusal("POST", "/api/channels/secret/chat/members/terra/join", nil, 409, "chat_private")
+	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "empty"}, nil)
+	srv.wantRefusal("PUT", "/api/channels/empty/loops/terra", nil, 204, "")
+	srv.wantRefusal("POST", "/api/channels/empty/chat/members/terra/join", nil, 404, "chat_not_found")
+	srv.wantRefusal("POST", "/api/channels/backend/chat/members/ghost/join", nil, 404, "loop_not_in_channel")
+	for _, roomID := range []string{backendRoom, secretRoom} {
+		for _, loop := range []string{"terra", "milo"} {
+			if room, ok := srv.room(loop, roomID); ok {
+				t.Errorf("a refused join recorded %+v", room)
+			}
+		}
+	}
+
+	srv.wantRefusal("POST", "/api/channels/backend/chat/members/terra/join", nil, 204, "")
+	if got := slack.joinsTaken(); !slices.Equal(got, []string{slackBotToken + " " + backendRoom}) {
+		t.Fatalf("joins = %v, want terra's app in %s once", got, backendRoom)
+	}
+	if room := srv.waitTitledRoom("terra", backendRoom); room.Channel != "backend" || room.Title != "c0backend" {
+		t.Fatalf("the joined room = %+v, want it titled and bound to backend", room)
+	}
+	if got := srv.channelChat("backend").memberStatus("terra"); got.Status != "carrying" {
+		t.Errorf("terra after the join = %+v, want carrying", got)
+	}
+	// Slack tells the app of its own join with no inviter: the room stays
+	// as the click recorded it
+	slack.pushJoined(t, slackAppToken, backendRoom, terraBot.UserID, "")
+	srv.wantRefusal("POST", "/api/channels/backend/chat/members/terra/join", nil, 409, "already_in_chat")
+	if room, _ := srv.room("terra", backendRoom); room.Channel != "backend" {
+		t.Errorf("the joined room after Slack's join event = %+v, want it still bound", room)
+	}
+	if got := slack.joinsTaken(); len(got) != 1 {
+		t.Errorf("joins = %v, want the one click's", got)
+	}
 }
