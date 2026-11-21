@@ -20,13 +20,14 @@ type CloudLoop = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_
 // Why the hub holds the loop, so that no turn starts, or '' when it
 // doesn't (ADR-0056, as #864 and ADR-0061 amend it). A failed address
 // check opens the `cloud_address` problem on the loop, and the loop's own
-// setup not done (its repo, environment or hub token unset, or no check
-// passed on them as they are now) opens `cloud_setup`. The rest open
-// nothing, so they are read from Settings → Cloud, which the hub holds
-// every cloud loop on: no address, an address that hasn't passed a check
-// (one changed since its pass included), and no account signed in. A
-// signed-in account whose check fails doesn't hold the loop, and neither
-// does an unconfirmed allowlist, which is a warning (ADR-0059).
+// setup not done (its environment, a repo with its branch when it names
+// one, or its hub token unset, or no check passed on them as they are now)
+// opens `cloud_setup`. The rest open nothing, so they are read from
+// Settings → Cloud, which the hub holds every cloud loop on: no address,
+// an address that hasn't passed a check (one changed since its pass
+// included), and no account signed in. A signed-in account whose check
+// fails doesn't hold the loop, and neither does an unconfirmed allowlist,
+// which is a warning (ADR-0059).
 // Until Settings → Cloud answers, only the problems count.
 export function cloudHold(loop: Pick<LoopView, 'problems'>, cloud: CloudSettings | undefined): string {
   const open = (symptom: string) => loop.problems.some((problem) => problem.symptom === symptom)
@@ -164,14 +165,18 @@ export function checkSays(
     return {
       text: 'passed',
       tone: 'ok',
-      hint: `A session in the environment reached this hub. The loop can work in ${repo || 'its repo'}, push branches and open pull requests.`,
+      hint: repo
+        ? `A session in the environment reached this hub. The loop can work in ${repo}, push branches and open pull requests.`
+        : `A session in the environment reached this hub. The loop names no repo, so it only talks: it has no checkout, and nothing it writes outlasts its machine.`,
     }
   switch (check.stage) {
     case 'environment':
       return {
         text: 'fails: claude.ai refused the start',
         tone: 'bad',
-        hint: `claude.ai wouldn't start a session there. Check that the environment is on ${loginAccount(login)}, that the repo and branch exist, and that Claude's GitHub App is installed on the repo.`,
+        hint: repo
+          ? `claude.ai wouldn't start a session there. Check that the environment is on ${loginAccount(login)}, that the repo and branch exist, and that Claude's GitHub App is installed on the repo.`
+          : `claude.ai wouldn't start a session there. Check that the environment is on ${loginAccount(login)}.`,
       }
     case 'token':
       return {
@@ -193,7 +198,6 @@ export function checkSays(
 // What the loop's setup still needs, for its card: '' once it is done.
 const STEP_SAID: Record<CloudLoopStep, string> = {
   settings: 'Settings → Cloud',
-  repo: 'a repo',
   environment: 'an environment',
   token: 'a hub token',
   allowlist: 'the allowed domains confirmed',
@@ -202,6 +206,27 @@ const STEP_SAID: Record<CloudLoopStep, string> = {
 
 export function stepsLeft(steps: CloudLoopStep[]): string {
   return steps.map((step) => STEP_SAID[step] ?? step).join(', ')
+}
+
+// What the walk's repo fields send, and why they can't be sent as they
+// are ('' when they can). A loop may name no repo (#1712): its branch goes
+// with it, since the hub refuses a branch on no repo and the field still
+// holds its default, and further repos need a first to attach to.
+export function repoEdit(
+  repo: string,
+  branch: string,
+  more: string,
+): { fields: { cloud_repo: string; cloud_branch: string; cloud_repos: string[] }; problem: string } {
+  const repos = reposOf(more)
+  if (repo.trim())
+    return {
+      fields: { cloud_repo: repo.trim(), cloud_branch: branch.trim(), cloud_repos: repos },
+      problem: '',
+    }
+  return {
+    fields: { cloud_repo: '', cloud_branch: '', cloud_repos: repos },
+    problem: repos.length > 0 ? 'Further repos need a repo to attach to.' : '',
+  }
 }
 
 // The further repos a field holds, one a line or comma-separated, trimmed.

@@ -9,6 +9,7 @@ import {
   holdIsLoops,
   killHint,
   killQuestion,
+  repoEdit,
   reposOf,
   scriptOutdated,
   stepsLeft,
@@ -191,6 +192,15 @@ describe('checkSays', () => {
     // what the loop can do once it passes, named by its repo
     expect(passed.hint).toContain('work in acme/app, push branches and open pull requests')
   })
+  it('names no repo for a loop that has none (#1712)', () => {
+    const passed = checkSays(setup({ state: 'ok', checked_at: 1, current: true }), '', '')
+    expect(passed.hint).toContain('The loop names no repo, so it only talks')
+    expect(passed.hint).not.toContain('its repo')
+    const refused = checkSays(setup({ state: 'failed', stage: 'environment', current: true }), '', '')
+    expect(refused.hint).toBe(
+      "claude.ai wouldn't start a session there. Check that the environment is on the default Claude login's account.",
+    )
+  })
   it('asks for another check once a pass is of an earlier setup', () => {
     expect(checkSays(setup({ state: 'ok', checked_at: 1, current: false }), 'acme/app', '')).toMatchObject({
       text: 'passed on an earlier setup',
@@ -218,8 +228,26 @@ describe('checkSays', () => {
 
 describe('stepsLeft', () => {
   it('says what the setup still needs, in the view’s order', () => {
-    expect(stepsLeft(['repo', 'token', 'check'])).toBe('a repo, a hub token, a passed check')
+    expect(stepsLeft(['environment', 'token', 'check'])).toBe('an environment, a hub token, a passed check')
     expect(stepsLeft([])).toBe('')
+  })
+})
+
+describe('repoEdit', () => {
+  it('sends the repo with its branch and further repos', () => {
+    expect(repoEdit(' acme/app ', ' dev ', 'acme/docs')).toEqual({
+      fields: { cloud_repo: 'acme/app', cloud_branch: 'dev', cloud_repos: ['acme/docs'] },
+      problem: '',
+    })
+  })
+  it('sends no branch with no repo, whatever the field holds (#1712)', () => {
+    expect(repoEdit('  ', 'main', '')).toEqual({
+      fields: { cloud_repo: '', cloud_branch: '', cloud_repos: [] },
+      problem: '',
+    })
+  })
+  it('says further repos need a first one, as the hub would refuse them', () => {
+    expect(repoEdit('', 'main', 'acme/docs').problem).toBe('Further repos need a repo to attach to.')
   })
 })
 

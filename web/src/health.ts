@@ -30,8 +30,9 @@ const SAID: Record<string, string> = {
   send_failed: 'Send failed',
   // a cloud loop held while the public address fails its check (#864)
   cloud_address: 'Public address failing',
-  // a cloud loop held until its own setup is done: its repo, environment
-  // and hub token, and a check passed on them (ADR-0061)
+  // a cloud loop held until its own setup is done: its environment, a repo
+  // with its branch when it names one, and its hub token, and a check
+  // passed on them (ADR-0061)
   cloud_setup: 'Needs setup',
   // a cloud loop's session refused its connections, so its shell may run
   // without them (ADR-0059); said as what the loop lacks, a warning, as the

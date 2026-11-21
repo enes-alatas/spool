@@ -20,7 +20,7 @@ import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
 import { CloudRepoFields, EnvironmentPick } from '../components/CloudLoopSetup'
 import { SETUP_PARAM } from '../components/CloudWorkstation'
-import { reposOf } from '../cloudLoop'
+import { repoEdit } from '../cloudLoop'
 import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
@@ -159,6 +159,8 @@ export function NewLoopForm({
   const chosenLogin = logins?.logins.find((l) => l.name === login)
   const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
   const cloudReady = cloudStep === 'done'
+  // The repo fields as the create sends them, by the walk's own rule (#1712).
+  const repo = repoEdit(cloudRepo, cloudBranch, cloudRepos)
   // Why this loop can't take the imported skills, or '' (#1364): a cloud
   // loop, or a bare one working in a plain directory.
   const plainDirectory = !wsLocked && wsPath.trim() !== '' && !!wsInfo?.exists && !wsInfo.is_git
@@ -262,9 +264,9 @@ export function NewLoopForm({
         // can't take them, or the hub would refuse the whole create.
         skills: imported && !skillsNote ? skillsToInstall(imported.skills, leftOut) : undefined,
         ...(cloud && {
-          cloud_repo: cloudRepo.trim() || undefined,
-          cloud_branch: cloudRepo.trim() ? cloudBranch.trim() || undefined : undefined,
-          cloud_repos: reposOf(cloudRepos).length ? reposOf(cloudRepos) : undefined,
+          cloud_repo: repo.fields.cloud_repo || undefined,
+          cloud_branch: repo.fields.cloud_branch || undefined,
+          cloud_repos: repo.fields.cloud_repos.length ? repo.fields.cloud_repos : undefined,
           cloud_environment_id: environment || undefined,
         }),
       })
@@ -436,10 +438,13 @@ export function NewLoopForm({
             onBranch={setCloudBranch}
             onMore={setCloudRepos}
           />
+          {repo.problem && <div className="cloud-small bad">{repo.problem}</div>}
           <div className="hint">
             Each session starts from this GitHub repo and branch, and attaches the further ones. Install
             Claude's GitHub App on these repos only: the session reaches every repo the installation covers.
-            Once its check passes, the loop can work in its repo, push branches and open pull requests.
+            Once its check passes, the loop can work in its repo, push branches and open pull requests. Leave
+            the repo empty for a loop that only talks: it has no checkout, and nothing it writes outlasts its
+            machine.
           </div>
           <label id="nl-env-label" style={{ marginTop: 10 }}>
             Environment
@@ -579,7 +584,7 @@ export function NewLoopForm({
         <button
           className="btn primary"
           onClick={create}
-          disabled={busy || !slugOk || !mission.trim() || (cloud && !cloudReady)}
+          disabled={busy || !slugOk || !mission.trim() || (cloud && (!cloudReady || !!repo.problem))}
         >
           {busy ? 'Creating…' : 'Create loop'}
         </button>

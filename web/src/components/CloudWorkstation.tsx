@@ -60,7 +60,7 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
       <div className="row">
         <span className="k">repo</span>
         <span className="v mono">
-          {repo || 'none yet'}
+          {repo || 'no repo'}
           {more > 0 && ` +${more} attached`}
         </span>
       </div>

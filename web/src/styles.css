@@ -5553,6 +5553,13 @@ textarea {
   font-size: var(--fs-small);
   color: var(--ready);
 }
+/* The repo step's word while a loop names none (#1712): the done tick's
+   place, muted, since there is nothing left to do. */
+.cloud-step-optional {
+  margin-left: 8px;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
 .cloud-substeps {
   margin: 4px 0 0;
   padding-left: 18px;

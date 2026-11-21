@@ -42,7 +42,7 @@ order. Each step the hub checks before the next opens. The hub needs the
 Then set each cloud loop up, in a cloud environment of its own that you
 create on claude.ai for it. Its setup view, `GET
 /api/loops/<name>/cloud/setup`, shows what to paste and which steps are
-left: `settings`, `repo`, `environment`, `token`, `allowlist` and `check`.
+left: `settings`, `environment`, `token`, `allowlist` and `check`.
 The loop's page walks those steps: **Set up** on its Workstation card,
 which New loop opens on a new cloud loop. The API takes each step
 too, though on a loop made before v0.6.2 the repo and environment go in
@@ -70,9 +70,11 @@ recreate a loop's environment, stop the loop and name the new ID.
 
 ## The steps, in order
 
-1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
+1. **Its repo, if it has one.** Create the loop with the cloud runtime and its GitHub repo,
    `owner/name`, its branch, `main` unless you name another, and any further
-   repos it attaches. Install Claude's GitHub App on those repositories
+   repos it attaches. A loop may name no repo: it only talks, with no
+   checkout, and nothing it writes outlasts its machine. Its branch and
+   further repos go with the repo. Install Claude's GitHub App on those repositories
    only, and review the installations of the GitHub user behind the
    Claude login at `github.com/settings/installations`: the session can
    reach every repository they cover.
@@ -109,7 +111,7 @@ recreate a loop's environment, stop the loop and name the new ID.
 
 ## A loop held for its setup
 
-A cloud loop whose repo, environment or token isn't set, or whose check
+A cloud loop whose environment or token isn't set, or whose check
 hasn't passed on its setup as it is now, waits with a `cloud_setup`
 problem, and so does one made before v0.6.2, whose old token the upgrade
 revoked. Such a loop has neither a repo nor an environment, and the hub
@@ -158,6 +160,8 @@ check the account's routines and sessions there.
 At its first wake, the hub runs `claude --cloud` on its own machine, with
 the wake as the first message, in an empty directory whose `origin` is the
 loop's repo, with `--ref` naming its branch and the loop's environment.
+A loop with no repo starts from an empty directory that is no git repo,
+with no `--ref`, so its session starts empty.
 Nothing is uploaded: the session clones the repo from GitHub, its
 environment's setup script connects it to the hub, and its `SessionStart`
 hook posts the session's id. The hub takes the post only from the session
