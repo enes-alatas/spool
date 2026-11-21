@@ -53,17 +53,24 @@ const remoteServer = "mcp__claude-code-remote__"
 const AddRepoTool = remoteServer + "add_repo"
 
 // deniedTools is the claude-code-remote tools a cloud loop's session is
-// denied: every one runs M and M2 saw but add_repo, register_repo_root
-// and list_repos, which attaching the loop's repos needs. They create
-// routines and sessions that outlive a kill, and read every session on
-// the account (ADR-0061). A tool a later CLI adds isn't denied until it
-// is named here.
+// denied: every one runs M and M2 saw, and every one CLI 2.1.330 lists,
+// but add_repo, register_repo_root and list_repos, which attaching the
+// loop's repos needs. They create routines, sessions and environments
+// that outlive a kill, read every session on the account, and ask for
+// credentials and folders (ADR-0061). A tool a later CLI adds isn't
+// denied until it is named here.
 func deniedTools() []string {
 	var denied []string
 	for _, tool := range []string{
 		"list_sessions", "get_session", "list_events", "list_triggers", "list_environments", "send_later",
 		"send_message", "create_session", "archive_session", "create_trigger", "fire_trigger",
 		"update_trigger", "delete_trigger", "check_repo_access",
+		// listed by CLI 2.1.330 (#1715)
+		"confirm_repository_trust", "create_environment", "get_environment", "get_event", "get_trigger",
+		"interrupt_session", "list_computer_folders", "read_documentation", "request_computer_folder",
+		"request_credential", "set_session_tags", "set_session_title", "subscribe_pr_activity",
+		"switch_environment", "unarchive_session", "unsubscribe_pr_activity", "unwatch_url",
+		"update_environment", "watch_url",
 	} {
 		denied = append(denied, remoteServer+tool)
 	}
