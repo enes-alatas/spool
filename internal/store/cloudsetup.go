@@ -36,26 +36,35 @@ func CloudSetupOf(loopRecord *Loop) CloudSetup {
 	}
 }
 
-// Complete reports whether a session can start from setup: a repo, a
-// branch and an environment. A loop made under ADR-0059 has none of them
-// until the operator sets them.
+// Complete reports whether a session can start from setup: an
+// environment, and a repo with its branch or neither (#1712). A loop made
+// under ADR-0059 has no environment until the operator sets one.
 func (setup CloudSetup) Complete() bool {
-	return setup.Repo != "" && setup.Branch != "" && setup.EnvironmentID != ""
+	return setup.EnvironmentID != "" && (setup.Repo == "") == (setup.Branch == "")
 }
 
 // Check is ADR-0061's rule for each field, run when they are set and
 // again at each start: every repo is owner/name in the characters GitHub
 // allows, the branch is a branch name git accepts and doesn't start with
 // "-", the environment ID has an environment ID's shape, and no repo is
-// named twice. An empty setup passes: it is a loop with none yet.
+// named twice. The repo and its branch may both be left out, for a loop
+// with no repo (#1712), but not one of them alone, and further repos
+// need a first. An empty setup passes: it is a loop with none yet.
 func (setup CloudSetup) Check() error {
 	if setup.Repo == "" && setup.Branch == "" && len(setup.Repos) == 0 && setup.EnvironmentID == "" {
 		return nil
 	}
-	if !ValidGitHubRepo(setup.Repo) {
+	noRepo := setup.Repo == "" && setup.Branch == ""
+	if noRepo && len(setup.Repos) > 0 {
+		return errors.New("further repos need a first repo to start from")
+	}
+	if setup.Repo == "" && setup.Branch != "" {
+		return errors.New("a branch needs a repo to be on")
+	}
+	if !noRepo && !ValidGitHubRepo(setup.Repo) {
 		return fmt.Errorf("the repo must be a GitHub repo as owner/name, not %q", setup.Repo)
 	}
-	if !ValidCloudBranch(setup.Branch) {
+	if !noRepo && !ValidCloudBranch(setup.Branch) {
 		return fmt.Errorf("%q is not a branch name git accepts", setup.Branch)
 	}
 	if !ValidCloudEnvironmentID(setup.EnvironmentID) {

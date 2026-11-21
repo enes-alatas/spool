@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -635,7 +636,7 @@ func (session *cliSession) startSession(text string) error {
 	}
 	setup, cancelSetup := context.WithTimeout(session.ctx, setupWithin)
 	defer cancelSetup()
-	settings, err := startSettings(session.source.EnvironmentID)
+	settings, err := startSettings(session.source)
 	if err != nil {
 		return err
 	}
@@ -657,6 +658,9 @@ func (session *cliSession) startSession(text string) error {
 		return err
 	}
 	defer run.remove()
+	if repoless(session.source) {
+		run.env = walledEnv(run.env, dir)
+	}
 
 	answer, err := sessionStartAnswer(exportLines(session.env), session.prompt)
 	if err != nil {
@@ -664,18 +668,16 @@ func (session *cliSession) startSession(text string) error {
 	}
 	pending := session.cloud.waits.awaitStart(session.loopID, within, answer)
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
-	// --ref starts the session from the branch on GitHub: without it the
-	// CLI bundles the start directory, which has nothing to bundle (run R
-	// on #1180). CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded. Its
-	// debug log says which environment it picked (#1232).
-	args := []string{"--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch, "--debug-file", run.debugLog}
+	// the CLI's debug log says which environment it picked (#1232)
+	args := append([]string{"--cloud", text, "--permission-mode", "auto", "--settings", settings}, refArgs(session.source)...)
+	args = append(args, "--debug-file", run.debugLog)
 	if session.model != "" {
 		// the CLI creates the session on its main-loop model, which
 		// --model sets; without it the session runs on the account's
 		// default (#1281)
 		args = append(args, "--model", session.model)
 	}
-	args = append(args, nameArgs(session.source, session.source.Repo)...)
+	args = append(args, nameArgs(session.source, sessionTitle(session.source))...)
 	cmd := exec.Command(cli.Binary, args...)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
@@ -1102,16 +1104,37 @@ func (cli *CLI) ownDir() error {
 // setup script writes too. The first live start found the VM's copy of
 // the rules holding, and couldn't tell whether this one reaches the
 // session (#1190). With no environment there is no start, since the
-// CLI would pick one of the account's environments by itself.
-func startSettings(environmentID string) (string, error) {
-	if environmentID == "" {
+// CLI would pick one of the account's environments by itself. A loop
+// with no repo is denied the repo tools too (repoTools): it has no repo
+// to attach. The setup script is every loop's, so it can't deny them for
+// this loop alone, and the add_repo guard, which refuses every repo such
+// a loop names, stays what holds (#1712).
+func startSettings(source runtime.CloudStart) (string, error) {
+	if source.EnvironmentID == "" {
 		return "", errors.New("cloud: the loop has no environment")
 	}
+	denied := deniedTools()
+	if repoless(source) {
+		denied = append(denied, repoTools()...)
+	}
 	raw, err := json.Marshal(map[string]any{
-		"remote":      map[string]string{"defaultEnvironmentId": environmentID},
-		"permissions": map[string]any{"deny": deniedTools()},
+		"remote":      map[string]string{"defaultEnvironmentId": source.EnvironmentID},
+		"permissions": map[string]any{"deny": denied},
 	})
 	return string(raw), err
+}
+
+// refArgs is the --ref a start runs with: source's branch, which starts
+// the session from the branch on GitHub. Without it the CLI bundles the
+// start directory, which has nothing to bundle (run R on #1180).
+// CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded. A loop with no
+// repo has no branch and runs with none: its start directory is no git
+// repo, so the CLI starts the session empty (#1712).
+func refArgs(source runtime.CloudStart) []string {
+	if repoless(source) {
+		return nil
+	}
+	return []string{"--ref", source.Branch}
 }
 
 // makeStartDir makes a start directory under parent (ADR-0061): a fresh
@@ -1120,14 +1143,25 @@ func startSettings(environmentID string) (string, error) {
 // clone, so the CLI sends the repo as the session's source. git runs by
 // argument list, with the operator's git config kept out, on a repo and
 // branch it checks again here, whatever its caller checked (gitSafe).
+// For a loop with no repo the directory stays empty and no git repo, so
+// the CLI copies nothing from it and the session has no source (#1712).
 // The caller removes the directory once the start ends.
 func makeStartDir(ctx context.Context, parent string, source runtime.CloudStart) (dir string, err error) {
-	if !gitSafe(source) {
+	if !repoless(source) && !gitSafe(source) {
 		return "", fmt.Errorf("cloud: %q on %q is not a repo and branch to start from", source.Repo, source.Branch)
 	}
 	dir, err = os.MkdirTemp(parent, "spool-start-*")
 	if err != nil {
 		return "", err
+	}
+	if repoless(source) {
+		// a directory inside a repo would start the session from that
+		// repo, which no loop named
+		if err := outsideGitRepos(dir); err != nil {
+			_ = os.RemoveAll(dir)
+			return "", fmt.Errorf("cloud: a start with no repo: %w", err)
+		}
+		return dir, nil
 	}
 	for _, step := range []struct {
 		name string
@@ -1147,6 +1181,76 @@ func makeStartDir(ctx context.Context, parent string, source runtime.CloudStart)
 		}
 	}
 	return dir, nil
+}
+
+// outsideGitRepos is nil when no git repo could be found from dir: none
+// of dir and its parents holds a .git entry or is a bare repo (a HEAD,
+// objects and refs of its own), which is what git's discovery looks for.
+// It reads the file system itself rather than asking git, whose answer
+// turns on config, safe.directory included, that the CLI's git may read
+// differently. It walks the parents of dir's resolved path, which git
+// discovers from, and of the path as given too, as a symlink above dir
+// makes them differ. It errs when it finds one, and when it can't tell:
+// any error but "not there" refuses (#1712).
+func outsideGitRepos(dir string) error {
+	given, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	resolved, err := filepath.EvalSymlinks(given)
+	if err != nil {
+		return gitRepoAt(given, err)
+	}
+	for _, path := range []string{resolved, given} {
+		if err := outsideGitReposAbove(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// outsideGitReposAbove is outsideGitRepos's walk up from dir, an
+// absolute path, as written.
+func outsideGitReposAbove(dir string) error {
+	for {
+		if found, err := present(filepath.Join(dir, ".git")); err != nil || found {
+			return gitRepoAt(dir, err)
+		}
+		bare := true
+		for _, part := range []string{"HEAD", "objects", "refs"} {
+			found, err := present(filepath.Join(dir, part))
+			if err != nil {
+				return gitRepoAt(dir, err)
+			}
+			bare = bare && found
+		}
+		if bare {
+			return gitRepoAt(dir, nil)
+		}
+		up := filepath.Dir(dir)
+		if up == dir {
+			return nil
+		}
+		dir = up
+	}
+}
+
+// present reports whether path exists, erring when it can't tell.
+func present(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// gitRepoAt is outsideGitRepos's refusal at dir: a repo found there, or
+// err, which left it unable to tell.
+func gitRepoAt(dir string, err error) error {
+	if err != nil {
+		return fmt.Errorf("can't tell whether %s is a git repo, which the CLI would start from: %w", dir, err)
+	}
+	return fmt.Errorf("%s is a git repo, which the CLI would start from", dir)
 }
 
 // gitSafe reports whether source's repo and branch can go into the start
@@ -1194,4 +1298,27 @@ func warnTokenIn(path, token string) {
 	if err == nil && bytes.Contains(raw, []byte(token)) {
 		slog.Default().Warn("the claude CLI wrote the account's token to its debug log; removed", "file", filepath.Base(path))
 	}
+}
+
+// walledEnv is env for a start with no repo from dir: without the
+// variables that point git at a repo of their own, and with git's search
+// for one stopped above dir, so the CLI's git can't find a repo above it
+// even if outsideGitRepos were wrong. outsideGitRepos stays the guard:
+// that the CLI looks for the repo through git is unproven (#1712).
+func walledEnv(env []string, dir string) []string {
+	var walled []string
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES", "GIT_DISCOVERY_ACROSS_FILESYSTEM":
+			continue
+		}
+		walled = append(walled, entry)
+	}
+	// the resolved parent, the path outsideGitRepos walks, where it resolves
+	ceiling := filepath.Dir(dir)
+	if resolved, err := filepath.EvalSymlinks(ceiling); err == nil {
+		ceiling = resolved
+	}
+	return append(walled, "GIT_CEILING_DIRECTORIES="+ceiling)
 }

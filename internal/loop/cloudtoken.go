@@ -20,13 +20,14 @@ import (
 // in its place.
 
 // cloudUnset reports whether the loop is a cloud loop whose setup isn't
-// done: it names no repo, branch or environment, holds no hub token, one
-// never minted or killed, or hasn't passed its setup check on the setup it
-// has now (#1182). It holds its work, as no session of it could start or
+// done: it names no environment, or a repo without its branch (a loop
+// may name no repo, #1712), holds no hub token, one never minted or
+// killed, or hasn't passed its setup check on the setup it has now
+// (#1182). It holds its work, as no session of it could start or
 // reach the hub, or none is known to.
 func (actor *Actor) cloudUnset() bool {
 	return actor.loop.Runtime == store.RuntimeCloud && (!actor.loop.HasHubToken ||
-		actor.loop.CloudRepo == "" || actor.loop.CloudBranch == "" || actor.loop.CloudEnvironmentID == "" ||
+		!store.CloudSetupOf(&actor.loop).Complete() ||
 		!actor.cloudChecked())
 }
 

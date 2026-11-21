@@ -476,7 +476,8 @@ agent's management MCP calls (ADR-0067); and the hub's own address check
 through the `claude` CLI, on the OAuth token of the claude.ai account
 of the loop's Claude login, `default` unless it names another (#1078).
 It starts the session with `claude --cloud` under a pseudo-terminal,
-from the loop's GitHub repo and branch, in the loop's own claude.ai
+from the loop's GitHub repo and branch, or with no repo for a loop
+that names none (#1712), in the loop's own claude.ai
 environment, with nothing uploaded (ADR-0061). It sends each wake with
 `claude -p --cloud`. The hooks the environment's setup script writes
 post the session's id and each turn's transcript lines back to the
@@ -670,6 +671,16 @@ cloud listener (ADR-0059).
   the call to `/hooks`: the hub lets it go ahead only from the loop's
   session, during a turn, for a repo the loop names, and logs each
   refusal. A guard that can't reach the hub refuses (ADR-0061).
+- **A loop that names no repo starts with no repo** (#1712). Its start
+  directory is empty and no git repo, and the start runs without
+  `--ref`, so the session has no source and nothing is uploaded; a start
+  directory inside a repo, or one the hub can't tell about, is refused: it
+  looks for a repo itself, as git's discovery does, without asking git,
+  whose answer turns on config, and the CLI's env stops git's own search
+  above the start directory. Run A on #1712 found
+  `gh api` refused for such a session. It still has `add_repo`, which the
+  guard refuses for every repo, since the loop names none, and the
+  start's `--settings` denies the repo tools as well.
 
 **Doesn't hold:**
 - **The deny rules and the `add_repo` guard are guards, not a

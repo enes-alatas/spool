@@ -78,14 +78,14 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 	setup, cancelSetup := context.WithTimeout(ctx, setupWithin)
 	defer cancelSetup()
 	cli := cloud.CLI
-	settings, err := startSettings(source.EnvironmentID)
+	settings, err := startSettings(source)
 	if err != nil {
 		return CheckStageEnvironment, err.Error()
 	}
 	if err := cloud.confirmEnvironment(setup, source); err != nil {
 		return CheckStageEnvironment, err.Error()
 	}
-	if !gitSafe(source) {
+	if !repoless(source) && !gitSafe(source) {
 		return CheckStageEnvironment, "the loop's repo or branch isn't one a start can name"
 	}
 	if err := cli.ownDir(); err != nil {
@@ -103,10 +103,15 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 		return CheckStageHub, err.Error()
 	}
 	defer run.remove()
+	if repoless(source) {
+		run.env = walledEnv(run.env, dir)
+	}
 
 	check := cloud.waits.awaitCheck(loopID, within)
 	defer cloud.waits.forgetCheck(loopID, check)
-	args := append([]string{"--cloud", message, "--permission-mode", "auto", "--settings", settings, "--ref", source.Branch, "--debug-file", run.debugLog}, nameArgs(source, checkTitle)...)
+	args := append([]string{"--cloud", message, "--permission-mode", "auto", "--settings", settings}, refArgs(source)...)
+	args = append(args, "--debug-file", run.debugLog)
+	args = append(args, nameArgs(source, checkTitle)...)
 	cmd := exec.Command(cli.Binary, args...)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)

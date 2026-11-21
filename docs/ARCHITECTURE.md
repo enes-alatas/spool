@@ -178,7 +178,9 @@ the interface, `internal/runtime/bare` runs host subprocesses,
 `claude` CLI (ADR-0061): `claude --cloud` under a pseudo-terminal starts it from
 the loop's GitHub repo, from an empty start directory whose `origin` is that repo,
 with `--ref` naming its branch and `--settings` the loop's own claude.ai
-environment, and nothing uploaded; `claude -p --cloud` sends each wake. The hub
+environment, and nothing uploaded; a loop that names no repo starts from an empty
+start directory that is no git repo, with no `--ref`, so its session starts empty
+(#1712); `claude -p --cloud` sends each wake. The hub
 binds a start to the session the CLI's `View:` line names. The environment, which
 the operator creates by hand, carries Spool's setup script, the same text for every
 cloud loop of a hub (`cloud.SetupScript`), which writes the cloud listener as the
@@ -193,7 +195,7 @@ the cloud listener refuses it while the loop is paused, and a kill or a move to
 another Claude login revokes it until the next Rotate token. Its `/mcp` takes only the loop's own session, which the
 session's MCP client names in `X-Spool-Session`, and its tool calls only during a
 turn and a minute after.
-A cloud loop whose repo, environment or token isn't set is
+A cloud loop whose environment or token isn't set is
 held with a `cloud_setup` problem.
 The hub answers each start's `SessionStart` post with the loop's env-var
 connections as `export` lines, which the hook appends to `CLAUDE_ENV_FILE`, and the

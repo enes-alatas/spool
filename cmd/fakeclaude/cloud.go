@@ -14,7 +14,9 @@ package main
 //     repo with a commit: it clones the repo into the VM, which carries
 //     only what is committed, as the bundle does, or, unless
 //     CCR_ENABLE_BUNDLE is set or the CLI may fetch its feature flags,
-//     leaves the VM's directory empty (#1094). It fires the working
+//     leaves the VM's directory empty (#1094). A working directory that
+//     is no git repo, with no --ref, starts the session empty, as run A on
+//     #1712 found, and prints the CLI's line saying so. It fires the working
 //     directory's SessionStart hooks locally, as the real CLI does on the
 //     operator's machine, with no remote session id (#957, run E3), and
 //     counts them in the session's local-session-starts. It writes its
@@ -183,9 +185,14 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 	cwd, _ := os.Getwd()
 	// With --ref the session starts from that branch of the working
 	// directory's origin on GitHub; without it the CLI bundles the
-	// working directory, which needs a commit (run R on #1180).
+	// working directory, which needs a commit (run R on #1180). A working
+	// directory that is no git repo starts the session empty, from no
+	// source (#1712).
 	var source string
-	if ref != "" {
+	empty := ref == "" && exec.Command("git", "-C", cwd, "rev-parse", "--git-dir").Run() != nil
+	if empty {
+		fmt.Println("This folder is not a git repository, so the cloud session starts empty: nothing from this folder is copied into it")
+	} else if ref != "" {
 		out, err := exec.Command("git", "-C", cwd, "remote", "get-url", "origin").Output()
 		repo, ok := githubRepo(strings.TrimSpace(string(out)))
 		if err != nil || !ok {
@@ -248,6 +255,11 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 	case source != "":
 		if out, err := exec.Command("git", "clone", "-q", "--branch", ref, source, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cloning the repository: %v: %s\n", err, out)
+			return 1
+		}
+	case empty:
+		if err := os.Mkdir(filepath.Join(vm, "repo"), 0o700); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
 	case seedsFromRepo():
