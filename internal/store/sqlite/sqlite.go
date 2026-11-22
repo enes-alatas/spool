@@ -1467,6 +1467,19 @@ func (table attachments) ExpireUnsent(ctx context.Context, cutoff, removedAt int
 		RETURNING `+attachmentCols, removedAt, cutoff)
 }
 
+func (table attachments) RemoveUnsent(ctx context.Context, id, removedAt int64) (*store.Attachment, error) {
+	out, err := table.query(ctx, `UPDATE attachments SET removed_at=?
+		WHERE id=? AND message_id=0 AND removed_at=0 AND path!=''
+		RETURNING `+attachmentCols, removedAt, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
+}
+
 func (table attachments) query(ctx context.Context, statement string, args ...any) ([]*store.Attachment, error) {
 	rows, err := table.db.QueryContext(ctx, statement, args...)
 	if err != nil {

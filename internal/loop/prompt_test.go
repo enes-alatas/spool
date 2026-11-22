@@ -65,6 +65,20 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 			want:     "Your other repos are owner/second, other/third.\nTo work in one, attach it with the add_repo tool,",
 			dontWant: "workstation",
 		},
+		{
+			// its send's hook posts the file (ADR-0073)
+			name:     "cloud session attaching a file",
+			loop:     store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud, WorkspaceMode: store.WorkspaceNone},
+			want:     "\nA file you attach to a message goes from this machine to the hub as you\nsend it: name one in your working directory or your home, at most 20 MB.\n\nCONDUCT\n",
+			dontWant: "can't attach",
+		},
+		{
+			name: "contained loop attaching a file",
+			loop: store.Loop{Name: "w", Mission: "m", Runtime: store.RuntimeDocker,
+				WorkspaceMode: store.WorkspaceNone, WorkspacePath: "/home/loop"},
+			want:     "persistent workstation",
+			dontWant: "goes from this machine to the hub",
+		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

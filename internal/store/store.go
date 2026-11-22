@@ -1565,6 +1565,10 @@ type AttachmentStore interface {
 	RemoveByMessage(ctx context.Context, messageID, removedAt int64) ([]*Attachment, error)
 	// ExpireUnsent is Expire for uploads no message has claimed.
 	ExpireUnsent(ctx context.Context, cutoff, removedAt int64) ([]*Attachment, error)
+	// RemoveUnsent is ExpireUnsent for one upload, whatever its age: a
+	// cloud loop's file whose send never came (ADR-0073). One that is not
+	// waiting, because it is sent, removed or unknown, is ErrNotFound.
+	RemoveUnsent(ctx context.Context, id, removedAt int64) (*Attachment, error)
 }
 
 type TurnStore interface {

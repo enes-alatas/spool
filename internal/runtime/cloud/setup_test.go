@@ -422,6 +422,7 @@ func TestSetupScriptDeniesTheAccountsToolsAndGuardsAddRepo(t *testing.T) {
 			Matcher string `json:"matcher"`
 			Hooks   []struct {
 				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
 			} `json:"hooks"`
 		} `json:"hooks"`
 		Permissions struct {
@@ -433,9 +434,15 @@ func TestSetupScriptDeniesTheAccountsToolsAndGuardsAddRepo(t *testing.T) {
 		t.Fatalf("~/.claude/settings.json: %v: %s", err, raw)
 	}
 	guards := settings.Hooks[HookPreToolUse]
-	if len(guards) != 1 || guards[0].Matcher != "mcp__claude-code-remote__add_repo" ||
+	if len(guards) != 2 || guards[0].Matcher != "mcp__claude-code-remote__add_repo" ||
 		!strings.Contains(guards[0].Hooks[0].Command, hookFile+`" PreToolUse`) {
-		t.Errorf("the PreToolUse hooks are %+v, want the guard on add_repo", guards)
+		t.Errorf("the PreToolUse hooks are %+v, want the guard on add_repo first", guards)
+	}
+	// and send_message's, which posts the file a call attaches, with time
+	// for 20 MB (ADR-0073)
+	if len(guards) == 2 && (guards[1].Matcher != "mcp__spool__send_message" ||
+		!strings.HasSuffix(guards[1].Hooks[0].Command, hookFile+`" attach`) || guards[1].Hooks[0].Timeout != 180) {
+		t.Errorf("the second PreToolUse hook is %+v, want send_message's, with a 180 s timeout", guards[1])
 	}
 	denied := strings.Join(settings.Permissions.Deny, " ")
 	for _, tool := range []string{"list_sessions", "get_session", "list_events", "list_triggers", "list_environments",

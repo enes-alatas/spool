@@ -24,7 +24,7 @@ type sendMessageIn struct {
 	ReplyTo     string  `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in a channel, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
 	Text        string  `json:"text,omitempty" jsonschema:"the message text, or a poll's question; in a channel, @mentions name the recipients. Omit only with react, vote, close_poll or dismiss."`
 	Resends     string  `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
-	Attach      string  `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
+	Attach      string  `json:"attach,omitempty" jsonschema:"path of one file in your workspace, or in your session for a cloud loop, to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
 	React       string  `json:"react,omitempty" jsonschema:"one emoji to react with to the message reply_to names, instead of answering it in words; send no text with it. It wakes nobody, and counts as a send. Omit to send a message."`
 	Poll        *pollIn `json:"poll,omitempty" jsonschema:"makes this message a poll: its text is the question, at most 300 characters. Votes in it reach you ahead of your next turn, and so does the result once it closes. Omit for a plain message."`
 	Vote        *[]int  `json:"vote,omitempty" jsonschema:"your vote in the poll reply_to names: the numbers of the options you pick, as the poll listed them, or [] to take your vote back; send no text with it. It wakes nobody, and counts as a send. Omit unless voting."`
@@ -161,7 +161,7 @@ type mcpHeldKey struct{}
 // sendMessageTool is the send_message tool for caller. A held one refuses
 // every call, as a tool error the model reads, and logs it with the loop.
 func (server *Server) sendMessageTool(caller *store.Loop, held error) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+	return func(ctx context.Context, call *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
 		if held != nil {
 			server.Log.Warn("cloud mcp call refused", "loop", caller.Name, "tool", "send_message", "reason", held.Error())
 			return nil, sendMessageOut{}, fmt.Errorf("refused: %v; this loop's sends reach the hub only during its turns", held)
@@ -177,6 +177,9 @@ func (server *Server) sendMessageTool(caller *store.Loop, held error) func(conte
 			Voting:      in.Vote != nil,
 			ClosePoll:   in.ClosePoll,
 			Dismiss:     in.Dismiss,
+		}
+		if caller.Runtime == store.RuntimeCloud {
+			req.Cloud = cloudSendCall(call)
 		}
 		if in.Poll != nil {
 			req.Poll = &route.PollRequest{Options: in.Poll.Options, Multiple: in.Poll.Multiple, ClosesIn: in.Poll.ClosesIn}
@@ -221,6 +224,28 @@ func (server *Server) sendMessageTool(caller *store.Loop, held error) func(conte
 		}
 		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}
+}
+
+// toolUseMeta is the _meta key the CLI's MCP client sends a tool call's
+// id under, the id its PreToolUse hook's input carries as tool_use_id
+// (comment 7076971488 on #1713).
+const toolUseMeta = "claudecode/toolUseId"
+
+// cloudSendCall is the session and call a cloud loop's tools/call names, which
+// find the file its hook posted ahead of it (ADR-0073). Either may be "":
+// a send with a file then finds none.
+func cloudSendCall(call *mcp.CallToolRequest) route.CloudCall {
+	var named route.CloudCall
+	if call == nil {
+		return named
+	}
+	if call.Extra != nil {
+		named.Session = call.Extra.Header.Get(cloudSessionHeader)
+	}
+	if call.Params != nil {
+		named.ToolUseID, _ = call.Params.Meta[toolUseMeta].(string)
+	}
+	return named
 }
 
 // everyLoop admits any loop's token: the loop listener's rule.

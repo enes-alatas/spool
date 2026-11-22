@@ -131,7 +131,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — start, stop, validate a loop credential, follow loop config changes; the adapter delivers inbound to the router and mirrors outbound off the bus (ADR-0029) | `telegram` (today), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `cloud` (a Claude Code cloud session per loop on Anthropic's machines, driven through the `claude` CLI and the hooks its environment's setup script writes; no workstation of the hub's, no files — ADR-0056, ADR-0059, ADR-0061), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `cloud` (a Claude Code cloud session per loop on Anthropic's machines, driven through the `claude` CLI and the hooks its environment's setup script writes; no workstation of the hub's and no `PutFile` or `GetFile`, a file it sends coming from its send's hook — ADR-0056, ADR-0059, ADR-0061, ADR-0073), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -186,7 +186,9 @@ the operator creates by hand, carries Spool's setup script, the same text for ev
 cloud loop of a hub (`cloud.SetupScript`), which writes the cloud listener as the
 session's MCP server and the hooks that post the session's id and each turn back to
 its `/hooks`, with a guard that holds `add_repo` to the loop's repos and deny rules
-for the `claude-code-remote` tools that act on the account; and the loop's hub token
+for the `claude-code-remote` tools that act on the account, and a hook on the loop's
+`send_message` that posts the file a call attaches to `/hooks/attach` ahead of the
+call, which claims it (ADR-0073); and the loop's hub token
 as its network secret, which the egress proxy adds to every request for the hub's
 host: the token never enters the VM.
 The token outlives the loop's sessions and the hub keeps only its hash: Rotate token

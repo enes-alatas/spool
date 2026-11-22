@@ -409,6 +409,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// Claim writes a message id and ExpireUnsent a timestamp; the
 			// name was redacted when the upload was inserted.
 			"ByMessages": false, "Claim": false, "ExpireUnsent": false,
+			// RemoveUnsent is ExpireUnsent for one upload.
+			"RemoveUnsent": false,
 		},
 		"InboxStore": {
 			// Push queues an envelope the loop is about to be handed. Its

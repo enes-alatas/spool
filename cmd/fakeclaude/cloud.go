@@ -52,12 +52,15 @@ package main
 // "!envsum NAME" line, NAME and its value as sh reads it after claude-env,
 // or for !envsum its SHA-256, or for a "!send {json}" line, what the hub's
 // send_message answered the call through the VM's spool server
-// (sendFromVM), or for a "!tool <name> {json}" line, whether the user
-// settings' deny rules and PreToolUse hooks let the call go ahead
-// (callTool). A message with a "!api-error <error>" line is a turn the API
+// (sendFromVM), its _meta naming the call as its PreToolUse hooks, which
+// run first and may refuse it, are told (ADR-0073), or for a "!tool
+// <name> {json}" line, whether the user settings' deny rules and
+// PreToolUse hooks let the call go ahead (callTool). A message with a "!api-error <error>" line is a turn the API
 // fails: the transcript ends on the CLI's own "API Error: <error>" line,
 // on model <synthetic>, and StopFailure runs in Stop's place, naming the
-// error. Turns of one session run one at a time.
+// error. A "!mkfile <name> <bytes>" line writes that many x's to name in
+// the working directory before any of that. Turns of one session run one
+// at a time.
 //
 // A "reclaimed" file in a session's directory makes its next turn a VM
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
@@ -87,6 +90,7 @@ package main
 // 502, and nothing the VM posts reaches the hub.
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -418,8 +422,20 @@ func cloudTurn(session, message string, first bool) int {
 		}
 		reply = name + "=" + value
 	}
+	for _, made := range filesAsked(message) {
+		// the model writing a file in its working directory first
+		_ = os.WriteFile(filepath.Join(repo, made.name), bytes.Repeat([]byte("x"), made.size), 0o600)
+	}
 	if args, asked := sendAsked(message); asked {
-		reply = sendFromVM(home, string(environment), env, args)
+		// send_message's PreToolUse hooks run first, naming the call the
+		// tools/call names too (ADR-0073)
+		input, _ := json.Marshal(args)
+		toolUseID := fmt.Sprintf("toolu_fake%d", len(readLines(filepath.Join(vm, "transcript.jsonl"))))
+		if refusal, ok := preToolUse([]string{home, repo}, repo, env, session, sendMessageTool, input, toolUseID); !ok {
+			reply = "tool " + sendMessageTool + ": " + refusal
+		} else {
+			reply = sendFromVM(home, string(environment), env, args, toolUseID)
+		}
 	}
 	if tool, input, asked := toolAsked(message); asked {
 		reply = callTool([]string{home, repo}, repo, env, tool, input)
@@ -777,7 +793,7 @@ func compacted(message string) bool {
 // session's env (comment 6469183361 on #1168), and the environment's
 // network secret added for its host, as the egress proxy adds it (run S
 // on #1180). It replies "sent <the tool's text>" or "send error: …".
-func sendFromVM(home, environment string, env []string, args map[string]any) string {
+func sendFromVM(home, environment string, env []string, args map[string]any, toolUseID string) string {
 	servers, err := readMCPConfig(filepath.Join(home, ".claude.json"))
 	if err != nil {
 		return "send error: " + err.Error()
@@ -812,7 +828,8 @@ func sendFromVM(home, environment string, env []string, args map[string]any) str
 		return "send error: " + err.Error()
 	}
 	defer func() { _ = sess.Close() }()
-	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{Name: "send_message", Arguments: args})
+	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{
+		Meta: mcp.Meta{"claudecode/toolUseId": toolUseID}, Name: "send_message", Arguments: args})
 	if err != nil {
 		return "send error: " + err.Error()
 	}
@@ -855,13 +872,6 @@ func callTool(dirs []string, cwd string, env []string, tool string, input json.R
 			continue
 		}
 		var settings struct {
-			Hooks map[string][]struct {
-				Matcher string `json:"matcher"`
-				Hooks   []struct {
-					Type    string `json:"type"`
-					Command string `json:"command"`
-				} `json:"hooks"`
-			} `json:"hooks"`
 			Permissions struct {
 				Deny []string `json:"deny"`
 			} `json:"permissions"`
@@ -872,7 +882,41 @@ func callTool(dirs []string, cwd string, env []string, tool string, input json.R
 		if slices.Contains(settings.Permissions.Deny, tool) {
 			return "tool " + tool + ": denied"
 		}
-		stdin, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": input, "cwd": cwd})
+	}
+	if refusal, ok := preToolUse(dirs, cwd, env, "", tool, input, ""); !ok {
+		return "tool " + tool + ": " + refusal
+	}
+	return "tool " + tool + ": called"
+}
+
+// sendMessageTool is the hub's send_message as the CLI names it in a hook.
+const sendMessageTool = "mcp__spool__send_message"
+
+// preToolUse runs the PreToolUse hooks of the user's and the project's
+// settings whose matcher names tool, as Claude Code does before a call:
+// their input carries the call's tool_use_id and the session's id, and
+// one exiting 2 refuses the call, with stderr as its reason ("refused:
+// <reason>"). A hook's timeout isn't kept: the fake waits for it.
+func preToolUse(dirs []string, cwd string, env []string, session, tool string, input json.RawMessage, toolUseID string) (string, bool) {
+	for _, dir := range dirs {
+		raw, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+		if err != nil {
+			continue
+		}
+		var settings struct {
+			Hooks map[string][]struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"hooks"`
+		}
+		if json.Unmarshal(raw, &settings) != nil {
+			continue
+		}
+		stdin, _ := json.Marshal(map[string]any{"session_id": "local-" + session, "hook_event_name": "PreToolUse",
+			"tool_name": tool, "tool_input": input, "tool_use_id": toolUseID, "cwd": cwd})
 		for _, group := range settings.Hooks["PreToolUse"] {
 			if !matches(group.Matcher, tool) {
 				continue
@@ -884,14 +928,35 @@ func callTool(dirs []string, cwd string, env []string, tool string, input json.R
 				var stderr strings.Builder
 				cmd.Stderr = &stderr
 				if err := cmd.Run(); cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 2 {
-					return "tool " + tool + ": refused: " + strings.TrimSpace(stderr.String())
+					return "refused: " + strings.TrimSpace(stderr.String()), false
 				} else if err != nil {
 					fmt.Fprintf(os.Stderr, "fakeclaude: PreToolUse hook: %v %s\n", err, stderr.String())
 				}
 			}
 		}
 	}
-	return "tool " + tool + ": called"
+	return "", true
+}
+
+// fileAsked is a file a turn's "!mkfile <name> <bytes>" line has the
+// model write in its working directory before anything else: that many
+// x's.
+type fileAsked struct {
+	name string
+	size int
+}
+
+func filesAsked(message string) []fileAsked {
+	var files []fileAsked
+	for _, line := range strings.Split(message, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "!mkfile "); ok {
+			name, size, _ := strings.Cut(rest, " ")
+			if count, err := strconv.Atoi(size); err == nil && name != "" && !strings.Contains(name, "/") {
+				files = append(files, fileAsked{name, count})
+			}
+		}
+	}
+	return files
 }
 
 // toolAsked is the tool and input of a turn's "!tool <name> <json>" line.

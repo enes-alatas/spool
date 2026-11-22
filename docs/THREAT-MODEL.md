@@ -481,7 +481,7 @@ that names none (#1712), in the loop's own claude.ai
 environment, with nothing uploaded (ADR-0061). It sends each wake with
 `claude -p --cloud`. The hooks the environment's setup script writes
 post the session's id and each turn's transcript lines back to the
-cloud listener (ADR-0059).
+cloud listener (ADR-0059), and the file a send attaches (ADR-0073).
 
 **Holds:**
 - **The account token is sealed** under `hub.key`, known to the redactor,
@@ -643,9 +643,22 @@ cloud listener (ADR-0059).
 - **A cloud loop made under ADR-0056 starts a new session** at its next
   wake, through the CLI, on a token of its own: the hub never resumes a
   session the sessions client created.
-- **Attachments don't cross.** A file sent to a cloud loop is shown as
-  not kept, and the loop can't attach one: the hub never reads its own
-  disk for a cloud loop.
+- **A cloud loop's file comes in only through its send's hook.** A file
+  sent to a cloud loop is shown as not kept: the hub never reads its own
+  disk for one. A file the loop sends is posted to `/hooks/attach` by the
+  `PreToolUse` hook on its `send_message`, which reads the call's input
+  in python3, so no string the model wrote reaches a shell word or a curl
+  argument. The route decides from the headers alone before it reads a
+  byte, under the cloud listener's 1 MB: the token, the session's shape,
+  that it is the loop's own session in a turn, and that no other of the
+  loop's files is on its way in. Only then may the post send up to 20 MB
+  within two and a half minutes; nothing changes before the token. Its
+  check holds a few times 20 MB of memory, so size the hub at that per
+  cloud loop. The
+  file passes the name redaction and the secret check every attachment
+  does, waits keyed by its loop, session and call, is claimed once, by
+  that call alone, and goes at the loop's `Stop` or the hourly sweep if
+  no send claims it (ADR-0073).
 - **A cloud session's shell found no path to another session by a
   copyable token.** A probe (ADR-0056 item 5, #866) ran as the session's
   own shell, as root. The session's `claude` reaches `api.anthropic.com`
@@ -683,6 +696,11 @@ cloud listener (ADR-0059).
   start's `--settings` denies the repo tools as well.
 
 **Doesn't hold:**
+- **Where a cloud loop's file may come from is the VM's check.** The
+  hook sends a file only from the session's working directory or home,
+  and none from the CLI's configuration there, but a loop could post the
+  form itself, as it could paste a file's text into words: it is a guard
+  against mistakes, not a boundary (ADR-0073).
 - **The deny rules and the `add_repo` guard are guards, not a
   boundary.** A shell in the VM runs as root and can edit the rules and
   remove the hook. The first live start (#1190, comment 6526275151)
@@ -850,7 +868,8 @@ cloud listener (ADR-0059).
   or Rotate token. It reaches only the cloud listener's routes for its
   own loop. A process in the VM can forge the session header, and
   so call `/mcp`'s tools as the loop during its turns and the minute
-  after, and list them at any time.
+  after, and list them at any time, and post a file for a send when
+  it may call them (ADR-0073).
 - **A stop can't interrupt the turn in flight.** The CLI has no way to,
   so the turn runs on in the VM until it ends, cut off from the hub but
   with its other tools. A wake sent just before the stop may start a turn

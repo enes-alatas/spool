@@ -102,6 +102,35 @@ func TestAnUploadWaitsForOneMessage(t *testing.T) {
 	}
 }
 
+// A cloud loop's upload whose send never came goes whatever its age, once;
+// a sent one, or one already removed, is not waiting (ADR-0073).
+func TestRemoveUnsentTakesOneWaitingUpload(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	table := db.Attachments()
+
+	waiting := &store.Attachment{Name: "a.txt", Kind: store.AttachmentFile, Size: 1, Path: "aa-a.txt", CreatedAt: 9_000}
+	sent := &store.Attachment{MessageID: 4, Name: "b.txt", Kind: store.AttachmentFile, Size: 1, Path: "bb-b.txt", CreatedAt: 9_000}
+	for _, attachment := range []*store.Attachment{waiting, sent} {
+		if err := table.Insert(ctx, attachment); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := table.RemoveUnsent(ctx, waiting.ID, 10_000)
+	if err != nil || removed.ID != waiting.ID || removed.Path != "aa-a.txt" || removed.RemovedAt != 10_000 {
+		t.Fatalf("removed %+v, %v; want the waiting upload, marked", removed, err)
+	}
+	for _, id := range []int64{waiting.ID, sent.ID, 999} {
+		if _, err := table.RemoveUnsent(ctx, id, 11_000); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("remove %d: %v, want ErrNotFound", id, err)
+		}
+	}
+}
+
 // A deleted message's kept files go whatever their age, and only its own;
 // one retention already removed, or that never arrived, is not returned
 // again (ADR-0055).
