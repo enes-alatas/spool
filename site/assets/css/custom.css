@@ -326,3 +326,15 @@ article h1,
 .spool-404 {
   max-width: 48rem;
 }
+
+/* A diagram (layouts/_shortcodes/diagram.html): drawn on the canvas itself,
+   so it takes no frame, at most its drawn width on a wide page. */
+.spool-diagram {
+  margin: 1.5rem 0;
+}
+.spool-diagram img {
+  display: block;
+  width: 100%;
+  max-width: 680px;
+  height: auto;
+}

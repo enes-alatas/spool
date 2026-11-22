@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 560" role="img" aria-labelledby="title desc">
+  <title id="title">How a message travels to a loop and back</title>
+  <desc id="desc">You write on Telegram, Slack or the control room. A Telegram or Slack message reaches the loop's bot, which hands it to the hub; the control room talks to the hub directly. The hub wakes the loop, and its reply goes back the same way. A loop's message to another loop stays inside the hub, and the sender's bot mirrors it to the group. Below, a loop's day: asleep, costing nothing, until a tick, a message, a background command's exit or the wake it asked for.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="680" height="560"/>
+
+  <!-- you -->
+  <text class="section" x="40" y="30">YOU</text>
+  <rect class="card" x="40" y="50" width="140" height="44" rx="10"/>
+  <text class="name mid" x="110" y="77">Telegram</text>
+  <rect class="card" x="230" y="50" width="140" height="44" rx="10"/>
+  <text class="name mid" x="300" y="77">Slack</text>
+  <rect class="card" x="455" y="50" width="170" height="44" rx="10"/>
+  <text class="name mid" x="540" y="77">control room</text>
+
+  <!-- the loop's bot -->
+  <rect class="card" x="40" y="164" width="330" height="52" rx="10"/>
+  <text class="name mid" x="205" y="188">the loop’s bot</text>
+  <text class="note mid" x="205" y="206">Telegram bot or Slack app</text>
+  <line class="path" x1="110" y1="94" x2="110" y2="164" marker-end="url(#head-path)"/>
+  <line class="path" x1="300" y1="94" x2="300" y2="164" marker-end="url(#head-path)"/>
+
+  <!-- the hub and two loops -->
+  <rect class="region" x="40" y="270" width="600" height="150" rx="12"/>
+  <text class="section" x="56" y="294">HUB</text>
+  <rect class="card" x="80" y="324" width="180" height="52" rx="10"/>
+  <text class="name mid" x="170" y="348">gardener</text>
+  <text class="note mid" x="170" y="366">a loop</text>
+  <rect class="card" x="410" y="324" width="180" height="52" rx="10"/>
+  <text class="name mid" x="500" y="348">courier</text>
+  <text class="note mid" x="500" y="366">another loop</text>
+  <line class="path" x1="145" y1="216" x2="145" y2="324" marker-end="url(#head-path)"/>
+  <line class="back" x1="195" y1="324" x2="195" y2="216" marker-end="url(#head-back)"/>
+  <text class="path-note end" x="137" y="248">message</text>
+  <text class="note" x="203" y="248">reply</text>
+  <line class="path" x1="540" y1="94" x2="540" y2="324" marker-end="url(#head-path)"/>
+  <line class="path" x1="260" y1="350" x2="410" y2="350" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="335" y="374">loop to loop</text>
+  <line class="copy" x1="335" y1="346" x2="335" y2="216" marker-end="url(#head-back)"/>
+  <text class="note" x="345" y="238">mirrored to the group</text>
+  <text class="note" x="345" y="254">by the sender’s bot</text>
+
+  <!-- a loop's day -->
+  <text class="section" x="40" y="462">A LOOP’S DAY</text>
+  <text class="note mid" x="170" y="488">asleep: costs nothing</text>
+  <line class="rail" x1="40" y1="500" x2="640" y2="500"/>
+  <line class="awake" x1="80" y1="500" x2="130" y2="500"/>
+  <line class="awake" x1="250" y1="500" x2="280" y2="500"/>
+  <line class="awake" x1="400" y1="500" x2="440" y2="500"/>
+  <line class="awake" x1="550" y1="500" x2="620" y2="500"/>
+  <circle class="wake" cx="80" cy="500" r="5"/>
+  <text class="wake-name mid" x="80" y="526">tick</text>
+  <circle class="wake" cx="250" cy="500" r="5"/>
+  <text class="wake-name mid" x="250" y="526">message</text>
+  <circle class="wake" cx="400" cy="500" r="5"/>
+  <text class="wake-name mid" x="400" y="526">command exit</text>
+  <circle class="wake" cx="550" cy="500" r="5"/>
+  <text class="wake-name mid" x="550" y="526">next-wake</text>
+</svg>

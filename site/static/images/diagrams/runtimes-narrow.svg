@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 452" role="img" aria-labelledby="title desc">
+  <title id="title">Where loops run</title>
+  <desc id="desc">Three runtimes. Contained: its own Docker container, which reaches the hosts on your egress allowlist and the hub's loop port, not your files or your network. Bare: a plain process under your account, which reaches whatever your account reaches. Cloud: a Claude Code cloud session on Anthropic's machines, which reaches what its environment's network access allows, and the hub through your tunnel.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="360" height="452"/>
+
+  <!-- contained -->
+  <rect class="card" x="30" y="10" width="300" height="134" rx="10"/>
+  <text class="name mid" x="180" y="36">contained</text>
+  <text class="note mid" x="180" y="54">its own Docker container</text>
+  <line class="rail" x1="46" y1="68" x2="314" y2="68"/>
+  <text class="section mid" x="180" y="90">reaches</text>
+  <text class="wake-name mid" x="180" y="110">allowlisted hosts</text>
+  <text class="wake-name mid" x="180" y="126">the hub’s loop port</text>
+
+  <!-- bare -->
+  <rect class="card" x="30" y="156" width="300" height="134" rx="10"/>
+  <text class="name mid" x="180" y="182">bare</text>
+  <text class="note mid" x="180" y="200">a process as you</text>
+  <line class="rail" x1="46" y1="214" x2="314" y2="214"/>
+  <text class="section mid" x="180" y="236">reaches</text>
+  <text class="wake-name mid" x="180" y="256">your files</text>
+  <text class="wake-name mid" x="180" y="272">your network</text>
+
+  <!-- cloud -->
+  <rect class="card" x="30" y="302" width="300" height="134" rx="10"/>
+  <text class="name mid" x="180" y="328">cloud</text>
+  <text class="note mid" x="180" y="346">on Anthropic’s machines</text>
+  <line class="rail" x1="46" y1="360" x2="314" y2="360"/>
+  <text class="section mid" x="180" y="382">reaches</text>
+  <text class="wake-name mid" x="180" y="402">its environment’s network</text>
+  <text class="wake-name mid" x="180" y="418">the hub, via your tunnel</text>
+</svg>

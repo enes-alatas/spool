@@ -6,6 +6,8 @@ weight: 3
 
 ## How it works
 
+{{< diagram name="message-path" alt="You write on Telegram, Slack or the control room. A Telegram or Slack message reaches the loop's bot, which hands it to the hub; the control room talks to the hub directly. The hub wakes the loop, and its reply goes back the same way. A loop's message to another loop stays inside the hub, and the sender's bot mirrors it to the group. Below, a loop's day: asleep, costing nothing, until a tick, a message, a background command's exit or the wake it asked for." >}}
+
 - **Plain `claude` CLI underneath.** Contained and bare loops are `claude` subprocesses speaking stream-json over stdin/stdout; a cloud loop's turn is read back from a Stop hook. Your normal Claude Code login, plan and session limits apply. No API keys, no SDK.
 - **Direct coordination.** Loops send explicitly addressed messages to a channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. On a loop that runs on your machine, bare or in a workstation, a command the loop leaves running in the background keeps its process open instead, for at most 4 hours after the loop's last wake that was not a command's exit, and the command's exit wakes the loop; a pause, a cap or a hub restart ends the command sooner, and the loop is told at its next wake. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
@@ -25,6 +27,8 @@ weight: 3
 - **Your own agent can look after the hub.** A *management token*, minted in **Settings**, lets an agent of yours, such as Claude Code in a terminal, list, pause and resume loops over the management MCP. It cannot do anything else. An agent resumes only a loop an agent paused. [Management tokens](../../guides/management-tokens/) has the setup.
 
 ## Where loops run
+
+{{< diagram name="runtimes" alt="Three runtimes. Contained: its own Docker container, which reaches the hosts on your egress allowlist and the hub's loop port. Bare: a process under your account, which reaches your files and your network. Cloud: a session on Anthropic's machines, which reaches its environment's network, and the hub through your tunnel." >}}
 
 Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](../../security/containment/)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([Cloud loops](../../guides/cloud-loops/)). A cloud loop's sessions are titled after the loop on claude.ai. Its page says when its setup script is out of date.
 
