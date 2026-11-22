@@ -1283,5 +1283,69 @@ taken.push(repoStepFile)
 await page.unroute('**/api/loops/gardener/cloud/setup')
 await page.unroute(gardenerLoop)
 
+// A loop woken by a background command's exit (#1710): the CLI starts that
+// turn itself, so the hub stores its task_notification and no envelope. The
+// fixture's one turn is a message's, so the window gets a background turn
+// after it, as the hub stores one.
+const gardenerEvents = /\/api\/loops\/gardener\/events\?/
+await page.route(gardenerEvents, async (route) => {
+  const response = await route.fetch()
+  const events = await response.json()
+  const last = events[events.length - 1]
+  let id = Math.max(...events.map((event) => event.id))
+  const event = (type, subtype, payload, after) => ({
+    ...last,
+    id: ++id,
+    turn_id: 'turn_fixture_background',
+    ts: last.ts + 60000 + after,
+    type,
+    subtype,
+    payload: JSON.stringify(payload),
+  })
+  events.push(
+    event(
+      'system',
+      'task_notification',
+      {
+        task_id: 'b7k2fx',
+        status: 'completed',
+        output_file: '/tmp/b7k2fx.output',
+        summary: 'Background command "make itest" completed (exit code 0)',
+      },
+      0,
+    ),
+    event(
+      'assistant',
+      '',
+      {
+        message: {
+          content: [{ type: 'text', text: 'The itest run finished green. Pushing the branch now.' }],
+        },
+      },
+      4000,
+    ),
+    event(
+      'result',
+      '',
+      { total_cost_usd: 1.9412, duration_ms: 4100, usage: { input_tokens: 1200, output_tokens: 40 } },
+      4100,
+    ),
+  )
+  await route.fulfill({ response, json: events })
+})
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+const backgroundRow = page.locator('.knot.inbound', { hasText: 'background command' })
+await backgroundRow.waitFor({ timeout: 15000 })
+await backgroundRow.scrollIntoViewIfNeeded()
+const timelineBox = await page.locator('.timeline').boundingBox()
+const backgroundBox = await backgroundRow.boundingBox()
+const backgroundFile = `${outDir}/loop-background-wake.png`
+await page.screenshot({
+  path: backgroundFile,
+  clip: { x: timelineBox.x - 30, y: backgroundBox.y - 140, width: timelineBox.width + 40, height: 300 },
+})
+taken.push(backgroundFile)
+await page.unroute(gardenerEvents)
+
 await browser.close()
 for (const file of taken) console.log(file)

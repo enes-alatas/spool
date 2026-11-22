@@ -153,7 +153,27 @@ export function toEntries(events: LoopEvent[], hole?: { from: number; to: number
           if (note) out.push({ kind: 'note', id: e.id, ts: e.ts, ...note })
           break
         }
-        // system/init, hooks, rate limits: not part of the conversation
+        case 'system': {
+          // A command the loop left running exited, which wakes the loop
+          // with no envelope: the CLI starts the turn itself (#1709). Shown
+          // as what woke it, as a tick's envelope is. The rest of system
+          // (init, hooks, the background level) is not conversation.
+          if (e.subtype !== 'task_notification') break
+          const n = JSON.parse(e.payload)
+          const status = typeof n.status === 'string' && n.status ? n.status : 'exited'
+          const body =
+            typeof n.summary === 'string' && n.summary ? n.summary : `A background command ${status}.`
+          out.push({
+            kind: 'inbound',
+            id: e.id,
+            ts: e.ts,
+            who: 'background command',
+            body,
+            trigger: 'background',
+          })
+          break
+        }
+        // rate limits and the rest: not part of the conversation
       }
     } catch {
       /* skip malformed rows */

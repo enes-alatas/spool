@@ -209,3 +209,61 @@ describe('toEntries model notes', () => {
     ])
   })
 })
+
+describe('toEntries background wakes', () => {
+  const notified = (payload: unknown) => ev('system', 's', payload, 'task_notification')
+  const envelope = (text: string, trigger: string) => ev('envelope', 's', { text, trigger })
+  const inbound = (events: LoopEvent[]) =>
+    toEntries(events)
+      .filter((e) => e.kind === 'inbound')
+      .map((e) => (e.kind === 'inbound' ? [e.who, e.body, e.trigger] : []))
+
+  it("shows a command's exit as what woke the loop, above its reply", () => {
+    const events = [
+      notified({
+        task_id: 'b1',
+        status: 'completed',
+        summary: 'Background command "sleep 20" completed (exit code 0)',
+      }),
+      ev('assistant', 's', { message: { content: [{ type: 'text', text: 'It finished.' }] } }),
+    ]
+    expect(toEntries(events).map((e) => e.kind)).toEqual(['inbound', 'assistant'])
+    expect(inbound(events)).toEqual([
+      ['background command', 'Background command "sleep 20" completed (exit code 0)', 'background'],
+    ])
+  })
+
+  it('says the status when the CLI gave no summary', () => {
+    expect(inbound([notified({ task_id: 'b1', status: 'failed' })])).toEqual([
+      ['background command', 'A background command failed.', 'background'],
+    ])
+    expect(inbound([notified({ task_id: 'b1' })])).toEqual([
+      ['background command', 'A background command exited.', 'background'],
+    ])
+  })
+
+  it('shows both a message and an exit taken into one turn', () => {
+    expect(
+      inbound([
+        envelope('[message from enes via web · control_room]\n\nhow is it going?', 'message'),
+        notified({
+          task_id: 'b1',
+          status: 'completed',
+          summary: 'Background command "make test" completed (exit code 0)',
+        }),
+      ]),
+    ).toEqual([
+      ['message from enes via web · control_room', 'how is it going?', 'message'],
+      ['background command', 'Background command "make test" completed (exit code 0)', 'background'],
+    ])
+  })
+
+  it('keeps the rest of system out of the conversation', () => {
+    expect(
+      toEntries([
+        ev('system', 's', { tasks: [] }, 'background_tasks_changed'),
+        ev('system', 's', { session_id: 's' }, 'init'),
+      ]),
+    ).toEqual([])
+  })
+})
