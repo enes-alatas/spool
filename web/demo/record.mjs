@@ -483,6 +483,8 @@ await take('link', async (page, mark) => {
     await route.fulfill({ json: loops.filter((l) => l.name === 'scout').map(view) })
   })
   await page.route('**/api/loops/scout', async (route) => {
+    // A token save is answered as saved but never sent: the PATCH is turned
+    // into a GET, so the typed token never reaches the hub and it keeps no bot.
     if (route.request().method() === 'PATCH') attached = true
     const res = await route.fetch({ method: 'GET' })
     return route.fulfill({ json: view(await res.json()) })
@@ -1353,6 +1355,171 @@ await take('home', async (page, mark) => {
     await wait(700)
   }
   mark('end')
+})
+
+// The docs site's Quick start (#1698): the setup page's three cards done in
+// turn, in one clip beside steps 3 to 5. The fixture hub has done its first
+// run and is bare, so its answers stand in for a docker hub that has not:
+// no Claude login, then one; no loops, then the one the take creates; no
+// bot, then a token saved. Only the loop is created for real. It is named
+// lookout, since a full `make demo` already has the create take's scout, and
+// it is deleted at the end, so the hub is left as it was found. DEMO_SLOW
+// paces it as it does the home clip.
+await take('setup', async (page, mark) => {
+  const now = Date.now()
+  let signedIn = false
+  let loops = 'none' // first-turn → done
+  let attached = false
+  let linked = false
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const settings = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...settings, default_runtime: 'docker', claude_token_set: signedIn } })
+  })
+  await page.route('**/api/claude-logins', (route) =>
+    route.fulfill({
+      json: { logins: [{ name: 'default', signed_in: signedIn, default: true, created_at: now }] },
+    }),
+  )
+  await page.route('**/api/onboarding', (route) =>
+    route.fulfill({
+      json: {
+        completed: false,
+        harness: signedIn
+          ? { done: true, reason: 'a turn authenticated' }
+          : { done: false, reason: 'no Claude login or setup-token in Settings' },
+        loops: {
+          none: { done: false, reason: 'no loops' },
+          'first-turn': {
+            done: false,
+            reason: 'no loop has woken',
+            progress: 'first_turn',
+            progress_loop: 'lookout',
+          },
+          done: { done: true },
+        }[loops],
+        surface: linked
+          ? { done: true }
+          : { done: false, reason: 'no message received from the operator on telegram yet' },
+      },
+    }),
+  )
+  const view = (l) => ({
+    ...l,
+    surface: '',
+    has_tg_token: false,
+    tg_bot_username: '',
+    ...(attached && { surface: 'telegram', has_tg_token: true, tg_bot_username: 'lookout_example_bot' }),
+  })
+  await page.route('**/api/loops', async (route) => {
+    // The dialog asks for a container, as on a docker hub; this one has no
+    // Docker, so the loop it creates is made bare.
+    if (route.request().method() === 'POST')
+      return route.continue({ postData: { ...route.request().postDataJSON(), runtime: 'bare' } })
+    if (route.request().method() !== 'GET') return route.continue()
+    const all = await (await route.fetch()).json()
+    await route.fulfill({ json: all.filter((l) => l.name === 'lookout').map(view) })
+  })
+  await page.route('**/api/loops/lookout', async (route) => {
+    // A token save is answered as saved but never sent: the PATCH is turned
+    // into a GET, so the typed token never reaches the hub and it keeps no bot.
+    if (route.request().method() === 'PATCH') attached = true
+    const res = await route.fetch({ method: 'GET' })
+    return route.fulfill({ json: view(await res.json()) })
+  })
+  await page.route('**/api/me/links/code', (route) =>
+    route.fulfill({ json: { code: 'link-demo4821', expires_at: now + 15 * 60 * 1000 } }),
+  )
+
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.pillars')
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Animation.enable')
+  await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 / SLOW })
+  const wait = (ms) => page.waitForTimeout(ms * SLOW)
+  const point = async (locator) => {
+    const box = await locator.boundingBox()
+    await moveTo(page, box.x + Math.min(box.width / 2, 60), box.y + box.height / 2, TRAVEL * SLOW)
+    await wait(200)
+    await press(page)
+    await wait(200)
+  }
+  const type = (text, delay) => page.keyboard.type(text, { delay: delay * SLOW })
+  // The page polls every 4s; a card a step has just done reads back at once,
+  // as it does when the reader comes back to the tab (TanStack Query hears
+  // visibilitychange on the window).
+  const recheck = () => page.evaluate(() => window.dispatchEvent(new window.Event('visibilitychange')))
+  const pillar = (name) => page.locator('.pillar', { has: page.getByRole('heading', { name }) })
+  await park(page, size.width / 2, size.height - 60)
+  mark('ready')
+  await wait(1000)
+
+  // Harness: the sign-in dialog, and the card done once the login is in.
+  await point(pillar('Harness').getByRole('button', { name: 'Sign in with Claude' }))
+  const signIn = page.locator('.step-dialog')
+  await signIn.waitFor()
+  mark('harness')
+  await wait(1100)
+  signedIn = true
+  await recheck()
+  await point(signIn.locator('button[aria-label="Close"]'))
+  await signIn.waitFor({ state: 'detached' })
+  await page.getByText('1 of 3 done').waitFor()
+  await wait(800)
+
+  // Loops: a name and a mission, created, on its first turn, then done.
+  await point(pillar('Loops').getByRole('button', { name: 'New loop', exact: true }))
+  const create = page.locator('.loop-dialog')
+  await create.locator('#nl-name').waitFor()
+  mark('loops')
+  await wait(300)
+  await point(create.locator('#nl-name'))
+  await type('lookout', 70)
+  await point(create.locator('#nl-mission'))
+  await type('Keep main green.', 30)
+  await wait(400)
+  const submit = create.getByRole('button', { name: 'Create loop' })
+  await submit.scrollIntoViewIfNeeded()
+  await point(submit)
+  await create.getByText('Created @lookout').waitFor()
+  loops = 'first-turn'
+  await recheck()
+  await wait(800)
+  await point(create.locator('button[aria-label="Close"]'))
+  await create.waitFor({ state: 'detached' })
+  await page.getByText('@lookout is on its first turn').waitFor()
+  await wait(1800)
+  loops = 'done'
+  await recheck()
+  await page.getByText('2 of 3 done').waitFor()
+  await wait(800)
+
+  // Chat surface: a bot's token, a link code, and the card done once the
+  // operator's message reaches the loop.
+  await point(pillar('Chat surface').getByRole('button', { name: 'Attach a bot' }))
+  const surface = page.locator('.surface-dialog')
+  await surface.waitFor()
+  mark('surface')
+  await wait(400)
+  await point(surface.getByRole('button', { name: 'Attach Telegram' }))
+  await point(surface.locator('input[type=password]'))
+  await type('123456789:synthetic-demo-token', 12)
+  await wait(300)
+  await point(surface.getByRole('button', { name: 'Save' }))
+  await surface.getByRole('button', { name: 'Get a link code' }).waitFor()
+  await wait(600)
+  await point(surface.getByRole('button', { name: 'Get a link code' }))
+  await surface.locator('.otp-value').waitFor()
+  await wait(1700)
+  linked = true
+  await recheck()
+  await point(surface.locator('button[aria-label="Close"]'))
+  await surface.waitFor({ state: 'detached' })
+  await page.getByText('3 of 3 done').waitFor()
+  await wait(2800)
+  mark('end')
+  const gone = await page.request.delete(base + '/api/loops/lookout?remove_worktree=1')
+  if (!gone.ok()) throw new Error(`setup: lookout was not deleted: ${gone.status()}`)
 })
 
 await browser.close()
