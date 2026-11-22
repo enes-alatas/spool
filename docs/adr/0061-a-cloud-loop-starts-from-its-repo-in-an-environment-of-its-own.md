@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230); 2026-11-07 (item 3: a turn the API fails posts too, #1280); 2026-11-08 (item 3: the setup view tells an outdated script apart, #1381); 2026-11-21 (item 2: the tools CLI 2.1.330 lists, #1715); 2026-11-21 (item 2: a loop may name no repo, #1712) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232); 2026-10-31 (item 7: the account behind a login, #1230); 2026-11-07 (item 3: a turn the API fails posts too, #1280); 2026-11-08 (item 3: the setup view tells an outdated script apart, #1381); 2026-11-21 (item 2: the tools CLI 2.1.330 lists, #1715); 2026-11-21 (item 2: a loop may name no repo, #1712); 2026-11-22 (item 2: a new remote tool is found by hand, #1725) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -284,6 +284,20 @@ real hub behind the allowlist is checked at #1181's first live start:
    machine. Its sessions are titled `<loop> · conversation`. Giving a
    loop a repo later is an edit while it is stopped, as any repo change
    is, and starts a new session.
+
+   **Amendment (2026-11-22, #1725): a new remote tool is found by hand.**
+   The deny rules stay a list of names, not an allowlist, and the hub
+   doesn't read a session's events from the API (the operator decision
+   of 2026-11-22 on #1725, comment 7081644640). The tool list never
+   reaches the hub: the CLI refuses stream-json on a follow-up turn, and
+   no hook input carries it (#1725, comment 7081482443). So the
+   operator lists the session's `claude-code-remote` tools from a
+   claude.ai/code session in an environment with no Spool setup script.
+   claude.ai can change the list at any time. Each Claude Code bump is
+   the cadence chosen for this check, because the `claude-code-watch`
+   issue already arrives then and carries the step. Each name in
+   neither the deny rules nor the three repo tools is named in one of
+   them by a PR. Until then, the tool stays open.
 
 3. **The setup script connects the session to the hub, and carries no
    secret.** It is the same text for every cloud loop of a hub. The hub

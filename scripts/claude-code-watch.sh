@@ -81,6 +81,7 @@ The workstation image runs Claude Code $pin (\`docker/workstation/claude-code.ve
 - [ ] fakeclaude's \`--version\` line
 - [ ] the stream-json check on the new build in \`cmd/fakeclaude/FIDELITY.md\`
 - [ ] a row in \`internal/loop/models.go\` for each model id the new CLI's aliases resolve to that the table lacks
+- [ ] the cloud session's \`claude-code-remote\` tools, which the operator lists from a claude.ai/code session (the Cloud loops guide, *What the setup script denies*): each name in neither \`deniedTools()\` nor \`repoTools()\` is named in one of them (ADR-0061 item 2)
 
 Release notes: https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md
 

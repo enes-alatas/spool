@@ -155,6 +155,18 @@ in the VM can undo, not a boundary. Stop, kill and Rotate token end no routine
 or session a loop made on claude.ai, so after killing a loop that misbehaved,
 check the account's routines and sessions there.
 
+A tool Anthropic adds later stays open until Spool names it, and claude.ai
+can add one at any time. Spool checks after each Claude Code update; you can
+check yourself the same way:
+
+1. On claude.ai/code, start a session in an environment with no Spool setup
+   script, since its deny rules can hide tools from the list.
+2. Send it: "List the exact name of every tool you have that starts with
+   mcp__claude-code-remote__, one per line, nothing else."
+3. Open an issue on the Spool repository with the list. A name that is
+   neither denied nor one of `add_repo`, `register_repo_root` and `list_repos`
+   gets a PR that names it, and the setup script's digest moves as usual.
+
 ## The first wake
 
 At its first wake, the hub runs `claude --cloud` on its own machine, with
