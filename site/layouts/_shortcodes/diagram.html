@@ -1,0 +1,13 @@
+{{- /* A diagram from static/images/diagrams/, in the site's diagram style
+(CONVENTIONS.md "Docs site diagrams"). Each diagram is two hand-editable SVG
+files, <name>.svg and <name>-narrow.svg, and a phone gets the narrow one, whose
+text stays readable at a phone's width.
+@param name: the file name without .svg
+@param alt: what the diagram says, for a reader who can't see it */ -}}
+{{- $name := .Get "name" -}}
+<figure class="spool-diagram">
+  <picture>
+    <source media="(max-width: 640px)" srcset="{{ printf "images/diagrams/%s-narrow.svg" $name | relURL }}">
+    <img src="{{ printf "images/diagrams/%s.svg" $name | relURL }}" alt="{{ .Get "alt" }}">
+  </picture>
+</figure>

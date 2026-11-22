@@ -462,6 +462,23 @@ the gate and the roles are the release plan the operator agreed on
   `public/marks/MIT-prompts-chat.txt`. A source comment alone doesn't do,
   since the bundler strips comments, and naming the licence alone doesn't
   meet MIT's condition that the notice travel with every copy (#1274).
+- **Docs site diagrams** (#1697, the operator's pick of two styles): a
+  diagram is hand-editable SVG under `site/static/images/diagrams/`, drawn
+  in two files: `<name>.svg`, 680 wide, and `<name>-narrow.svg`, 360 wide,
+  which a phone gets so its text stays readable. A page shows it with the
+  `diagram` shortcode (`site/layouts/_shortcodes/diagram.html`), whose `alt`
+  says in words what the drawing says. The style is the one
+  `message-path.svg` carries in its `<style>` block, copied, not invented:
+  - things are cards, `--surface` with a `--hairline` border and a 10px
+    radius, named in 15px sans with a 12px mono note under the name; a
+    group of things (the hub) is a bare hairline outline with a mono
+    capitals label;
+  - the path a message takes is `--active` orange, 2px, with a filled
+    head; what comes back is `--text-muted` grey, and a copy is the same
+    grey dashed. Orange is for that path only;
+  - section labels are 12px mono capitals in grey, on the `--canvas` the
+    drawing fills, with no frame around it;
+  - nothing loads from another origin: system fonts, no embedded images.
 
 ## API
 
