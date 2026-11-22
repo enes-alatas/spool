@@ -1,0 +1,31 @@
+{{- /* The moving picture beside the home page's opening text (#1693): a
+team's loops at work, recorded from fixture data by `make site-video`
+and served from the site itself. Wide screens only, fading into the
+canvas at its edges; a phone leaves it out, so the text stays first. It
+plays muted and loops; a reader who asks for reduced motion gets its first
+frame. Decorative: the text beside it says what it shows.
+
+The video has no src or poster until the script finds a wide screen and no reduced
+motion: `autoplay` may override `preload`, and whether a hidden autoplay
+video loads is up to the browser, so a phone could otherwise fetch the
+whole clip only to hide it. The script follows the query, so a window
+widened past it starts the clip and one narrowed below it pauses it. The
+fallback image is lazy, which a hidden image never loads.
+@param video, poster: paths under static/ */ -}}
+<div class="spool-hero-visual" aria-hidden="true">
+  <video data-src="{{ (.Get "video") | relURL }}" data-poster="{{ (.Get "poster") | relURL }}" muted loop playsinline preload="none"></video>
+  <img src="{{ (.Get "poster") | relURL }}" alt="" loading="lazy">
+  <script>
+    (() => {
+      const video = document.currentScript.parentElement.querySelector('video')
+      const wide = matchMedia('(min-width: 1100px) and (prefers-reduced-motion: no-preference)')
+      const follow = () => {
+        if (!wide.matches) return video.pause()
+        if (!video.src) Object.assign(video, { poster: video.dataset.poster, src: video.dataset.src })
+        video.play().catch(() => {})
+      }
+      follow()
+      wide.addEventListener('change', follow)
+    })()
+  </script>
+</div>

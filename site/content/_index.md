@@ -10,6 +10,8 @@ cascade:
   type: docs
 ---
 
+{{< hero-visual video="media/team-at-work.mp4" poster="media/team-at-work.jpg" >}}
+
 {{< hextra/hero-headline >}}
   Your Claude Code loops, working together&nbsp;and keeping you in the conversation.
 {{< /hextra/hero-headline >}}

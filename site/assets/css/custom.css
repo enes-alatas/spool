@@ -338,3 +338,58 @@ article h1,
   max-width: 680px;
   height: auto;
 }
+
+/* The moving picture beside the home page's opening text (#1693,
+   layouts/_shortcodes/hero-visual.html): on a wide screen it sits to the
+   right of the text and runs off the page's edge, fading into the canvas
+   on its left and at its foot, so it has no edge of its own. A phone and a
+   narrow window leave it out; reduced motion shows its first frame. */
+.spool-hero-visual {
+  display: none;
+}
+@media (min-width: 1100px) {
+  /* the home page only: a guide's wide table still scrolls sideways */
+  html:has(.spool-hero-visual) {
+    overflow-x: clip;
+  }
+  .spool-hero-visual {
+    display: block;
+    position: absolute;
+    top: 80px;
+    left: calc(50% + 2rem);
+    width: min(820px, 50vw);
+    pointer-events: none;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent, #000 18%),
+      linear-gradient(to bottom, transparent, #000 14%, #000 70%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent, #000 18%),
+      linear-gradient(to bottom, transparent, #000 14%, #000 70%, transparent);
+    mask-composite: intersect;
+  }
+  .spool-hero-visual video,
+  .spool-hero-visual img {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* the clip's own shape, before the video has loaded a frame */
+    aspect-ratio: 41 / 26;
+  }
+  .spool-hero-visual img {
+    display: none;
+  }
+  body:has(.spool-hero-visual) h1.hx\:bg-clip-text,
+  body:has(.spool-hero-visual) h1.hx\:bg-clip-text + p {
+    position: relative;
+    max-width: 36rem;
+  }
+}
+@media (min-width: 1100px) and (prefers-reduced-motion: reduce) {
+  .spool-hero-visual video {
+    display: none;
+  }
+  .spool-hero-visual img {
+    display: block;
+  }
+}
