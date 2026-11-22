@@ -1,0 +1,22 @@
+{{- /* A short clip of the control room from static/media/, recorded from
+fixture data by `make site-video` (#1698): muted, looping, playing in the
+page's flow at every width. A reader who asks for reduced motion gets its
+first frame and the video's own controls instead of a clip that moves by
+itself; the script decides, so there is no autoplay attribute to override
+that.
+@param name: the file name in static/media/, without .mp4; its poster is
+  <name>.jpg beside it
+@param width, height: the clip's size in pixels, so the page keeps its
+  place before it loads
+@param label: what the clip shows, for a reader who can't see it */ -}}
+{{- $name := .Get "name" -}}
+<figure class="spool-clip">
+  <video src="{{ printf "media/%s.mp4" $name | relURL }}" poster="{{ printf "media/%s.jpg" $name | relURL }}" width="{{ .Get "width" }}" height="{{ .Get "height" }}" muted loop playsinline preload="metadata" aria-label="{{ .Get "label" }}"></video>
+  <script>
+    (() => {
+      const video = document.currentScript.parentElement.querySelector('video')
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) video.controls = true
+      else video.play().catch(() => (video.controls = true))
+    })()
+  </script>
+</figure>

@@ -393,3 +393,18 @@ article h1,
     display: block;
   }
 }
+
+/* A clip of the control room (layouts/_shortcodes/clip.html, #1698): the
+   room's own dark page, so it takes a frame as a screenshot would, at most
+   its recorded width. */
+.spool-clip {
+  margin: 1.5rem 0;
+}
+.spool-clip video {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--glass-radius);
+}
