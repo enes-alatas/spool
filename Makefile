@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots site-shots ui-smoke ui-align demo image image-multiarch site clean
+.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots site-shots ui-smoke ui-align demo site-video image image-multiarch site clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -180,11 +180,16 @@ ui-align: build
 # package of its own so the control room never ships its dependencies. The
 # mp4s land in web/demo/out and are uploaded to GitHub, never committed:
 # spool-demo.mp4, cloud-demo.mp4, the cloud loop one (#1126), and
-# import-demo.mp4, the prompts.chat import (#1326).
+# import-demo.mp4, the prompts.chat import (#1326). The one committed video,
+# the docs site's home clip, is `make site-video`'s.
 demo: build
 	cd web/demo && npm install --silent
 	bash scripts/fixture-hub.sh node demo/record.mjs
 	cd web/demo && npm run -s render && npm run -s render -- CloudDemo && npm run -s render -- ImportDemo
+
+# The docs site's home clip (#1693), committed under site/static/media/.
+site-video: build
+	bash scripts/site-video.sh
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --data-dir ./.data

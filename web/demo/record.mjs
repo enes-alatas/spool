@@ -1274,6 +1274,87 @@ await take('import-team', async (page, mark) => {
   mark('end')
 })
 
+// The docs site's home page (#1693): one team at work on its Teams view,
+// each loop's circle opened in turn to what it is doing, then back to the
+// team. The loops read back busy on one release, as a team mid-task does;
+// the clip runs muted and loops beside the home page's opening text.
+const SLOW = Number(process.env.DEMO_SLOW ?? 1)
+const AT_WORK = {
+  gardener: { state: 'busy', doing: 'updating the install page for 0.9' },
+  archivist: { state: 'busy', doing: 'writing the 0.9 changelog from merged PRs' },
+  courier: { state: 'asleep', doing: 'waiting on the install page to announce 0.9' },
+}
+const atWork = (l) => ({ ...asHealthy(l), status: 'active', ...(AT_WORK[l.name] ?? {}) })
+await take('home', async (page, mark) => {
+  const [name, description, loops] = HANDBOOK_TEAM
+  await page.request.post(base + '/api/teams', { data: { name, description } })
+  for (const loop of loops) await page.request.patch(`${base}/api/loops/${loop}`, { data: { team: name } })
+  await page.route('**/api/loops', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    // only the team, so the view is its card alone
+    const team = (await res.json()).filter((l) => loops.includes(l.name))
+    return route.fulfill({ response: res, json: team.map(atWork) })
+  })
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  // The circle's open and close glides run slower and evenly here: at the
+  // room's own pace they are a few frames of a looping clip, a jump rather
+  // than a move. Closing eases out as well as in, so it settles into place.
+  //
+  // The open circle sits in the middle of the clip, not of the window:
+  // scripts/site-video.sh crops 820×520 at (100, 60), centred on (510, 320).
+  // The glide measures from the window's middle, so that reads the same.
+  await page.addStyleTag({ content: '.orb-focus .orb-big { translate: -130px -40px }' })
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'innerWidth', { get: () => 1020 })
+    Object.defineProperty(window, 'innerHeight', { get: () => 640 })
+    const animate = window.Element.prototype.animate
+    window.Element.prototype.animate = function (frames, options) {
+      if (!this.closest('dialog.orb-focus') || typeof options !== 'object')
+        return animate.call(this, frames, options)
+      const closing = options.fill === 'forwards'
+      return animate.call(this, frames, {
+        ...options,
+        duration: options.duration * 2.2,
+        ...(closing && { easing: 'cubic-bezier(0.45, 0, 0.25, 1)' }),
+      })
+    }
+  })
+  // DEMO_SLOW=n plays the take n times slower than life, animations, pointer
+  // and pauses alike, so a capture that manages a few frames a second
+  // still gets n times the frames of every move; scripts/site-video.sh
+  // plays it back n times faster. The marks are the slowed clock's.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Animation.enable')
+  await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 / SLOW })
+  const wait = (ms) => page.waitForTimeout(ms * SLOW)
+  await page.getByRole('button', { name: 'Teams', exact: true }).click()
+  const card = page.locator('.team-card', { has: page.locator('h2', { hasText: name }) })
+  await card.waitFor()
+  await park(page, size.width * 0.8, size.height - 60)
+  mark('ready')
+  await wait(1600)
+  for (const loop of loops) {
+    const box = await card.getByRole('button', { name: new RegExp(`^${loop}: `) }).boundingBox()
+    await moveTo(page, box.x + box.width / 2, box.y + box.height / 2, TRAVEL * SLOW)
+    await wait(200)
+    await press(page)
+    await page.locator('dialog.orb-focus').waitFor()
+    await wait(200)
+    await moveTo(page, size.width * 0.8, size.height - 60, 0.5 * SLOW)
+    mark(`focus-${loop}`)
+    await wait(2600)
+    // Closed by a click beside it, where the pointer waits: an Escape close
+    // hands focus back to the circle as a keyboard focus, which grows it to
+    // its name peek just as it lands.
+    await page.mouse.click(size.width * 0.8, size.height - 60)
+    await page.locator('dialog.orb-focus').waitFor({ state: 'detached' })
+    await page.evaluate(() => document.activeElement?.blur())
+    await wait(700)
+  }
+  mark('end')
+})
+
 await browser.close()
 writeFileSync(out + 'marks.json', JSON.stringify({ ...marks, times }, null, 2) + '\n')
 console.log(marks)
