@@ -180,14 +180,16 @@ ui-align: build
 # package of its own so the control room never ships its dependencies. The
 # mp4s land in web/demo/out and are uploaded to GitHub, never committed:
 # spool-demo.mp4, cloud-demo.mp4, the cloud loop one (#1126), and
-# import-demo.mp4, the prompts.chat import (#1326). The one committed video,
-# the docs site's home clip, is `make site-video`'s.
+# import-demo.mp4, the prompts.chat import (#1326). The committed videos,
+# the docs site's own clips, are `make site-video`'s.
 demo: build
 	cd web/demo && npm install --silent
 	bash scripts/fixture-hub.sh node demo/record.mjs
 	cd web/demo && npm run -s render && npm run -s render -- CloudDemo && npm run -s render -- ImportDemo
 
-# The docs site's home clip (#1693), committed under site/static/media/.
+# The docs site's clips, committed under site/static/media/: the home page's
+# (#1693) and Quick start's (#1698). `bash scripts/site-video.sh setup`
+# retakes one alone.
 site-video: build
 	bash scripts/site-video.sh
 
