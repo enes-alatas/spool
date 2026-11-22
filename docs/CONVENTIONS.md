@@ -237,11 +237,11 @@ the gate and the roles are the release plan the operator agreed on
   `scripts/site-shots.sh`.
 - **Videos too**: `make demo` (#447) records the README's and the docs
   site's videos on a fixture hub; the mp4s are uploaded as attachments,
-  never committed. One exception, the operator's call on #1693: the docs
-  site's home clip, which the site serves itself, is committed under
-  site/static/media/ by `make site-video`. Remotion is source-available:
-  companies of more than three people need a licence from remotion.pro
-  before running it.
+  never committed. One exception, the operator's call on #1693 and #1698:
+  the docs site's own clips, which the site serves itself, are committed
+  under site/static/media/ by `make site-video`. Remotion is
+  source-available: companies of more than three people need a licence
+  from remotion.pro before running it.
 - **A live credential in front of you is an incident**: stop, don't copy it,
   redact it where you can, and tell the operator privately; the value never
   goes in the group. Procedure: `/credential-incident`
