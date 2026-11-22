@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952); 2026-10-24 (item 6: what green means, and the session's verdict, #1093); 2026-11-08 (item 4: the cloud listener serves the management MCP, ADR-0067, #1404) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own); superseded in part by ADR-0073: item 2's *Attachments*, for a file a cloud loop sends · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952); 2026-10-24 (item 6: what green means, and the session's verdict, #1093); 2026-11-08 (item 4: the cloud listener serves the management MCP, ADR-0067, #1404) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -77,6 +77,10 @@ the bar for setup: it has to be really simple.
      `PutFile` and `GetFile` return `ErrUnsupported`. A file sent to a
      cloud loop is recorded as not kept, with the reason, and the loop's
      `send_message` with `attach` is refused with a sentence that says so.
+
+     *Superseded in part by ADR-0073 (2026-11-22, #1713): a file a cloud
+     loop sends comes to the hub from its `send_message`'s hook, ahead of
+     the call. A file sent to one is still recorded as not kept.*
 
    **Amendment (2026-10-15, #861): the session's own event stream, and
    the cost.** The API check found a better read-back than
