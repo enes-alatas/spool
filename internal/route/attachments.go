@@ -296,6 +296,11 @@ func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Att
 	if path == "" {
 		return nil, nil, nil
 	}
+	if router.files != nil && req.From.Runtime == store.RuntimeCloud {
+		// a cloud loop's files are on Anthropic's machine: its send's
+		// hook posted this one ahead of the send (ADR-0073)
+		return router.claimCloudUpload(ctx, req, path)
+	}
 	if router.files == nil || router.workstations == nil {
 		return nil, &SendError{ErrAttachmentUnavailable, "this hub keeps no files, so a message cannot carry one; send the words alone"}, nil
 	}
@@ -311,8 +316,7 @@ func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Att
 	case errors.Is(err, runtime.ErrFileTooLarge):
 		return nil, &SendError{ErrAttachmentTooLarge, fmt.Sprintf("%s is over the %d MB limit", path, attach.MaxSize>>20)}, nil
 	case errors.Is(err, runtime.ErrUnsupported):
-		// a cloud loop's files are on Anthropic's machine (ADR-0056)
-		return nil, &SendError{ErrAttachmentUnavailable, "a cloud loop can't attach a file yet; send the words alone"}, nil
+		return nil, &SendError{ErrAttachmentUnavailable, "this loop's workstation can't hand over a file; send the words alone"}, nil
 	case err != nil:
 		return nil, nil, fmt.Errorf("read attachment: %w", err)
 	}
@@ -361,6 +365,16 @@ func (router *Router) dropKept(kept *store.Attachment) {
 	if err := router.files.Remove(kept.Path); err != nil {
 		router.log.Warn("unsent attachment not removed", "path", kept.Path, "err", err)
 	}
+}
+
+// dropSent removes the file a send carried that went no further: a cloud
+// loop's upload is recorded already, so its row is marked as well.
+func (router *Router) dropSent(ctx context.Context, sent *store.Attachment) {
+	if sent != nil && sent.ID != 0 {
+		router.removeUnsent(ctx, sent.ID)
+		return
+	}
+	router.dropKept(sent)
 }
 
 // holdsSecret reports whether a file's text holds a secret the hub knows,

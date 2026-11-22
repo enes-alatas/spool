@@ -121,7 +121,9 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge) && (post.event == "Stop" || post.event == "StopFailure"):
-		_ = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, nil, true)
+		if server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, nil, true) == nil && server.Router != nil {
+			server.Router.DropCloudUploads(r.Context(), caller.ID)
+		}
 		refuse(http.StatusRequestEntityTooLarge, post.event, "the post is over its bound")
 		return
 	case errors.As(err, &tooLarge):
@@ -150,6 +152,11 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	case "Stop", "StopFailure":
 		// StopFailure ends a turn the API failed, in Stop's place (#1280)
 		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, post.lines, false)
+		if err == nil && server.Router != nil {
+			// a file the turn's hook posted for a call that never came
+			// never will be claimed (ADR-0073)
+			server.Router.DropCloudUploads(r.Context(), caller.ID)
+		}
 	case "PreToolUse":
 		if !cloudSessionID.MatchString(post.session) {
 			refuse(http.StatusBadRequest, post.event, "no session id")

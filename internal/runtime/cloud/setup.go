@@ -9,12 +9,34 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/claude"
 )
 
 // HooksPath is the cloud listener's route for the session's hooks, beside
 // /mcp (ADR-0059).
 const HooksPath = "/hooks"
+
+// AttachPath is the cloud listener's route for the file a session's
+// send_message attaches, which its hook posts ahead of the call
+// (ADR-0073).
+const AttachPath = HooksPath + "/attach"
+
+// SendMessageTool is the hub's send_message as the session's CLI names
+// it, whose hook posts the file a call attaches (ADR-0073).
+const SendMessageTool = "mcp__" + claude.SpoolMCPServer + "__send_message"
+
+// hookAttach is the hook script's argument for SendMessageTool's
+// PreToolUse hook, apart from the add_repo guard's.
+const hookAttach = "attach"
+
+// attachHookTimeout is the seconds the CLI lets SendMessageTool's hook
+// run, past its default of 60: 20 MB over a slow tunnel. curl's own
+// bound, attachCurlTimeout, is inside it.
+const (
+	attachHookTimeout = 180
+	attachCurlTimeout = 150
+)
 
 // SessionHeader is the header the session's MCP client sends its session's
 // ID in, as CLAUDE_CODE_REMOTE_SESSION_ID names it (ADR-0061).
@@ -94,8 +116,9 @@ func repoTools() []string {
 //   - the hub's cloud listener as the MCP server spool in ~/.claude.json,
 //     sending the session's ID in SessionHeader;
 //   - the hook script, the SessionStart, Stop and StopFailure hooks that
-//     run it, the PreToolUse guard on AddRepoTool, and the deny rules of
-//     deniedTools, in ~/.claude/settings.json.
+//     run it, the PreToolUse guard on AddRepoTool, the PreToolUse hook on
+//     SendMessageTool that posts the file a call attaches (ADR-0073), and
+//     the deny rules of deniedTools, in ~/.claude/settings.json.
 //
 // A file already there is merged into with python3, which the cloud image
 // has, keeping what it holds: a list is joined, not replaced. One that
@@ -140,6 +163,7 @@ func setupTemplate(mcpURL string) (string, error) {
 	if parsed, err := url.Parse(mcpURL); !ok || err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return "", fmt.Errorf("cloud: a setup script needs the hub's /mcp address, not %q", mcpURL)
 	}
+	attachURL := hooksURL + AttachPath
 	hooksURL += HooksPath
 	userConfig, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
 		claude.SpoolMCPServer: map[string]any{
@@ -162,7 +186,14 @@ func setupTemplate(mcpURL string) (string, error) {
 			HookSessionStart: []any{map[string]any{"matcher": hookMatcher, "hooks": hookCommand(HookSessionStart)}},
 			HookStop:         []any{map[string]any{"hooks": hookCommand(HookStop)}},
 			HookStopFailure:  []any{map[string]any{"hooks": hookCommand(HookStopFailure)}},
-			HookPreToolUse:   []any{map[string]any{"matcher": AddRepoTool, "hooks": hookCommand(HookPreToolUse)}},
+			HookPreToolUse: []any{
+				map[string]any{"matcher": AddRepoTool, "hooks": hookCommand(HookPreToolUse)},
+				map[string]any{"matcher": SendMessageTool, "hooks": []any{map[string]any{
+					"type":    "command",
+					"command": `sh "${HOME:-/root}/` + hookFile + `" ` + hookAttach,
+					"timeout": attachHookTimeout,
+				}}},
+			},
 		},
 		"permissions": map[string]any{"deny": deniedTools()},
 	})
@@ -176,7 +207,7 @@ set -e
 home=${HOME:-/root}
 mkdir -p "$home/.claude"
 cat > "$home/` + hookFile + `" <<'SPOOL_HOOK'
-` + hookScript(hooksURL) + `SPOOL_HOOK
+` + hookScript(hooksURL, attachURL) + `SPOOL_HOOK
 # spool_merge FILE merges the JSON object on its stdin into FILE's: each
 # of its keys' entries is set. The JSON comes by a quoted heredoc, so the
 # shell expands nothing in it, and is one line opening with "{", so it
@@ -221,6 +252,14 @@ SPOOL_JSON
 // and the session's ID: a 204 lets the call go ahead, and anything else,
 // an unreachable hub included, refuses it with the hub's reason.
 //
+// attach, send_message's PreToolUse, posts nothing for a call with no
+// attach. For one with, python3 reads the call's input and checks the
+// file it names, then copies the file and its name to fixed files in a
+// directory of the call's own, so nothing the model wrote reaches a shell
+// word or a curl argument (ADR-0073). curl posts them to attachURL with
+// the hook's input, the session's ID in SessionHeader: a 204 lets the
+// call go ahead, and anything else refuses it with the reason.
+//
 // SessionStart posts the hook's input and the session's ID. The answer's
 // first line is the loop's connections as export lines, base64, which it
 // appends to CLAUDE_ENV_FILE; the rest is the hook's output, the hub's
@@ -230,15 +269,41 @@ SPOOL_JSON
 // landed, and records how far it got only once the hub took them. curl
 // tries a lost post again; one the hub refused, or that stayed lost, is
 // sent again with the next turn's.
-func hookScript(hooksURL string) string {
+func hookScript(hooksURL, attachURL string) string {
 	return `#!/bin/sh
-# Spool's hooks for this loop (ADR-0061): sh, sed, base64 and curl.
+# Spool's hooks for this loop (ADR-0061): sh, sed, base64 and curl, and
+# grep and python3 for a file a send attaches (ADR-0073).
 url=` + shellQuote(hooksURL) + `
 # the digest of the setup script that wrote this file (#1381)
 digest=` + scriptDigestBlank + `
 # A lost post is tried again and a refused one is not: --retry covers
 # timeouts, 408, 429 and 5xx, never the hub's 400 or 409.
 retry="--retry 4 --retry-connrefused --retry-max-time 30"
+if [ "$1" = ` + hookAttach + ` ]; then
+  # A file the send attaches goes to the hub ahead of the call, which
+  # goes ahead only if the hub keeps it. Exit 2 refuses the call, with
+  # stderr as the reason the model reads.
+  refuse() { echo "Spool refused this file: $1" >&2; exit 2; }
+  guard=$(mktemp -d) || refuse "no room to copy it"
+  trap 'rm -rf "$guard"' EXIT
+  cat > "$guard/hook"
+  # a call that names no attach goes ahead without python3: its input
+  # holds no "attach" key
+  grep -q '"attach"' "$guard/hook" || exit 0
+  command -v python3 >/dev/null || refuse "this machine has no python3 to read it with"
+  python3 -I -c '` + attachCheck + `' "$guard" ` + fmt.Sprint(attach.MaxSize) + `
+  case $? in
+  0) ;;
+  3) exit 0 ;;
+  2) exit 2 ;;
+  *) refuse "the file can't be read" ;;
+  esac
+  [ -n "$CLAUDE_CODE_REMOTE_SESSION_ID" ] || refuse "the session has no ID to name"
+  code=$(curl -s -o "$guard/answer" -w '%{http_code}' --retry 2 --retry-connrefused --max-time ` + fmt.Sprint(attachCurlTimeout) + ` -H "` + SessionHeader + `: $CLAUDE_CODE_REMOTE_SESSION_ID" -F "hook=<$guard/hook" -F "name=<$guard/name" -F "file=@$guard/file" ` + shellQuote(attachURL) + ` 2>/dev/null)
+  [ "$code" = 204 ] && exit 0
+  [ -n "$code" ] && [ "$code" != 000 ] || refuse "the hub can't be reached"
+  refuse "$(head -c 300 "$guard/answer")"
+fi
 if [ "$1" = ` + HookPreToolUse + ` ]; then
   # The add_repo guard: the call goes ahead only if the hub takes the
   # repo, so a guard that can't ask it refuses. Exit 2 refuses the call,
@@ -297,3 +362,63 @@ func sessionStartAnswer(exports []byte, prompt string) ([]byte, error) {
 	answer := base64.StdEncoding.EncodeToString(exports) + "\n"
 	return append([]byte(answer), append(output, '\n')...), nil
 }
+
+// attachCheck is the python3 of send_message's hook, single-quoted in the
+// hook script, so it holds no single quote. It reads the hook's input
+// from the directory its first argument names, and exits 3 for a call
+// that attaches nothing. For one that does, it resolves the path against
+// the input's cwd with symlinks followed, and refuses, exiting 2 with the
+// reason on stderr, a file outside the working directory and $HOME, one
+// in the CLI's configuration under $HOME, where the VM's session
+// credentials are, one that isn't a regular file, and one over the limit
+// its second argument gives. It then copies the file and its base name
+// to fixed files beside the input (ADR-0073).
+const attachCheck = `
+import json, os, stat, sys
+guard, limit = sys.argv[1], int(sys.argv[2])
+def refuse(reason):
+    sys.stderr.write("Spool refused this file: " + reason + "\n")
+    sys.exit(2)
+try:
+    with open(os.path.join(guard, "hook")) as f:
+        hook = json.load(f)
+    given = (hook.get("tool_input") or {}).get("attach") or ""
+    cwd = hook.get("cwd") or os.getcwd()
+except Exception:
+    refuse("the call can not be read")
+if not isinstance(given, str) or not given.strip():
+    sys.exit(3)
+given = given.strip()
+if not isinstance(cwd, str):
+    cwd = os.getcwd()
+home = os.path.realpath(os.environ.get("HOME") or "/root")
+path = os.path.realpath(os.path.join(cwd, os.path.expanduser(given)))
+def under(root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+if not (under(os.path.realpath(cwd)) or under(home)):
+    refuse(given + " is outside your working directory and your home; attach a file inside them")
+if under(home) and path != home:
+    top = os.path.relpath(path, home).split(os.sep)[0]
+    if top.startswith(".claude") or top == ".config":
+        refuse(given + " is in the CLI configuration, which is never sent")
+try:
+    info = os.lstat(path)
+except FileNotFoundError:
+    refuse("there is no file at " + given)
+except OSError:
+    refuse(given + " can not be read")
+if not stat.S_ISREG(info.st_mode):
+    refuse(given + " is not a regular file; attach one file")
+if info.st_size > limit:
+    refuse(given + " is over the %d MB limit" % (limit >> 20))
+try:
+    with open(path, "rb") as source, open(os.path.join(guard, "file"), "wb") as copy:
+        data = source.read(limit + 1)
+        if len(data) > limit:
+            refuse(given + " is over the %d MB limit" % (limit >> 20))
+        copy.write(data)
+    with open(os.path.join(guard, "name"), "w") as name:
+        name.write(os.path.basename(given))
+except OSError:
+    refuse(given + " can not be read")
+`

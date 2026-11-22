@@ -159,6 +159,10 @@ type Router struct {
 	redactName func(string) string
 	// workstations reads the file a loop sends (SetWorkstations).
 	workstations Workstations
+	// cloudUploads is the files cloud loops' sessions posted ahead of
+	// their sends, by call, each an unsent attachment row (ADR-0073).
+	cloudMu      sync.Mutex
+	cloudUploads map[cloudUploadKey]int64
 
 	mu    sync.Mutex
 	storm map[string][]time.Time // "fromID→toID" → delivery timestamps

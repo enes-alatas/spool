@@ -167,6 +167,19 @@ check yourself the same way:
    neither denied nor one of `add_repo`, `register_repo_root` and `list_repos`
    gets a PR that names it, and the setup script's digest moves as usual.
 
+## A file the loop sends
+
+A cloud loop attaches a file the way any loop does, by its path. The setup
+script hooks the loop's `send_message`. Before a call that attaches a file,
+the hook checks the file on the session's machine and posts it to the hub,
+which keeps it for that one call. The file must be a regular file of at
+most 20 MB, in the session's working directory or home but not in the CLI's
+configuration there. As for any loop, the hub refuses a file that holds a
+secret it knows. An environment whose script predates the hook can't send a
+file: the send is refused with words that say so until you paste the setup
+view's script into it again. A send without a file works either way. A
+file sent to a cloud loop still isn't kept.
+
 ## The first wake
 
 At its first wake, the hub runs `claude --cloud` on its own machine, with

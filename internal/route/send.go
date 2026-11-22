@@ -35,6 +35,9 @@ type SendRequest struct {
 	// Attach is a path in the sender's workstation to one file the message
 	// carries ("" = none, #123).
 	Attach string
+	// Cloud is the call a cloud loop's session made, which names the file
+	// its hook posted for Attach (ADR-0073); zero for any other loop.
+	Cloud CloudCall
 	// React is one emoji to put on the message ReplyTo names, instead of
 	// saying anything ("" = a message, ADR-0040). SendReaction takes it.
 	React string
@@ -290,7 +293,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		return nil, serr, err
 	}
 	if !router.sendAllow(req.From.ID) {
-		router.dropKept(sent)
+		router.dropSent(ctx, sent)
 		return nil, &SendError{ErrSendLimit,
 			fmt.Sprintf("this turn already sent %d messages; batch what remains or wait for the next turn", SendCapPerTurn)}, nil
 	}
@@ -316,7 +319,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		// not be delivered, so a later send can be dropped against it. Error
 		// path only, and it errs toward dropping rather than over-claiming,
 		// which is the direction this change is moving in anyway.
-		router.dropKept(sent)
+		router.dropSent(ctx, sent)
 		return nil, nil, err
 	}
 	// Recorded before the message is published, so a surface that sends it
@@ -324,10 +327,18 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	// be recorded is dropped and logged, and the words still go.
 	var sentRows []*store.Attachment
 	if sent != nil {
-		sent.MessageID, sent.CreatedAt = msg.ID, time.Now().UnixMilli()
-		if err := router.store.Attachments().Insert(ctx, sent); err != nil {
+		var err error
+		if sent.ID != 0 {
+			// a cloud loop's upload, recorded as it came (ADR-0073)
+			err = router.store.Attachments().Claim(ctx, sent.ID, msg.ID)
+			sent.MessageID = msg.ID
+		} else {
+			sent.MessageID, sent.CreatedAt = msg.ID, time.Now().UnixMilli()
+			err = router.store.Attachments().Insert(ctx, sent)
+		}
+		if err != nil {
 			router.log.Error("sent attachment not recorded; sending the words alone", "message", msg.ID, "err", err)
-			router.dropKept(sent)
+			router.dropSent(ctx, sent)
 		} else {
 			sentRows = []*store.Attachment{sent}
 		}

@@ -206,6 +206,9 @@ type Server struct {
 	// cloudRefusedLogged is when the cloud listener last logged a request
 	// it refused for its token, in Unix ms: at most one a minute.
 	cloudRefusedLogged atomic.Int64
+	// cloudAttaching holds the id of each cloud loop whose file is on its
+	// way in: one at a time per loop (ADR-0073).
+	cloudAttaching sync.Map
 }
 
 func (server *Server) Handler() http.Handler {

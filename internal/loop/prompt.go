@@ -537,7 +537,10 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	default:
 		text.WriteString("You have no workspace; you are a conversational loop.\n\n")
 	}
-	if loopRecord.Runtime != store.RuntimeCloud {
+	if loopRecord.Runtime == store.RuntimeCloud {
+		// its send's hook posts the file ahead of the send (ADR-0073)
+		text.WriteString("A file you attach to a message goes from this machine to the hub as you\nsend it: name one in your working directory or your home, at most 20 MB.\n\n")
+	} else {
 		text.WriteString(backgroundCommands())
 	}
 

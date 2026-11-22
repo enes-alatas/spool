@@ -16,14 +16,15 @@ import (
 // session reaches the hub: over the internet, through the tunnel or proxy
 // the operator puts in front of it. It serves /mcp for cloud loops' tokens,
 // the management MCP for management tokens (ADR-0067), the address check,
-// and the hooks' route when the hub takes hook posts (ADR-0059), and
-// nothing else. Any host on the internet can reach its parser, so every
+// and the hooks' routes when the hub takes hook posts (ADR-0059,
+// ADR-0073), and nothing else. Any host on the internet can reach its parser, so every
 // bound below applies before a token is read.
 
 // Bounds on a cloud listener request, all applied before authentication.
 const (
 	// cloudMaxBody is far above any send_message call: an attachment is a
-	// path, never the bytes.
+	// path, never the bytes. A cloud loop's file comes to its own route,
+	// whose bound rises only once its headers pass (ADR-0073).
 	cloudMaxBody        = 1 << 20
 	cloudMaxHeaderBytes = 16 << 10
 	cloudHeaderTimeout  = 10 * time.Second
@@ -54,7 +55,7 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 
 // CloudHandler serves the cloud listener: the loop listener's /mcp for a
 // cloud loop's token alone, the management MCP for a management token
-// alone, the address check, and the hooks' route while CloudHooks is set.
+// alone, the address check, and the hooks' routes while CloudHooks is set.
 // Every response goes through redacted, the hub's
 // response redactor, which rewrites JSON and event-stream bodies, but one:
 // the SessionStart answer, the connections and the prompt as text/plain,
@@ -71,6 +72,9 @@ func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) htt
 		if r.URL.Path == cloudHooksPath {
 			limit = cloudMaxHookBody
 		}
+		// an attachment's post gets its own bound once its headers pass,
+		// and until then this one (ADR-0073)
+		raw := r.Body
 		r.Body = http.MaxBytesReader(unredacted, r.Body, limit)
 		r = r.WithContext(context.WithValue(r.Context(), cloudListenerKey{}, true))
 		redacted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +85,8 @@ func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) htt
 				manageHandler.ServeHTTP(w, r)
 			case r.URL.Path == cloudHooksPath:
 				server.handleCloudHook(w, unredacted, r)
+			case r.URL.Path == cloudAttachPath:
+				server.handleCloudAttach(w, unredacted, r, raw)
 			case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, cloudCheckPrefix):
 				if server.cloudChecks.redeem(strings.TrimPrefix(r.URL.Path, cloudCheckPrefix), time.Now()) {
 					w.WriteHeader(http.StatusNoContent)
