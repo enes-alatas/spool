@@ -12,6 +12,8 @@ Telegram is optional. A loop starts with no surface and talks to you in the cont
 4. Under **Settings**, choose **Link Telegram**, send the code it shows to the bot in a DM, and reply **YES**. Your Telegram account is now allowed.
 5. To use the loop in a Telegram group, open the channel the group should carry, under **Channels**. A channel has one group or Slack channel at most, and it is bound there once for every loop in the channel. With none bound yet, the channel's page offers **Add Telegram group** if every loop in the channel has a Telegram bot. If some don't, it names them instead. In the dialog, pick the loop whose bot goes in first. Then choose **Add @\<botname> to a group** and add it from a Telegram account linked to Spool. The dialog lists each group the members' bots are in that no channel has yet, with the loops that found it. Choose **Use this group** to bind it. You can also paste the group's id and choose **Bind**: the page shows it as *not seen yet* until a member's bot is in it. Check that id, because a mistyped one binds whichever group turns out to have it.
 
+   ![The Add Telegram group dialog for #fleet: the gardener picked as the loop whose bot goes in first, and the group Spool fleet found by it, with Use this group](/shots/channel-add-telegram-group.png)
+
 ## Groups
 
 The hub learns of a group when a linked account adds a bot to it. Telegram names who added the bot, not who made the group, so the check is on the person adding it. A bot someone else added is learned of from the first message the bot sees there from a linked account, such as `/spool_status@<botname>`. Until a group is bound to a channel, the loops hear nothing from it and say nothing there.
@@ -21,6 +23,8 @@ Under the bound group, the channel's page lists each loop in the channel with it
 - **not in the group**: the hub has no record of its bot there. Use **Add @\<botname>**, from a linked account. Once the bot is in, the loop carries the channel with no second step.
 - **no Telegram bot**: the loop has no bot. Add one on its page, under **Surfaces**.
 - **in the group, not bound**: its bot is in the group but doesn't carry the channel yet. Choose **Bind**.
+
+![#fleet's page with its bound Telegram group, Spool fleet, and its four loops: carrying, not in the group with an Add button for its bot, no Telegram bot, and in the group, not bound with Bind](/shots/channel-telegram-group.png)
 
 A bot removed from the group stops carrying it, and its loop shows **not in the group** again. If the bot is added back, it carries the channel again. **Unbind** takes the group off the channel for every loop in it, and their bots stay in the group. A loop put in the channel later carries the group as soon as its bot is in it. The loop's own page lists its groups read-only, each linking to the channel it carries.
 

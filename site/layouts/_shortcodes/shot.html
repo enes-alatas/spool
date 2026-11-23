@@ -1,0 +1,10 @@
+{{- /* A control room shot from static/shots/ (`make site-shots`, #1699) at
+the width it had in the room. A Markdown image is drawn at its file's
+width, which for a shot taken at twice the pixels is twice the room's size:
+a wide shot is cut down to the page's width anyway, but a narrow, tall one,
+such as a side panel, would fill more than a screen.
+@param name: the file name in static/shots/, without .png
+@param width, height: the shot's size in the room, in CSS pixels, so the
+  page keeps its place before the lazy image loads
+@param alt: what the shot shows, for a reader who can't see it */ -}}
+<img class="spool-shot" src="{{ printf "shots/%s.png" (.Get "name") | relURL }}" width="{{ .Get "width" }}" height="{{ .Get "height" }}" alt="{{ .Get "alt" }}" loading="lazy">

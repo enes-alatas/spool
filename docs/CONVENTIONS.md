@@ -234,7 +234,11 @@ the gate and the roles are the release plan the operator agreed on
   `site/static/shots/`, and nothing else writes there. The site's build
   takes them as they are, with no browser in it (ADR-0071). A retake is
   its own commit, and a page that links a new shot adds its name to
-  `scripts/site-shots.sh`.
+  `scripts/site-shots.sh`. A Markdown image is drawn at its file's width,
+  which for a shot taken at twice the pixels is twice its size in the room.
+  The page cuts a wide shot down to its width anyway. A narrow, tall one,
+  such as a side panel, goes through the `shot` shortcode
+  (`site/layouts/_shortcodes/shot.html`) at its size in the room (#1699).
 - **Videos too**: `make demo` (#447) records the README's and the docs
   site's videos on a fixture hub; the mp4s are uploaded as attachments,
   never committed. One exception, the operator's call on #1693 and #1698:
