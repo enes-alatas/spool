@@ -1292,6 +1292,15 @@ for (const [loop, team] of [
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'Teams', exact: true }).click()
 await page.waitForSelector('.team-cards', { timeout: 15000 })
+// The Fleet page by team for the docs site's Teams and channels (#1708):
+// two named teams, and the archivist in none.
+const fleetByTeamFile = `${outDir}/fleet-by-team.png`
+const byTeam = await page.locator('.team-cards').boundingBox()
+await page.screenshot({
+  path: fleetByTeamFile,
+  clip: { x: 0, y: 0, width: 1180, height: byTeam.y + byTeam.height + 32 },
+})
+taken.push(fleetByTeamFile)
 const teamCard = (team) => page.locator('.team-card', { has: page.locator('h2', { hasText: team }) })
 const courier = page.getByRole('button', { name: /^courier: / })
 const from = await courier.boundingBox()
