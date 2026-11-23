@@ -6,6 +6,8 @@ weight: 1
 
 What keeps a loop from your machine, what it does not stop, and how the hub keeps its own secrets. [Security in brief](../in-brief/) has the short version.
 
+{{< diagram name="containment" alt="What contains a loop. Each docker loop runs in a container of its own, on an internal network that no other loop is on. Its one way out is the egress proxy, which forwards only to the hosts on your allowlist and to the hub's loop listener, the one hub port a workstation reaches; that port serves the MCP endpoint, the brokered MCP servers, the Claude proxy and the GitHub token route. Your listener, with the control room and its API, is not reachable from any workstation. The cloud listener serves cloud sessions through your tunnel. A bare loop has no box: it runs under your account, with your files and your network." >}}
+
 ## The workstation
 
 Spool runs every loop with `--permission-mode bypassPermissions`: a loop is
