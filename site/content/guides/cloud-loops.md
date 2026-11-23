@@ -8,6 +8,8 @@ A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
 machines, on a Claude login of the hub's, `default` unless the loop
 names another, and reaches the hub over the internet.
 
+{{< diagram name="cloud-parties" alt="Where a cloud loop runs. On your machine, the hub wakes the claude CLI, which starts the loop's session on Anthropic's machines and sends each later wake into it. The session's machine runs claude and its hooks beside the loop's checkout, and its environment gives it the setup script, the allowed domains and the hub token as a network secret. The session's hook posts and MCP calls carry that token through your tunnel or TLS proxy to the hub's cloud listener. The session clones and pushes the loop's repo on GitHub through Claude's GitHub App." >}}
+
 ## The hub's setup
 
 Settings → Cloud walks the hub's setup in three steps, in this
@@ -168,6 +170,8 @@ check yourself the same way:
    gets a PR that names it, and the setup script's digest moves as usual.
 
 ## The first wake
+
+{{< diagram name="cloud-first-wake" alt="A cloud loop's first wake. The hub runs claude --cloud on its own machine, and the CLI starts the loop's session on Anthropic's machines and prints the session's id. The session clones the loop's repo from GitHub, its setup script runs, and its SessionStart hook posts the session's id to the hub. The hub answers that post with the loop's prompt and ends the CLI. The turn runs: the loop's messages reach the hub by MCP, and when it ends the Stop hook posts the turn back. Each later wake runs claude -p --cloud, which sends the next message into the same session." >}}
 
 At its first wake, the hub runs `claude --cloud` on its own machine, with
 the wake as the first message, in an empty directory whose `origin` is the
