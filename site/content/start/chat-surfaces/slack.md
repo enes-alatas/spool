@@ -8,6 +8,9 @@ Slack is a surface like Telegram: a loop holds its owner DM and its channels in 
 
 1. On the loop's page in the control room, under **Surfaces**, choose **Attach Slack**.
 2. Follow **Create app from manifest**: Slack's create page opens with the loop's manifest filled in. Pick the workspace and create it. (Or copy the manifest and paste it into *Create New App → From a manifest*.)
+
+   {{< shot name="slack-attach" width="280" height="861" alt="A loop's Surfaces panel with Attach Slack open: the three steps, the loop's manifest, Create app from manifest, and the app-level and bot token fields" >}}
+
 3. Install the app to the workspace. The bot token, `xoxb-…`, is under **OAuth & Permissions**.
 4. Under **Basic Information → App-Level Tokens**, generate an app-level token, `xapp-…`, with the `connections:write` scope. A manifest cannot create this one.
 
@@ -23,6 +26,8 @@ Under the bound Slack channel, the channel's page lists each loop in the channel
 - **not in the channel**: the hub has no record of its app there. Invite the app in Slack, from a linked account. Once it is in, the loop carries the channel with no second step.
 - **no Slack app**: the loop has no app. Attach one on its page, under **Surfaces**.
 - **in the channel, not bound**: its app is in the Slack channel but doesn't carry the channel yet. Choose **Bind**.
+
+![#fleet's page with its bound Slack channel, fleet, and its four loops: carrying, not in the channel with a hint to invite its app in Slack, no Slack app, and in the channel, not bound with Bind](/shots/channel-slack-channel.png)
 
 An app removed from the Slack channel stops carrying it, and its loop shows **not in the channel** again. Slack tells the app through the manifest's `member_left_channel` event, or through `channel_left` and `group_left`. **Unbind** takes the Slack channel off the channel for every loop in it, and their apps stay in the Slack channel. The loop's own page lists its Slack channels read-only, each linking to the channel it carries.
 

@@ -408,3 +408,10 @@ article h1,
   border: 1px solid var(--glass-edge);
   border-radius: var(--glass-radius);
 }
+
+/* A shot drawn at its width in the room (layouts/_shortcodes/shot.html),
+   never wider than the page. */
+.spool-shot {
+  max-width: 100%;
+  height: auto;
+}
