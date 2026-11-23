@@ -1081,6 +1081,87 @@ taken.push(slackRoomsFile)
 await page.unroute('**/api/loops/gardener/rooms')
 await page.unroute('**/api/loops/gardener')
 
+// A channel's chat on the docs site's Telegram and Slack pages (#1699):
+// fleet's four loops under one bound Telegram group, then one Slack
+// channel, one loop in each status the pages name. The fixture binds no
+// chat, so the channel's detail is patched to carry one.
+const chatOf = (surface, chatID, title) => ({
+  surface,
+  chat_id: chatID,
+  title,
+  bound_at: now - 3 * 24 * 60 * 60 * 1000,
+  seen_at: now - 3 * 24 * 60 * 60 * 1000,
+  members: [
+    { loop: 'gardener', status: 'carrying' },
+    {
+      loop: 'watcher',
+      status: 'not_in_chat',
+      ...(surface === 'telegram' && { add_link: 'https://t.me/watcher_example_bot?startgroup=spool' }),
+    },
+    { loop: 'courier', status: 'no_bot' },
+    { loop: 'archivist', status: 'unbound' },
+  ],
+})
+const routeFleetDetail = (detail) =>
+  page.route('**/api/channels/fleet', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    await route.fulfill({ json: { ...(await (await route.fetch()).json()), ...detail } })
+  })
+// The channel's heading and its chat, not the conversation under them.
+const shootChat = async (name, chat) => {
+  await routeFleetDetail({ chat, surfaces: [chat.surface] })
+  await page.goto(base + '/channels/fleet', { waitUntil: 'networkidle' })
+  const section = page.locator('.chan-chat')
+  await section.waitFor({ timeout: 15000 })
+  const top = await page.locator('.page h1').boundingBox()
+  const box = await section.boundingBox()
+  const file = `${outDir}/${name}.png`
+  await page.screenshot({
+    path: file,
+    clip: { x: box.x - 24, y: top.y - 16, width: box.width + 48, height: box.y + box.height - top.y + 32 },
+  })
+  taken.push(file)
+  await page.unroute('**/api/channels/fleet')
+}
+await shootChat('channel-telegram-group', chatOf('telegram', '-1002233445566', 'Spool fleet'))
+await shootChat('channel-slack-channel', chatOf('slack', 'C07FLEET000', 'fleet'))
+// The Add Telegram group dialog, with the group the gardener's bot found.
+await routeFleetDetail({ chat: null, surfaces: ['telegram'] })
+await page.route('**/api/channels/fleet/chats/found', (route) =>
+  route.fulfill({
+    json: [
+      {
+        surface: 'telegram',
+        chat_id: '-1002233445566',
+        title: 'Spool fleet',
+        first_seen_at: now - 2 * 60 * 1000,
+        found_by: ['gardener'],
+      },
+    ],
+  }),
+)
+await page.goto(base + '/channels/fleet', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Add Telegram group' }).click()
+const addChatDialog = page.locator('dialog.chat-dialog')
+await addChatDialog.locator('.chat-found').waitFor({ timeout: 15000 })
+const addChatFile = `${outDir}/channel-add-telegram-group.png`
+await addChatDialog.screenshot({ path: addChatFile })
+taken.push(addChatFile)
+await page.keyboard.press('Escape')
+await page.unroute('**/api/channels/fleet/chats/found')
+await page.unroute('**/api/channels/fleet')
+// Attach Slack's first step on a loop with no surface, the courier's: the
+// panel runs past a 900px viewport with the manifest open.
+await page.setViewportSize({ width: 1180, height: 1500 })
+await page.goto(base + '/loops/courier', { waitUntil: 'networkidle' })
+const surfacesPanel = page.locator('.side-panel:has(h3:text-is("Surfaces"))')
+await surfacesPanel.getByRole('button', { name: 'Attach Slack' }).click()
+await surfacesPanel.locator('.slack-step').waitFor({ timeout: 15000 })
+const slackAttachFile = `${outDir}/slack-attach.png`
+await surfacesPanel.screenshot({ path: slackAttachFile })
+taken.push(slackAttachFile)
+await page.setViewportSize({ width: 1180, height: 900 })
+
 // The owner picker (#732): an owner is a user, by their link on the loop's
 // surface. The fixture's gardener is owned by rana, allowed before links and
 // linked as nobody, so the picker shows them greyed as not linked and offers

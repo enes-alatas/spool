@@ -21,7 +21,7 @@ cd "$root"
 
 # Each name is a shot ui-shots.mjs takes, as <name>.png, and that a page
 # under site/content/ links as /shots/<name>.png.
-names=(fleet-plan-hot channels loop-timeline connections)
+names=(fleet-plan-hot channels loop-timeline connections channel-telegram-group channel-add-telegram-group channel-slack-channel slack-attach)
 
 shots="$(mktemp -d)"
 trap 'rm -rf "$shots"' EXIT
