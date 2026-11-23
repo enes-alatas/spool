@@ -6579,9 +6579,10 @@ button.orb:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
-/* hover or focus lifts the circle over its neighbours, which sit back */
+/* hover or focus lifts the circle over its neighbours, which sit back; not
+   focus handed back as its focus view closes, which leaves only the outline */
 button.orb:hover,
-button.orb:focus-visible {
+button.orb:focus-visible:not([data-returned]) {
   z-index: 5;
   transform: scale(1.9);
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.25));
@@ -6742,11 +6743,11 @@ button.orb:focus-visible {
   color: var(--danger);
 }
 button.orb:hover .orb-initial,
-button.orb:focus-visible .orb-initial {
+button.orb:focus-visible:not([data-returned]) .orb-initial {
   opacity: 0;
 }
 button.orb:hover .orb-peek,
-button.orb:focus-visible .orb-peek {
+button.orb:focus-visible:not([data-returned]) .orb-peek {
   opacity: 1;
 }
 /* the dashed circle that adds: a pick-list in a team, New loop outside one */

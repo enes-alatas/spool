@@ -70,6 +70,18 @@ export function OrbKey() {
   )
 }
 
+// Focus handed back to the circle a focus view closed into, marked as
+// returned to so a keyboard close does not lift it as a Tab onto it would
+// (#1727). The mark is set only once the focus has landed, since only a blur
+// takes it off: a circle that never took the focus would otherwise keep it,
+// and a later Tab onto it would not lift it.
+export function handBack(back: HTMLElement) {
+  back.focus({ preventScroll: true })
+  if (back.ownerDocument.activeElement !== back) return
+  back.dataset.returned = ''
+  back.addEventListener('blur', () => delete back.dataset.returned, { once: true })
+}
+
 export function FleetTeams({
   teams,
   loops,
@@ -135,7 +147,7 @@ export function FleetTeams({
             // Once its place is shown again: a hidden button takes no focus.
             const back = focused.back
             setFocused(null)
-            requestAnimationFrame(() => back.focus({ preventScroll: true }))
+            requestAnimationFrame(() => handBack(back))
           }}
         />
       )}
