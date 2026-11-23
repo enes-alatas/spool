@@ -3,10 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { LoopView, Team } from './api'
-import { FleetTeams } from './components/FleetTeams'
+import { FleetTeams, handBack } from './components/FleetTeams'
 import { orbLabel } from './components/LoopOrb'
 import { LoopTeam } from './components/LoopTeam'
 import Dashboard from './pages/Dashboard'
+import css from './styles.css?raw'
 
 const loop = (over: Partial<LoopView>): LoopView =>
   ({
@@ -250,5 +251,54 @@ describe('Dashboard', () => {
     expect(html).toContain('<h1 class="sr-only">Fleet</h1>')
     expect(html).toContain('team-cards')
     expect(html).not.toContain('Loading the fleet…')
+  })
+})
+
+// A circle a focus view closed into (#1727). The node environment has no
+// DOM, so the circle is a stand-in with the few members handBack touches.
+function circle({ focusable }: { focusable: boolean }) {
+  const doc = { activeElement: null as unknown }
+  const listeners: Record<string, () => void> = {}
+  const el = {
+    dataset: {} as DOMStringMap,
+    ownerDocument: doc,
+    focus: () => {
+      if (focusable) doc.activeElement = el
+    },
+    addEventListener: (type: string, fn: () => void) => {
+      listeners[type] = fn
+    },
+    blur: () => {
+      doc.activeElement = null
+      listeners.blur?.()
+    },
+  }
+  return el
+}
+
+describe('handBack', () => {
+  it('focuses the circle and marks it returned to until it blurs', () => {
+    const el = circle({ focusable: true })
+    handBack(el as unknown as HTMLElement)
+    expect(el.ownerDocument.activeElement).toBe(el)
+    expect(el.dataset.returned).toBe('')
+    el.blur()
+    expect(el.dataset.returned).toBeUndefined()
+  })
+
+  it('leaves no mark on a circle the focus did not land on', () => {
+    const el = circle({ focusable: false })
+    handBack(el as unknown as HTMLElement)
+    expect(el.ownerDocument.activeElement).toBeNull()
+    expect(el.dataset.returned).toBeUndefined()
+  })
+
+  it('is skipped by every focus lift of a circle but the outline', () => {
+    const lifts = css.match(/button\.orb:focus-visible[^,{]*/g) ?? []
+    // the outline, then the lift, the initial and the peek
+    expect(lifts).toHaveLength(4)
+    expect(lifts.filter((sel) => !sel.includes(':not([data-returned])'))).toEqual([
+      'button.orb:focus-visible ',
+    ])
   })
 })
