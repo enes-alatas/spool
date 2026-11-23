@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 700" role="img" aria-labelledby="title desc">
+  <title id="title">A cloud loop's first wake, and the wakes after it</title>
+  <desc id="desc">A cloud loop's first wake. The hub runs claude --cloud on its own machine, and the CLI starts the loop's session on Anthropic's machines and prints the session's id. The session clones the loop's repo from GitHub, its setup script runs, and its SessionStart hook posts the session's id to the hub. The hub answers that post with the loop's prompt and ends the CLI. The turn runs: the loop's messages reach the hub by MCP, and when it ends the Stop hook posts the turn back. Each later wake runs claude -p --cloud, which sends the next message into the same session.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="680" height="700"/>
+
+  <!-- who takes part -->
+  <text class="section" x="40" y="30">THE FIRST WAKE</text>
+  <rect class="card" x="40" y="50" width="130" height="52" rx="10"/>
+  <text class="name mid" x="105" y="74">hub</text>
+  <text class="note mid" x="105" y="92">your machine</text>
+  <rect class="card" x="210" y="50" width="130" height="52" rx="10"/>
+  <text class="name mid" x="275" y="74">claude CLI</text>
+  <text class="note mid" x="275" y="92">your machine</text>
+  <rect class="card" x="380" y="50" width="130" height="52" rx="10"/>
+  <text class="name mid" x="445" y="74">the session</text>
+  <text class="note mid" x="445" y="92">Anthropic</text>
+  <rect class="card" x="550" y="50" width="90" height="52" rx="10"/>
+  <text class="name mid" x="595" y="80">GitHub</text>
+  <line class="rail" x1="105" y1="102" x2="105" y2="680"/>
+  <line class="rail" x1="275" y1="102" x2="275" y2="680"/>
+  <line class="rail" x1="445" y1="102" x2="445" y2="680"/>
+  <line class="rail" x1="595" y1="102" x2="595" y2="680"/>
+  <line class="awake" x1="445" y1="380" x2="445" y2="500"/>
+  <line class="awake" x1="445" y1="644" x2="445" y2="676"/>
+
+  <!-- the start -->
+  <line class="path" x1="105" y1="140" x2="275" y2="140" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="190" y="132">claude --cloud</text>
+  <line class="path" x1="275" y1="180" x2="445" y2="180" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="360" y="172">starts the session</text>
+  <line class="back" x1="275" y1="220" x2="105" y2="220" marker-end="url(#head-back)"/>
+  <text class="note mid" x="190" y="212">prints its id</text>
+  <line class="back" x1="445" y1="260" x2="595" y2="260" marker-end="url(#head-back)"/>
+  <text class="note mid" x="520" y="252">clones the repo</text>
+  <text class="note end" x="437" y="304">setup script runs</text>
+  <line class="back" x1="445" y1="340" x2="105" y2="340" marker-end="url(#head-back)"/>
+  <text class="note mid" x="360" y="332">SessionStart post</text>
+  <line class="path" x1="105" y1="380" x2="445" y2="380" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="360" y="372">the loop’s prompt</text>
+  <line class="back" x1="105" y1="420" x2="275" y2="420" marker-end="url(#head-back)"/>
+  <text class="note mid" x="190" y="412">ends it</text>
+
+  <!-- the turn -->
+  <line class="path" x1="445" y1="460" x2="105" y2="460" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="360" y="452">send_message</text>
+  <line class="back" x1="445" y1="500" x2="105" y2="500" marker-end="url(#head-back)"/>
+  <text class="note mid" x="360" y="492">Stop post: the turn</text>
+
+  <!-- every wake after -->
+  <line class="rail" x1="40" y1="530" x2="640" y2="530"/>
+  <text class="section" x="113" y="556">LATER WAKES</text>
+  <line class="path" x1="105" y1="604" x2="275" y2="604" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="190" y="596">claude -p --cloud</text>
+  <line class="path" x1="275" y1="644" x2="445" y2="644" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="360" y="636">the next message</text>
+</svg>

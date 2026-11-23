@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 600" role="img" aria-labelledby="title desc">
+  <title id="title">Where a cloud loop runs, and what it reaches</title>
+  <desc id="desc">Where a cloud loop runs. On your machine, the hub wakes the claude CLI, which starts the loop's session on Anthropic's machines and sends each later wake into it. The session's machine runs claude and its hooks beside the loop's checkout, and its environment gives it the setup script, the allowed domains and the hub token as a network secret. The session's hook posts and MCP calls carry that token through your tunnel or TLS proxy to the hub's cloud listener. The session clones and pushes the loop's repo on GitHub through Claude's GitHub App.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="680" height="600"/>
+
+  <!-- the hub's machine -->
+  <rect class="region" x="40" y="40" width="600" height="130" rx="12"/>
+  <text class="section" x="56" y="64">YOUR MACHINE</text>
+  <rect class="card" x="60" y="90" width="150" height="52" rx="10"/>
+  <text class="name mid" x="135" y="114">claude CLI</text>
+  <text class="note mid" x="135" y="132">starts, wakes</text>
+  <rect class="card" x="265" y="90" width="150" height="52" rx="10"/>
+  <text class="name mid" x="340" y="114">hub</text>
+  <text class="note mid" x="340" y="132">its loops</text>
+  <rect class="card" x="470" y="90" width="150" height="52" rx="10"/>
+  <text class="name mid" x="545" y="114">cloud listener</text>
+  <text class="note mid" x="545" y="132">127.0.0.1:8090</text>
+  <line class="path" x1="265" y1="116" x2="210" y2="116" marker-end="url(#head-path)"/>
+  <text class="path-note mid" x="237" y="108">wake</text>
+  <line class="back" x1="470" y1="116" x2="415" y2="116" marker-end="url(#head-back)"/>
+
+  <!-- the public address -->
+  <rect class="card" x="470" y="210" width="150" height="52" rx="10"/>
+  <text class="name mid" x="545" y="234">tunnel or proxy</text>
+  <text class="note mid" x="545" y="252">public address</text>
+  <line class="back" x1="545" y1="210" x2="545" y2="142" marker-end="url(#head-back)"/>
+
+  <!-- Anthropic's side -->
+  <rect class="region" x="40" y="300" width="600" height="170" rx="12"/>
+  <text class="section" x="56" y="324">ANTHROPIC</text>
+  <rect class="card" x="60" y="345" width="260" height="70" rx="10"/>
+  <text class="name mid" x="190" y="371">the session’s machine</text>
+  <text class="note mid" x="190" y="389">claude and its hooks</text>
+  <text class="note mid" x="190" y="405">the loop’s checkout</text>
+  <rect class="card" x="400" y="345" width="220" height="70" rx="10"/>
+  <text class="name mid" x="510" y="371">its environment</text>
+  <text class="note mid" x="510" y="389">setup script, domains</text>
+  <text class="note mid" x="510" y="405">hub token as a secret</text>
+  <line class="copy" x1="400" y1="380" x2="320" y2="380" marker-end="url(#head-back)"/>
+  <text class="note mid" x="360" y="372">applied</text>
+
+  <!-- the start, and what comes back -->
+  <line class="path" x1="135" y1="142" x2="135" y2="345" marker-end="url(#head-path)"/>
+  <text class="path-note" x="143" y="250">claude --cloud</text>
+  <polyline class="back" points="280,345 280,236 470,236" marker-end="url(#head-back)"/>
+  <text class="note" x="290" y="258">hook posts and MCP,</text>
+  <text class="note" x="290" y="274">with the hub token</text>
+
+  <!-- GitHub -->
+  <rect class="card" x="60" y="520" width="260" height="52" rx="10"/>
+  <text class="name mid" x="190" y="544">GitHub</text>
+  <text class="note mid" x="190" y="562">Claude’s GitHub App</text>
+  <line class="back" x1="110" y1="415" x2="110" y2="520" marker-start="url(#head-back)" marker-end="url(#head-back)"/>
+  <text class="note" x="118" y="496">clone, push</text>
+</svg>
