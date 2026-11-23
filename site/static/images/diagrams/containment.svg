@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 560" role="img" aria-labelledby="title desc">
+  <title id="title">What contains a loop</title>
+  <desc id="desc">What contains a loop. Each docker loop runs in a container of its own, on an internal network that no other loop is on. Its one way out is the egress proxy, which forwards only to the hosts on your allowlist and to the hub's loop listener, the one hub port a workstation reaches; that port serves the MCP endpoint, the brokered MCP servers, the Claude proxy and the GitHub token route. Your listener, with the control room and its API, is not reachable from any workstation. The cloud listener serves cloud sessions through your tunnel. A bare loop has no box: it runs under your account, with your files and your network.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="680" height="560"/>
+
+  <!-- docker workstations, one internal network each -->
+  <text class="section" x="40" y="30">WORKSTATIONS</text>
+  <rect class="region" x="40" y="44" width="220" height="100" rx="12"/>
+  <text class="section" x="54" y="66">INTERNAL NETWORK</text>
+  <rect class="card" x="60" y="80" width="180" height="48" rx="10"/>
+  <text class="name mid" x="150" y="102">a loop</text>
+  <text class="note mid" x="150" y="119">its container</text>
+  <rect class="region" x="40" y="164" width="220" height="100" rx="12"/>
+  <text class="section" x="54" y="186">INTERNAL NETWORK</text>
+  <rect class="card" x="60" y="200" width="180" height="48" rx="10"/>
+  <text class="name mid" x="150" y="222">another loop</text>
+  <text class="note mid" x="150" y="239">its container</text>
+
+  <!-- the one way out -->
+  <rect class="card" x="320" y="128" width="150" height="52" rx="10"/>
+  <text class="name mid" x="395" y="152">egress proxy</text>
+  <text class="note mid" x="395" y="170">the only route</text>
+  <polyline class="path" points="240,104 290,104 290,144 320,144" marker-end="url(#head-path)"/>
+  <polyline class="path" points="240,224 290,224 290,164 320,164" marker-end="url(#head-path)"/>
+  <rect class="card" x="490" y="44" width="150" height="52" rx="10"/>
+  <text class="name mid" x="565" y="68">allowed hosts</text>
+  <text class="note mid" x="565" y="86">Settings → Egress</text>
+  <polyline class="back" points="470,140 565,140 565,96" marker-end="url(#head-back)"/>
+  <text class="note" x="482" y="160">allowlist only</text>
+
+  <!-- the hub on your machine -->
+  <rect class="region" x="300" y="300" width="340" height="236" rx="12"/>
+  <text class="section" x="316" y="324">HUB</text>
+  <rect class="card" x="320" y="340" width="300" height="52" rx="10"/>
+  <text class="name mid" x="470" y="364">loop listener</text>
+  <text class="note mid" x="470" y="382">--mcp-listen, 8081 by default</text>
+  <rect class="card" x="320" y="404" width="300" height="52" rx="10"/>
+  <text class="name mid" x="470" y="428">your listener</text>
+  <text class="note mid" x="470" y="446">--listen: control room, API</text>
+  <rect class="card" x="320" y="468" width="300" height="52" rx="10"/>
+  <text class="name mid" x="470" y="492">cloud listener</text>
+  <text class="note mid" x="470" y="510">--cloud-listen, via a tunnel</text>
+  <line class="path" x1="395" y1="180" x2="395" y2="340" marker-end="url(#head-path)"/>
+  <text class="path-note" x="403" y="250">MCP, Claude proxy,</text>
+  <text class="path-note" x="403" y="266">GitHub token</text>
+  <text class="note end" x="290" y="424">no workstation</text>
+  <text class="note end" x="290" y="440">reaches this</text>
+
+  <!-- a bare loop: no box -->
+  <text class="section" x="40" y="316">BARE</text>
+  <rect class="card" x="40" y="330" width="220" height="52" rx="10"/>
+  <text class="name mid" x="150" y="354">a bare loop</text>
+  <text class="note mid" x="150" y="372">your files, network</text>
+  <line class="back" x1="260" y1="366" x2="320" y2="366" marker-end="url(#head-back)"/>
+</svg>
