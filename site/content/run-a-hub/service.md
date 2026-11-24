@@ -116,6 +116,15 @@ Sign in as `admin` with that password and set your own. The operator
 token is a full API credential that doesn't expire, so keep it with the
 keys file (see Back up and restore), not in shell history or a ticket.
 
+The rest of this page builds this:
+
+{{< diagram name="service" alt="How a hub runs as a service. On the internet are your browser and the cloud sessions your cloud loops run in. The server's firewall lets in only SSH, 80 and 443. A TLS proxy, Caddy, nginx or another, holds 443 with the certificate for your name and is the browser's only way in. It forwards to the hub on loopback: the control room on 127.0.0.1:8080 and, when the cloud listener shares the control room's name, the cloud paths (/mcp, /mcp/check/ and /hooks) to the cloud listener on 127.0.0.1:8090. The loop listener binds the Docker bridge, 172.17.0.1:8081 by default, and docker loops reach it through the egress proxy, in on docker0. No hub port faces the network." >}}
+
+Your browser always comes in through the TLS proxy. A cloud loop has
+another way in: a tunnel, such as a Tailscale Funnel, can carry it
+straight to the cloud listener
+([A Tailscale Funnel beside Caddy](#a-tailscale-funnel-beside-caddy)).
+
 ## TLS with Caddy
 
 Point `spool.example.com`'s DNS at the server, install Caddy from its
