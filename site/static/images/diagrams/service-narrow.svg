@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 622" role="img" aria-labelledby="title desc">
+  <title id="title">Run it as a service</title>
+  <desc id="desc">How a hub runs as a service. On the internet are your browser and the cloud sessions your cloud loops run in. The server's firewall lets in only SSH, 80 and 443. A TLS proxy, Caddy, nginx or another, holds 443 with the certificate for your name and is the browser's only way in. It forwards to the hub on loopback: the control room on 127.0.0.1:8080 and, when the cloud listener shares the control room's name, the cloud paths (/mcp, /mcp/check/ and /hooks) to the cloud listener on 127.0.0.1:8090. The loop listener binds the Docker bridge, 172.17.0.1:8081 by default, and docker loops reach it through the egress proxy, in on docker0. No hub port faces the network.</desc>
+  <style>
+    /* The docs site's diagram style (CONVENTIONS.md "Docs site diagrams"): the
+       control room's tokens on its canvas. Cards for things, orange for the
+       path a message takes, grey for what comes back or is copied. */
+    .canvas { fill: #050505; }
+    .card { fill: #0c0c0e; stroke: #24242a; stroke-width: 1.5; }
+    .region { fill: none; stroke: #24242a; stroke-width: 1.5; }
+    .name { font: 15px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; fill: #f2f1ed; }
+    .note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; }
+    .section { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #86868b; letter-spacing: 0.04em; }
+    .path { stroke: #ff8a1f; stroke-width: 2; fill: none; }
+    .path-note { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #ff8a1f; }
+    .back { stroke: #86868b; stroke-width: 1.5; fill: none; }
+    .copy { stroke: #86868b; stroke-width: 1.5; stroke-dasharray: 5 5; fill: none; }
+    .rail { stroke: #24242a; stroke-width: 2; }
+    .awake { stroke: #ff8a1f; stroke-width: 4; stroke-linecap: round; }
+    .wake { fill: #050505; stroke: #f2f1ed; stroke-width: 2; }
+    .wake-name { font: 12px ui-monospace, 'SF Mono', Menlo, Consolas, monospace; fill: #f2f1ed; }
+    .mid { text-anchor: middle; }
+    .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="head-path" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ff8a1f"/></marker>
+    <marker id="head-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#86868b"/></marker>
+  </defs>
+  <rect class="canvas" width="360" height="622"/>
+
+  <!-- the internet -->
+  <text class="section" x="20" y="30">INTERNET</text>
+  <rect class="card" x="34" y="44" width="140" height="52" rx="10"/>
+  <text class="name mid" x="104" y="68">your browser</text>
+  <text class="note mid" x="104" y="86">spool.example.com</text>
+  <rect class="card" x="186" y="44" width="140" height="52" rx="10"/>
+  <text class="name mid" x="256" y="68">cloud session</text>
+  <text class="note mid" x="256" y="86">a cloud loop</text>
+
+  <!-- the firewall -->
+  <line class="rail" x1="10" y1="132" x2="350" y2="132"/>
+  <text class="note mid" x="180" y="152">firewall:</text>
+  <text class="note mid" x="180" y="168">SSH, 80, 443 only</text>
+
+  <!-- the server -->
+  <rect class="region" x="10" y="182" width="340" height="420" rx="12"/>
+  <text class="section" x="24" y="204">SERVER</text>
+  <rect class="card" x="34" y="214" width="292" height="52" rx="10"/>
+  <text class="name mid" x="180" y="238">TLS proxy</text>
+  <text class="note mid" x="180" y="256">Caddy, nginx…</text>
+  <polyline class="path" points="104,96 104,214" marker-end="url(#head-path)"/>
+  <text class="path-note" x="112" y="120">https</text>
+  <polyline class="path" points="256,96 256,214" marker-end="url(#head-path)"/>
+  <text class="path-note" x="264" y="114">cloud</text>
+  <text class="path-note" x="264" y="130">paths</text>
+
+  <!-- the hub -->
+  <rect class="region" x="20" y="310" width="320" height="184" rx="12"/>
+  <text class="section" x="34" y="332">HUB</text>
+  <rect class="card" x="34" y="346" width="140" height="52" rx="10"/>
+  <text class="name mid" x="104" y="370">control room</text>
+  <text class="note mid" x="104" y="388">127.0.0.1:8080</text>
+  <rect class="card" x="186" y="346" width="140" height="52" rx="10"/>
+  <text class="name mid" x="256" y="370">cloud listener</text>
+  <text class="note mid" x="256" y="388">127.0.0.1:8090</text>
+  <rect class="card" x="110" y="422" width="140" height="52" rx="10"/>
+  <text class="name mid" x="180" y="446">loop listener</text>
+  <text class="note mid" x="180" y="464">172.17.0.1:8081</text>
+  <polyline class="path" points="104,266 104,346" marker-end="url(#head-path)"/>
+  <polyline class="path" points="256,266 256,346" marker-end="url(#head-path)"/>
+
+  <!-- docker loops, on the bridge -->
+  <rect class="card" x="110" y="530" width="140" height="52" rx="10"/>
+  <text class="name mid" x="180" y="554">docker loops</text>
+  <text class="note mid" x="180" y="572">via egress proxy</text>
+  <line class="path" x1="180" y1="530" x2="180" y2="474" marker-end="url(#head-path)"/>
+  <text class="path-note" x="190" y="508">docker0 only</text>
+</svg>
