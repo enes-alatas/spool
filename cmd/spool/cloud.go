@@ -13,6 +13,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/httpapi"
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/runtime/cloud"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -39,11 +40,25 @@ func newCloudRuntime(st store.Store, hubKey []byte, dataDir, claudeBin, apiBase 
 			if !signedIn {
 				return cloud.Account{}, cloud.ErrNoAccount
 			}
-			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID, AccountUUID: account.AccountUUID}, nil
+			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID, AccountUUID: account.AccountUUID,
+				Scopes: account.Scopes}, nil
 		},
 		APIBase: apiBase,
 		Dir:     filepath.Join(dataDir, "cloud"),
 		HubKey:  hubKey,
+	}
+}
+
+// cloudPlanUsage reads a login's plan usage for its cloud loops (#1285):
+// a sign-in without the scope reads as no usage rather than a failure,
+// since nothing can change it but a new sign-in.
+func cloudPlanUsage(runtime *cloud.Runtime) loop.ReadPlanUsage {
+	return func(ctx context.Context, login string) (*claude.UnifiedWindows, error) {
+		windows, err := runtime.PlanUsage(ctx, login)
+		if errors.Is(err, cloud.ErrNoAccount) || errors.Is(err, cloud.ErrNoUsageScope) {
+			return nil, nil
+		}
+		return windows, err
 	}
 }
 

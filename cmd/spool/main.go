@@ -555,6 +555,7 @@ func main() {
 		os.Exit(1)
 	}
 	deps.PlanCap = planCap
+	deps.CloudUsage = loop.NewCloudUsage(cloudPlanUsage(cloudRuntime), deps.PlanUsage, planCap, log)
 	// each loop's figures, read back from the operator's Langfuse on a
 	// slow cadence, never on a loop's turn (#1300)
 	figuresEvery := 5 * time.Minute

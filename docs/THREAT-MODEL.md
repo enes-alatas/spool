@@ -954,7 +954,14 @@ the CLI (ADR-0018).
 - **One reading can't lift or stretch a login's plan cap.** A stream's
   plan-usage reading can only raise a window that hasn't reset, never
   moves that window's reset, and is refused with a reset beyond the
-  window's span (ADR-0047).
+  window's span (ADR-0047). The hub's read of a cloud loop's login's
+  usage goes through the same rules (ADR-0059, #1285).
+- **The usage read holds the login's token as a cloud send does.** The
+  hub runs the CLI's `/usage` with the access token in
+  `CLAUDE_CODE_OAUTH_TOKEN` and a config dir of its own, with no tool and
+  no MCP server. The CLI is handed no refresh token, so it can't rotate
+  the login. A failure's text in the log carries what the CLI printed,
+  never the token (ADR-0059, #1285).
 
 **Doesn't hold:**
 - **The stream a loop's claude writes is within the loop's reach.** Turn

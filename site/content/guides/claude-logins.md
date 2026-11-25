@@ -37,9 +37,9 @@ every login. Resume now names the login it lifts
 default with none), and Cap again (`POST /api/plan-cap/cap-again`,
 the same body) puts that login's cap back until its windows reset. Bare
 loops follow the `default` login's cap, since they report into its
-usage. A cloud loop follows its own login's, though
-its turns report no usage, so only the login's other loops
-move it. Moving a capped loop to a login that isn't capped wakes it.
+usage. A cloud loop follows its own login's. Its turns report no usage,
+so after one, the hub runs Claude Code's `/usage` on the login, at
+most every five minutes ([Cloud loops](../cloud-loops/#cost)). Moving a capped loop to a login that isn't capped wakes it.
 With more than one login, the Fleet page's plan strip shows a ring for
 each, named, whose figures open on a click. A capped login's ring wears a red rim in place
 of a cap banner, and its figures name the loops on it that sleep, with a

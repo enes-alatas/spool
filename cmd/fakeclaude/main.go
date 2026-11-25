@@ -140,6 +140,9 @@
 // refusal that names no reset. The turn uses up no script line, and
 // removing the file is the limit gone.
 //
+// `-p /usage` prints the table in a "usage.txt" file there, as the CLI's
+// /usage does, and counts each run in "usage-reads" (#1285; usage.go).
+//
 // An "admitted-token" file there is the one token the API takes: a run on
 // any other CLAUDE_CODE_OAUTH_TOKEN is refused as an expired login is. A
 // login check, the one run with --no-session-persistence, adds a line to
@@ -207,6 +210,9 @@ func main() {
 	args := os.Args[1:]
 	if slices.Contains(args, "--cloud") || (len(args) > 0 && args[0] == cloudVMArg) {
 		os.Exit(cloudMain(args))
+	}
+	if len(args) >= 2 && args[0] == "-p" && args[1] == "/usage" {
+		os.Exit(usageMain())
 	}
 	if len(args) == 2 && args[0] == "otlp-sink" {
 		os.Exit(otlpSink(args[1]))

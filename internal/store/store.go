@@ -329,6 +329,10 @@ type PlanUsageRecord struct {
 // rate-limit event its claude process emits after an API response.
 const PlanUsageSourceStream = "stream"
 
+// PlanUsageSourceUsageCommand is plan usage the hub read by running the
+// CLI's /usage, for a login whose cloud loops report none (#1285).
+const PlanUsageSourceUsageCommand = "usage_command"
+
 // PlanUsageWindow is one limit window: Utilization is the fraction used,
 // which can run past 1, and ResetsAt when the window starts over.
 type PlanUsageWindow struct {

@@ -263,5 +263,8 @@ A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model
 prices. A model missing from that table leaves the turn's cost unknown, and
 the day's total says it leaves that turn out. Cloud turns don't report the
-plan's usage limits either: the hub reads those from contained loops only,
-so a hub with only cloud loops has no plan usage to show.
+plan's usage limits either, so when a cloud loop ends a turn, the hub reads
+its login's usage by running Claude Code's `/usage`, at most every five
+minutes, and the plan cap acts on it. That takes a sign-in made with the `user:profile`
+scope, as a sign-in through Settings is. With any other, a login whose
+loops all run in the cloud has no plan usage to show.
