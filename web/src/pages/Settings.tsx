@@ -154,8 +154,8 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
   const qc = useQueryClient()
   const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
   // Which logins the cap acts on (#1303): a login whose loops all run in
-  // the cloud gets no new reading, so it is acted on only while its last
-  // one counts.
+  // the cloud is acted on once the hub has read its usage after a cloud
+  // loop's turn (#1738).
   const cloudOnly = useCloudOnly()
   const reach = capReach(usages?.logins, cloudOnly)
   // As the rotation pair: the stored values are the truth, a draft overlays.
@@ -199,8 +199,8 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
       <p className="page-lede">
         When a Claude login's plan usage reaches a threshold, the loops on that login sleep at the end of
         their turn and wake when that window resets; the thresholds apply to every login. Nothing is lost:
-        workstations stay up and messages wait in the inbox. Until a loop has reported a login's usage, its
-        cap does not fire.
+        workstations stay up and messages wait in the inbox. Until a login's usage has been read, from a
+        loop's stream or by the hub after a cloud turn, its cap does not fire.
       </p>
 
       <div className="form">

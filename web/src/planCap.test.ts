@@ -4,6 +4,7 @@ import {
   capFields,
   capReach,
   cloudOnlyLogins,
+  cloudReading,
   liveReading,
   capGate,
   capIdleStatus,
@@ -14,6 +15,7 @@ import {
   capValue,
   loginUsage,
   loopPlanCapped,
+  readingFrom,
   ringName,
   usageLogins,
 } from './planCap'
@@ -215,33 +217,64 @@ describe('liveReading', () => {
   })
 })
 
+describe('cloudReading', () => {
+  it('is pending for a cloud-only login with nothing live', () => {
+    expect(cloudReading(undefined, true)).toBe('pending')
+    expect(cloudReading(login('default'), true)).toBe('pending')
+    expect(cloudReading(login('default', { five_hour: { used_percent: 0, reset: true } }), true)).toBe(
+      'pending',
+    )
+  })
+
+  // #1738: once the hub reads a cloud-only login (#1285), its figures update
+  // like any other's, so no line says they won't.
+  it('reads a cloud-only login with a live reading as any other', () => {
+    expect(cloudReading(login('default', { ...live, source: 'usage_command' }), true)).toBeUndefined()
+    expect(cloudReading(login('default', live), true)).toBeUndefined()
+  })
+
+  it('leaves a login that runs a bare or docker loop alone', () => {
+    expect(cloudReading(login('default'), false)).toBeUndefined()
+  })
+})
+
+describe('readingFrom', () => {
+  it("names the hub's read after a cloud turn, and nothing for a stream's", () => {
+    expect(readingFrom(login('default', { ...live, source: 'usage_command' }))).toBe(
+      "read by the hub after a cloud loop's turn",
+    )
+    expect(readingFrom(login('default', { ...live, source: 'stream' }))).toBeUndefined()
+    expect(readingFrom(undefined)).toBeUndefined()
+  })
+})
+
 describe('capReach', () => {
   it('says nothing until the logins are read', () => {
     expect(capReach(undefined, new Set())).toBeUndefined()
   })
 
-  it('names every login when none is cloud-only', () => {
+  it('names every login when none is waiting on a cloud turn', () => {
     expect(capReach([login('default'), login('work')], new Set())).toBe(
-      'The cap acts on every login here (default and work). A login whose loops all ran in the cloud would not be among them: a cloud turn reports no plan usage.',
+      'The cap acts on every login here (default and work).',
     )
-    expect(capReach([login('default')], new Set())).toMatch(/^The cap acts on the login here \(default\)\./)
+    expect(capReach([login('default')], new Set())).toBe('The cap acts on the login here (default).')
   })
 
-  it('names a cloud-only login with nothing live as not among them', () => {
+  it('names a cloud-only login with nothing live as not yet among them', () => {
     expect(capReach([login('default'), login('work')], new Set(['default']))).toBe(
-      'The cap acts on work. Not on default, which runs only cloud loops: a cloud turn reports no plan usage, so there is nothing for the cap to read.',
+      "The cap acts on work. Not yet on default, which runs only cloud loops: the hub reads its usage after a cloud loop's turn.",
     )
   })
 
-  it('says it acts on none when the only login is cloud-only with nothing live', () => {
+  it('says it acts on none yet when the only login is cloud-only with nothing live', () => {
     expect(capReach([login('default')], new Set(['default']))).toBe(
-      'The cap acts on no login here today: default runs only cloud loops, and a cloud turn reports no plan usage, so there is nothing for the cap to read.',
+      "The cap acts on no login here yet: default runs only cloud loops, and the hub reads its usage after a cloud loop's turn.",
     )
   })
 
-  it('says a cloud-only login with a live reading is acted on until it resets', () => {
-    expect(capReach([login('default', live), login('work')], new Set(['default']))).toBe(
-      'The cap acts on work. On default, which runs only cloud loops, the cap acts on its last reading until those windows reset, then not again, since a cloud turn reports no plan usage.',
-    )
+  it('counts a cloud-only login with a live reading among them', () => {
+    expect(
+      capReach([login('default', { ...live, source: 'usage_command' }), login('work')], new Set(['default'])),
+    ).toBe('The cap acts on every login here (default and work).')
   })
 })

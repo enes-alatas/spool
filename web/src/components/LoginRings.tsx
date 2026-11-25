@@ -5,12 +5,11 @@ import {
   capAgainOffered,
   capWake,
   resumedLine,
-  CLOUD_ONLY_FROZEN,
-  CLOUD_ONLY_FROZEN_WHY,
   CLOUD_ONLY_USAGE,
   CLOUD_ONLY_WHY,
   cloudReading,
   type CloudReading,
+  readingFrom,
   ringName,
   RING_KEY,
 } from '../planCap'
@@ -29,10 +28,11 @@ import {
 // now holds that cap off (resumed_cap, #1688), the details say so, with
 // capAgain (Cap again, for those who may) beside it.
 //
-// A login whose loops all run in the cloud (cloudOnly, #1303) gets no new
-// reading. While its last one still counts, the cap acts on it, so the ring
-// keeps it and the details say it won't update; once nothing live is left
-// the ring is dashed and the details say the cap does not act.
+// A login whose loops all run in the cloud (cloudOnly, #1303) is read by
+// the hub after a cloud loop's turn (#1285). With a reading that counts, its
+// ring is any login's, and its details say where the figures came from;
+// with none yet, the ring is dashed and the details say a cloud turn brings
+// one (#1738).
 export function LoginRings({
   logins,
   cloudOnly,
@@ -77,16 +77,10 @@ export function LoginRings({
               className="login-ring"
               aria-expanded={open === login.name}
               aria-label={`Plan usage of the Claude login ${login.name}`}
-              title={
-                cloud === 'unknown'
-                  ? CLOUD_ONLY_WHY
-                  : cloud === 'last'
-                    ? CLOUD_ONLY_FROZEN_WHY
-                    : (login.unknown ?? RING_KEY)
-              }
+              title={cloud === 'pending' ? CLOUD_ONLY_WHY : (login.unknown ?? RING_KEY)}
               onClick={() => setOpen(open === login.name ? null : login.name)}
             >
-              <Ring login={login} unknown={cloud === 'unknown' || login.unknown !== undefined} />
+              <Ring login={login} unknown={cloud === 'pending' || login.unknown !== undefined} />
             </button>
             {open === login.name && (
               <RingDetails
@@ -189,9 +183,10 @@ export function RingDetails({
     <div className="login-ring-details" role="dialog" aria-label={`Plan usage of ${login.name}`}>
       <div>
         <b>{login.name}</b>
-        {cloud !== 'unknown' && login.as_of !== undefined && ` · as of ${formatAgo(login.as_of, now)}`}
+        {cloud !== 'pending' && login.as_of !== undefined && ` · as of ${formatAgo(login.as_of, now)}`}
+        {cloud !== 'pending' && readingFrom(login) !== undefined && `, ${readingFrom(login)}`}
       </div>
-      {cloud === 'unknown' ? (
+      {cloud === 'pending' ? (
         <>
           <div className="login-ring-row">{CLOUD_ONLY_USAGE}</div>
           <div className="login-ring-row login-ring-why">{CLOUD_ONLY_WHY}</div>
@@ -202,12 +197,6 @@ export function RingDetails({
         <>
           <WindowRow name="5-hour · outer ring" window={login.five_hour} now={now} />
           <WindowRow name="7-day · inner ring" window={login.seven_day} now={now} />
-          {cloud === 'last' && (
-            <>
-              <div className="login-ring-row">{CLOUD_ONLY_FROZEN}</div>
-              <div className="login-ring-row login-ring-why">{CLOUD_ONLY_FROZEN_WHY}</div>
-            </>
-          )}
         </>
       )}
       {login.cap && (

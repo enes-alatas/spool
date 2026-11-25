@@ -7,12 +7,11 @@ import {
   capIdleStatus,
   cappedLogins,
   capReason,
-  CLOUD_ONLY_FROZEN,
-  CLOUD_ONLY_FROZEN_WHY,
   CLOUD_ONLY_USAGE,
   CLOUD_ONLY_WHY,
   cloudOnlyLogins,
   cloudReading,
+  readingFrom,
   defaultUsage,
   loopLogin,
   resumedHold,
@@ -92,7 +91,9 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
             className="plan-title"
             title={
               !logins && usage?.as_of !== undefined
-                ? `as of ${formatAgo(usage.as_of, now)}, ${new Date(usage.as_of).toLocaleString()}`
+                ? `as of ${formatAgo(usage.as_of, now)}, ${new Date(usage.as_of).toLocaleString()}${
+                    readingFrom(usage) ? `, ${readingFrom(usage)}` : ''
+                  }`
                 : undefined
             }
           >
@@ -107,10 +108,10 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
               resume={(login) => <ResumeButton login={login} />}
               capAgain={(login) => <CapAgainButton login={login} />}
             />
-          ) : cloud === 'unknown' ? (
+          ) : cloud === 'pending' ? (
             // a hub with one login whose loops all run in the cloud, and no
-            // reading left that counts: nothing to show, nothing to cap on
-            // (#1303)
+            // reading that counts yet: the hub's read after a cloud loop's
+            // turn brings one (#1303, #1738)
             <span className="plan-window dim" title={CLOUD_ONLY_WHY}>
               {CLOUD_ONLY_USAGE}
             </span>
@@ -123,12 +124,6 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
               <>
                 <PlanWindowStat name="5-hour" window={usage.five_hour} now={now} />
                 <PlanWindowStat name="7-day" window={usage.seven_day} now={now} />
-                {/* the last reading still caps, but no newer one comes */}
-                {cloud === 'last' && (
-                  <span className="plan-window dim" title={CLOUD_ONLY_FROZEN_WHY}>
-                    {CLOUD_ONLY_FROZEN}
-                  </span>
-                )}
               </>
             )
           )}
@@ -162,10 +157,10 @@ export function CapBanners({
   const capped = cappedLogins(usages)
   const sleeps = useSleeps(usages)
   const cloudOnly = useCloudOnly()
-  // a cloud-only login with nothing live has no reading to say, nor a cap
-  // that can fire; the line beside the thresholds says so (#1303)
+  // a cloud-only login with nothing live has no reading to say yet, nor a
+  // cap that can fire; the line beside the thresholds says so (#1303)
   const noReading = (login: LoginPlanUsage | undefined) =>
-    cloudReading(login, cloudOnly.has(login?.name ?? 'default')) === 'unknown'
+    cloudReading(login, cloudOnly.has(login?.name ?? 'default')) === 'pending'
   // Each line with the login it is about, so a resumed one carries Cap
   // again (#1688): undefined for the default on a hub with one login.
   const idleLines: { line: string; login?: string; resumed: boolean }[] = !idle
