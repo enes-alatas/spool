@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10); superseded in part by ADR-0061: item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 9's #977 amendment's create refusal, and item 10's *The repo field goes* and its #1169 amendment · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102); 2026-10-28 (item 10: no repo reach in an Anthropic-hosted environment, #1169); 2026-11-08 (item 1: a start names the loop's model, #1281); 2026-11-09 (item 1: a start names its session after the loop, #1283) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10); superseded in part by ADR-0061: item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 9's #977 amendment's create refusal, and item 10's *The repo field goes* and its #1169 amendment · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102); 2026-10-28 (item 10: no repo reach in an Anthropic-hosted environment, #1169); 2026-11-08 (item 1: a start names the loop's model, #1281); 2026-11-09 (item 1: a start names its session after the loop, #1283); 2026-11-25 (item 7: the hub reads a cloud loop's login's plan usage, #1285) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -393,6 +393,38 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
      costs. Beside it, `cost_today_estimated` says whether that sum
      includes an estimate, and `cost_today_unknown_turns` counts the
      turns it leaves out.
+
+   **Amendment (2026-11-25, #1285): the hub reads a cloud loop's
+   login's plan usage.** Operator decisions of 2026-11-25 and 2026-11-26
+   on #1285. It reverses the decision of 2026-10-08 on #647, that the hub
+   reads no plan usage of its own, for this case only.
+   - When a cloud loop ends a turn, the hub runs the CLI's `/usage` on
+     its login (`claude -p /usage`), as a cloud send runs: the login's
+     access token in `CLAUDE_CODE_OAUTH_TOKEN`, a config dir of its own,
+     no tool and no MCP server, no session kept (ADR-0058, ADR-0060).
+     The operator chose the CLI's command over the endpoint it reads,
+     `GET /api/oauth/usage`, which Anthropic doesn't document, and reads
+     its output on every CLI bump.
+   - The hub reads two lines of its output, `Current session` as the
+     five-hour window and `Current week (all models)` as the seven-day
+     one: a percentage used, and a reset as a date and time in a named
+     zone. A per-model week, a window with no reset, and anything else
+     it prints are not read.
+   - It reads a login at most once in five minutes, and not while a
+     stream reading of that login is under five minutes old: a login
+     whose contained loops report keeps the stream as its source.
+   - It reads only a sign-in whose scopes include `user:profile`, as
+     the CLI does. Any other keeps unknown usage, as before.
+   - A reading is kept as a stream reading is, through ADR-0047's
+     rules: it can raise a window that hasn't reset, never lower it or
+     move its reset. It is stored with the source `usage_command`.
+   - A failed run, or output with neither line it reads, keeps the last
+     reading, and is logged with what the CLI printed once an hour per
+     login. The CLI holds no refresh token, so the read never rotates
+     the login.
+   - So the cap acts on a login whose loops all run in the cloud, and
+     a hub with only cloud loops has known usage once one has ended a
+     turn on a sign-in with the scope.
 
 8. **The hub's Claude login stays sealed.** The hub runs each
    `claude --cloud` and `claude -p --cloud` with the login's current
