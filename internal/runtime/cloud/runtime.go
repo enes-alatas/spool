@@ -31,12 +31,14 @@ import (
 
 // Account is the claude.ai account whose plan cloud loops spend: the
 // OAuth access token of its sign-in, the organization it acts in, and the
-// account's own ID, "" for a sign-in kept before the hub read it. Never
-// logged.
+// account's own ID, "" for a sign-in kept before the hub read it, and
+// the scopes it granted, none for a sign-in kept before the hub kept them.
+// Never logged.
 type Account struct {
 	Token       string
 	OrgUUID     string
 	AccountUUID string
+	Scopes      []string
 }
 
 // ErrNoAccount is what a run returns when the hub holds no signed-in

@@ -187,6 +187,10 @@ type Deps struct {
 	// the loop takes no turns (ADR-0047, ADR-0060). Nil in tests that do
 	// not care, which never cap.
 	PlanCap *PlanCap
+	// CloudUsage reads the plan usage of a cloud loop's login when the
+	// loop ends a turn, which reports none itself (#1285). Nil in tests
+	// that do not care, which never read it.
+	CloudUsage *CloudUsage
 	// CloudGate is what the checks of the public address say about waking
 	// a cloud loop: while it holds, a cloud loop takes no turns (ADR-0056).
 	// Nil in tests that do not care, which never hold one.
@@ -3495,6 +3499,9 @@ func (actor *Actor) recordTurnEnd(turn *store.Turn, res *claude.ResultInfo, logi
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
 	actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
 	actor.watchSends()
+	if actor.loop.Runtime == store.RuntimeCloud && actor.deps.CloudUsage != nil {
+		actor.deps.CloudUsage.TurnEnded(actor.login())
+	}
 	switch {
 	case loginRejected, limitRefused:
 		// told by the workstation's state, or the loop's, instead

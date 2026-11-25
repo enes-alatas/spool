@@ -15,7 +15,7 @@ weight: 3
 
   ![A loop's page in the control room, with its conversation as a timeline](/shots/loop-timeline.png)
 
-- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets (a cloud turn reports no plan usage, so loops that all run in the cloud never reach a cap): messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, or for cloud loops from Claude Code's `/usage`, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop on that Claude login sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
 
   ![The Fleet page's plan strip, with the 5-hour window at 93% and the 7-day window at 72%](/shots/fleet-plan-hot.png)
 

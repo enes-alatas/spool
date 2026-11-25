@@ -121,7 +121,8 @@ func signInCloud(t *testing.T, dataDir, address string) {
 			t.Fatal(err)
 		}
 	}
-	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001", AccountUUID: fixtureAccountID("fixture@example.test")})
+	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001",
+		AccountUUID: fixtureAccountID("fixture@example.test"), Scopes: []string{"user:inference", "user:profile", "user:sessions:claude_code"}})
 	if err := db.Settings().Set(ctx, store.SettingCloudAddress, address); err != nil {
 		t.Fatal(err)
 	}
