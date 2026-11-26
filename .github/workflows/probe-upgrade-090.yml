@@ -117,7 +117,7 @@ jobs:
           tok=$(sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool); echo "::add-mask::$tok"
           api() { curl -fsS -H "Authorization: Bearer $tok" "127.0.0.1:8080$1"; echo; }
           api /api/loops | grep -o '"name":"[a-z]*"' | sort -u
-          api /api/loops/aster/events | grep -q 'kept across the upgrade'
+          api '/api/loops/aster/events?limit=500' | grep -c 'kept across' || true
           db=/home/spool/.spool/spool.db
           sudo systemctl stop spool
           sudo -u spool sqlite3 "$db" "SELECT channel,surface,chat_id,bound_by FROM channel_chats ORDER BY channel" | tee /tmp/chats
@@ -125,6 +125,7 @@ jobs:
           grep -qx 'ops|telegram|-100222|upgrade' /tmp/chats
           sudo -u spool sqlite3 "$db" "SELECT l.name,r.room_id,r.channel FROM rooms r JOIN loops l ON l.id=r.loop_id ORDER BY 1,2" | tee /tmp/rooms
           grep -qx 'aster|-100333|' /tmp/rooms
+          n=$(sudo -u spool sqlite3 "$db" "SELECT (SELECT COUNT(*) FROM messages WHERE text LIKE '%kept across the upgrade%') + (SELECT COUNT(*) FROM events WHERE payload LIKE '%kept across the upgrade%')"); echo "message rows: $n"; [ "$n" -ge 1 ]
           sudo systemctl start spool
           for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/version && break; sleep 1; done; echo
           sudo ls -l /var/backups/spool
