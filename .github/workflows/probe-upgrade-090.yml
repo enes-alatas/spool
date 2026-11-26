@@ -111,7 +111,7 @@ jobs:
       - name: check the hub at main kept its data
         run: |
           set -x
-          want=$(git -C /opt/spool rev-parse --short=8 HEAD)
+          want=$(git -C /opt/spool rev-parse --short=7 HEAD)
           curl -fsS 127.0.0.1:8080/api/version | tee /tmp/v; echo
           grep -q "$want" /tmp/v || { echo "::error::hub not at main $want"; exit 1; }
           tok=$(sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool); echo "::add-mask::$tok"
