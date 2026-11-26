@@ -73,13 +73,14 @@ jobs:
         run: |
           tok=$(sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool)
           echo "::add-mask::$tok"
-          api() { curl -fsS -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -X "$1" "127.0.0.1:8080$2" ${3:+-d "$3"}; echo; }
+          api() { curl -fsS -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -X "$1" "127.0.0.1:8080$2" ${3:+-d "$3"} && echo; }
           for l in aster briar; do
             api POST /api/loops "{\"name\":\"$l\",\"mission\":\"probe loop\",\"tick_interval_sec\":43200,\"min_wake_sec\":60}"
           done
-          api GET /api/channels
-          api POST /api/channels '{"name":"ops"}'
-          for c in fleet ops; do for l in aster briar; do api PUT /api/channels/$c/loops/$l || api POST /api/channels "{\"name\":\"$c\"}"; api PUT /api/channels/$c/loops/$l; done; done
+          for c in fleet ops; do
+            api POST /api/channels "{\"name\":\"$c\"}"
+            for l in aster briar; do api PUT /api/channels/$c/loops/$l; done
+          done
           api POST /api/loops/aster/message '{"author":"probe","text":"kept across the upgrade"}'
           sudo systemctl stop spool
           db=/home/spool/.spool/spool.db
