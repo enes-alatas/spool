@@ -1,0 +1,134 @@
+# Throwaway probe for the v0.9.0 release gate (#1741 thread): a fresh
+# runner installs v0.8.0 as the service page lays it out, seeds rooms that
+# migration 0083 folds into channel chats, then runs v0.8.0's own
+# `spool upgrade main` and checks the hub came back at main with its data.
+# Deleted with its branch once reported.
+name: probe-upgrade-090
+on:
+  push:
+    branches: [chore/upgrade-090-probe]
+permissions: {}
+jobs:
+  upgrade:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: tools in the owner's login shell, as an operator's would be
+        run: |
+          printf 'export PATH=%s:%s:$PATH\n' "$(dirname "$(command -v go)")" "$(dirname "$(command -v node)")" >> ~/.profile
+          sudo apt-get install -y -q sqlite3 >/dev/null
+          docker version --format '{{.Server.Version}}'
+      - name: v0.8.0 checkout in /opt/spool, release binary and images
+        run: |
+          t0=$(date +%s)
+          sudo install -d -o "$USER" /opt/spool
+          git clone -q https://github.com/enes-alatas/spool /opt/spool
+          cd /opt/spool && git -c advice.detachedHead=false checkout -q v0.8.0
+          v=v0.8.0 p=linux_amd64 base=https://github.com/enes-alatas/spool/releases/download/v0.8.0
+          curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
+          grep " spool_${v}_${p}.tar.gz\$" SHA256SUMS | sha256sum -c
+          mkdir -p bin && tar -xzf "spool_${v}_${p}.tar.gz" && install -m 755 "spool_${v}_${p}"/spool* bin/
+          rm -rf "spool_${v}_${p}"* SHA256SUMS
+          ./bin/spool images | sh
+          echo "install: $(( $(date +%s) - t0 ))s"
+      - name: user and unit (service page)
+        run: |
+          sudo useradd --system --create-home --home-dir /home/spool --shell /usr/sbin/nologin spool
+          sudo usermod -aG docker spool
+          sudo tee /etc/systemd/system/spool.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=Spool hub
+          Wants=network-online.target docker.service
+          After=network-online.target docker.service
+          [Service]
+          User=spool
+          Group=spool
+          SupplementaryGroups=docker
+          WorkingDirectory=/home/spool
+          ExecStart=/opt/spool/bin/spool --data-dir /home/spool/.spool --listen 127.0.0.1:8080
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          StandardOutput=null
+          StandardError=journal
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=full
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          sudo systemctl daemon-reload && sudo systemctl enable --now spool
+          for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/version && break; sleep 1; done; echo
+      - name: seed loops, channels, a message, and rooms for 0083
+        run: |
+          tok=$(sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool)
+          echo "::add-mask::$tok"
+          api() { curl -fsS -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -X "$1" "127.0.0.1:8080$2" ${3:+-d "$3"}; echo; }
+          for l in aster briar; do
+            api POST /api/loops "{\"name\":\"$l\",\"mission\":\"probe loop\",\"tick_interval_sec\":43200,\"min_wake_sec\":60}"
+          done
+          api GET /api/channels
+          api POST /api/channels '{"name":"ops"}'
+          for c in fleet ops; do for l in aster briar; do api PUT /api/channels/$c/loops/$l || api POST /api/channels "{\"name\":\"$c\"}"; api PUT /api/channels/$c/loops/$l; done; done
+          api POST /api/loops/aster/message '{"author":"probe","text":"kept across the upgrade"}'
+          sudo systemctl stop spool
+          db=/home/spool/.spool/spool.db
+          id() { sudo -u spool sqlite3 "$db" "SELECT id FROM loops WHERE name='$1'"; }
+          a=$(id aster) b=$(id briar)
+          # fleet: both bots in one group; ops: each bound to a different chat,
+          # briar's first, so 0083 keeps briar's and unbinds aster's
+          sudo -u spool sqlite3 "$db" "INSERT INTO rooms (loop_id,surface,room_id,title,channel,first_seen_at,bound_at) VALUES
+            ('$a','telegram','-100111','Fleet','fleet',1000,1000),('$b','telegram','-100111','Fleet','fleet',1100,1100),
+            ('$b','telegram','-100222','Ops','ops',2000,2000),('$a','telegram','-100333','Ops 2','ops',3000,3000);"
+          sudo -u spool sqlite3 "$db" "SELECT MAX(version) FROM schema_migrations" || sudo -u spool sqlite3 "$db" ".tables"
+          sudo systemctl start spool
+          for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/version && break; sleep 1; done; echo
+      - name: scripts (backup page; v0.8.0's upgrade installs none)
+        run: |
+          cd /opt/spool && git fetch -q origin
+          sudo install -d -m 700 /var/backups/spool
+          for s in spool-backup.sh spool-restore.sh; do
+            git show "origin/main:scripts/$s" | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
+          done
+      - name: spool upgrade main --dry-run (v0.8.0's binary)
+        run: sudo /opt/spool/bin/spool upgrade --dry-run main
+      - name: spool upgrade main
+        run: |
+          t0=$(date +%s)
+          sudo /opt/spool/bin/spool upgrade main
+          echo "upgrade: $(( $(date +%s) - t0 ))s"
+      - name: check the hub at main kept its data
+        run: |
+          set -x
+          want=$(git -C /opt/spool rev-parse --short=8 HEAD)
+          curl -fsS 127.0.0.1:8080/api/version | tee /tmp/v; echo
+          grep -q "$want" /tmp/v || { echo "::error::hub not at main $want"; exit 1; }
+          tok=$(sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool); echo "::add-mask::$tok"
+          api() { curl -fsS -H "Authorization: Bearer $tok" "127.0.0.1:8080$1"; echo; }
+          api /api/loops | grep -o '"name":"[a-z]*"' | sort -u
+          api /api/loops/aster/events | grep -q 'kept across the upgrade'
+          db=/home/spool/.spool/spool.db
+          sudo systemctl stop spool
+          sudo -u spool sqlite3 "$db" "SELECT channel,surface,chat_id,bound_by FROM channel_chats ORDER BY channel" | tee /tmp/chats
+          grep -qx 'fleet|telegram|-100111|upgrade' /tmp/chats
+          grep -qx 'ops|telegram|-100222|upgrade' /tmp/chats
+          sudo -u spool sqlite3 "$db" "SELECT l.name,r.room_id,r.channel FROM rooms r JOIN loops l ON l.id=r.loop_id ORDER BY 1,2" | tee /tmp/rooms
+          grep -qx 'aster|-100333|' /tmp/rooms
+          sudo systemctl start spool
+          for i in $(seq 60); do curl -fsS 127.0.0.1:8080/api/version && break; sleep 1; done; echo
+          sudo ls -l /var/backups/spool
+          ls -l /usr/local/sbin/spool-*
+          sudo journalctl -u spool --no-pager | grep -iE 'unbound|channel_chat|ops' | head
+      - name: journal on failure
+        if: failure()
+        run: sudo journalctl -u spool --no-pager | tail -80
