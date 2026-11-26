@@ -32,10 +32,12 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/enes-alatas/spool/internal/eval"
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/redact"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
+	"github.com/enes-alatas/spool/internal/version"
 )
 
 func main() {
@@ -48,6 +50,10 @@ func main() {
 		err = export(os.Args[2:])
 	case "grade":
 		err = grade(os.Args[2:])
+	case "replay":
+		err = replay(os.Args[2:])
+	case "stub":
+		err = stub(os.Args[2:])
 	default:
 		usage()
 	}
@@ -58,7 +64,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: spool-eval export [flags] | spool-eval grade [flags] dir...")
+	fmt.Fprintln(os.Stderr, "usage: spool-eval export [flags] | spool-eval grade [flags] dir... | spool-eval replay [flags] dir")
 	os.Exit(2)
 }
 
@@ -70,6 +76,7 @@ func export(args []string) error {
 	rules := flags.String("rules", "scripts/secret-rules.awk", "the credential shapes")
 	perLoop := flags.Int("per-loop", 15, "most recent cases kept per loop")
 	since := flags.Duration("since", 7*24*time.Hour, "how far back to read")
+	spoolVersion := flags.String("version", version.Resolve("", "", "").Version, "the Spool version the prompts name: the hub's, for a faithful replay")
 	keyPath := flags.String("key", "", "the hub key the store is sealed under; empty is "+sqlite.KeyFile+" beside -db")
 	tokenPath := flags.String("operator-token", "", "the hub's operator token, masked in every case; empty is "+operator.TokenFile+" beside -db")
 	only := flags.String("loops", "", "comma-separated loop names to export; empty is every active loop")
@@ -179,6 +186,9 @@ func export(args []string) error {
 				recipients = append(recipients, other.Name)
 			}
 		}
+		if err := writePrompt(filepath.Join(*out, "prompts"), loopRecord, db, *spoolVersion, clean); err != nil {
+			return err
+		}
 		cases := eval.Extract(events, eval.LoopInfo{
 			Name:         loopRecord.Name,
 			Pacing:       loopRecord.Pacing,
@@ -264,6 +274,16 @@ func readOperatorToken(path string) (string, error) {
 		return "", fmt.Errorf("operator token: %w", err)
 	}
 	return strings.TrimSpace(string(raw)), nil
+}
+
+// writePrompt writes the loop's system prompt as the hub builds it now,
+// cleaned like the cases, for replay to give a model.
+func writePrompt(dir string, loopRecord *store.Loop, db store.Store, spoolVersion string, clean func(string) string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	system := loop.SystemPrompt(loopRecord, loop.CatalogOf(db, loopRecord), loop.FleetRulesOf(db), spoolVersion)
+	return os.WriteFile(filepath.Join(dir, loopRecord.Name+".txt"), []byte(clean(system)), 0o600)
 }
 
 // channelLoops is, for each channel loopID is in, the names of the other
@@ -363,13 +383,9 @@ func loadCases(dir string) ([]eval.Case, error) {
 		if err != nil || entry.IsDir() || filepath.Ext(path) != ".json" {
 			return err
 		}
-		raw, err := os.ReadFile(path)
+		turnCase, err := readCase(path)
 		if err != nil {
 			return err
-		}
-		var turnCase eval.Case
-		if err := json.Unmarshal(raw, &turnCase); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
 		}
 		cases = append(cases, turnCase)
 		return nil

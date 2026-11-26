@@ -12,10 +12,11 @@ checked mechanically.
 |---|---|
 | `synthetic/` | hand-written cases, one per known slip plus one clean turn. Checked in. A credential case lives in `internal/eval/eval_test.go` instead, because the PR secret scan keeps credential shapes in test files. |
 | `signing.json` | which GitHub artifacts each loop's mission says to sign |
-| `cases/` | cases exported from a live store. **Gitignored, never committed** (below). |
+| `cases/` | cases exported from a live store, and `cases/prompts/`, each loop's system prompt as the hub builds it now. **Gitignored, never committed** (below). |
+| `replays/` | cases a model's replay produced. Gitignored too: a replay quotes the case it replays. |
 
 The code lives in `internal/eval` (cases, graders, report) and
-`cmd/spool-eval` (export and grade).
+`cmd/spool-eval` (export, replay and grade).
 
 ## Running it
 
@@ -102,8 +103,45 @@ body the grader cannot find is not judged; it is neither a pass nor a fail.
 - **"Terse enough for the group".** This is the one LLM-as-judge grader #450
   names. It is not built yet because it spends tokens (see below).
 
+## Replaying a turn on another model
+
+`replay` has a model play each case's turn again and writes what it did as
+a case, which `grade` then scores like any other:
+
+```
+bin/spool-eval replay -model haiku -from 0 -count 10 eval/cases   # one batch, into eval/replays/
+bin/spool-eval grade eval/replays
+```
+
+- **The model is shown** the loop's system prompt from `cases/prompts/`
+  (export writes it with the hub's own `loop.SystemPrompt`; pass
+  `-version` the hub's version so the prompt names the same build), and
+  the case's envelopes as its turn input.
+- **What it sends.** Each case's prompt and envelopes go to the Anthropic
+  API under the operator's claude login, where the recorded turn went
+  first. So the case files stay on the host, but their content does not.
+- **Nothing real is reached.** The CLI gets no built-in tool (`--tools ""`),
+  no MCP server but the two stubs (`--strict-mcp-config`), no project
+  settings, and an empty working directory. The stubs offer the hub's own
+  `send_message`, schema and description, answering with a made-up ref, and
+  a `Bash` that runs nothing and answers "(no output)". After `-max-calls`
+  calls (8) the stubs refuse the rest, and `-budget-usd` (0.25) caps each
+  case's spend.
+- **It spends the operator's plan tokens.** Run it only in batches, with
+  the operator's go, posting each batch's total (printed last) before the
+  next (#450).
+
+What a replay cannot show:
+- **Context the session had.** A replay starts a fresh session, so it lacks
+  the earlier turns the recorded one could read.
+- **Anything that depends on real tool output.** A command answers nothing,
+  so a turn that reads a PR before writing to it reads nothing.
+  `links_resolve` and a re-asked decision mean little on a replay.
+- **The user's own `~/.claude` instructions** may still load. `--bare`
+  would drop them, but it takes an API key, not a plan login. Run replay
+  as a user whose `~/.claude` holds no instructions of its own.
+
 ## Not built yet
 
-The haiku baseline replays each case's input against the prompt and grades
-what comes back. It spends real tokens, so it waits for the operator's token
-cap on #450. That is also when the judge grader lands.
+The judge grader ("terse enough for the group") lands with the baseline,
+inside the same token cap.

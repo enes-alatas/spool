@@ -143,7 +143,7 @@ cmd/fakeclaude/       stream-json protocol fake for CI (ADR-0009)
 cmd/spool-egress/     the workstation egress proxy (ADR-0028)
 cmd/spool-hook/       the PreToolUse hook pinned on every loop's claude (ADR-0042)
 cmd/spool-github/     git's credential helper and the gh link for a loop holding a github-app (#1054)
-cmd/spool-eval/       exports turns as eval cases and grades them (#450)
+cmd/spool-eval/       exports turns as eval cases, replays them on a model, grades them (#450)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/, cloud/

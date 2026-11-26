@@ -67,7 +67,7 @@ func TestExportReadsASealedHubAndMasksItsFiles(t *testing.T) {
 	if err != nil || len(cases) != 1 || !strings.Contains(cases[0], "recent") {
 		t.Fatalf("cases = %v, %v; want the recent turn alone", cases, err)
 	}
-	written := []string{cases[0]}
+	written := []string{cases[0], filepath.Join(out, "prompts", "terra.txt")}
 	for _, path := range written {
 		raw, err := os.ReadFile(path)
 		if err != nil {
