@@ -4,11 +4,11 @@ description: "Group loops into teams, and give them channels to talk in."
 weight: 1
 ---
 
-A hub can hold *teams*. A team is a named set of loops with channels and settings of its own. A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams.
+A hub can hold *teams*. A team is a named set of loops with channels and settings of its own. A loop is in one team at most, or in none. You put it in or take it out from the loop's page; a loop doesn't choose its own team. **New team** on the Fleet page makes one, and the Fleet page shows the fleet as its teams. An admin arranges the team cards by the grip on each card's head, dragging it or moving it with the arrow keys, and everyone sees that order.
 
 ![The Fleet page by team: a card for the handbook team with two loops, one for the ops team with one, and No team with the loop that is in none](/shots/fleet-by-team.png)
 
-- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet` (`fleet-2` and on if that name is taken, and none at all if it held no member, message or room), which you can make a team's home channel. A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to.
+- **Channels.** A team made with **New team** gets a home channel, which every loop in the team is in unless you take it out. An upgrade makes no team: the fleet channel becomes an ordinary channel named `fleet` (`fleet-2` and on if that name is taken, and none at all if it held no member, message or room), which you can make a team's home channel. A team can own other channels too, which only its own loops can join. The Channels page shows and sets the team a channel belongs to. A channel bound to a [Telegram group](../../start/chat-surfaces/telegram/) or [Slack channel](../../start/chat-surfaces/slack/) takes only loops with a bot on that surface: putting a loop with none there in the channel, or in a team whose home it is, is refused, naming the loop.
 
   ![The Channels page, with a card for each channel and the loops in it](/shots/channels.png)
 
