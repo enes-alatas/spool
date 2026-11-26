@@ -11,9 +11,9 @@ import (
 // the loop reads this text whenever it picks a destination, so the schema
 // must not call the thread private while the prompt says otherwise.
 func TestSendMessageDestinationSchema(t *testing.T) {
-	field, ok := reflect.TypeOf(sendMessageIn{}).FieldByName("Destination")
+	field, ok := reflect.TypeOf(SendMessageIn{}).FieldByName("Destination")
 	if !ok {
-		t.Fatal("sendMessageIn has no Destination field")
+		t.Fatal("SendMessageIn has no Destination field")
 	}
 	schema := field.Tag.Get("jsonschema")
 	if want := "control_room (your thread in the Spool web UI, which every user of this hub reads)"; !strings.Contains(schema, want) {
