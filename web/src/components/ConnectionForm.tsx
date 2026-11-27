@@ -9,7 +9,7 @@ import {
   connectionSubmittable,
 } from '../connections'
 import { loopOptions } from '../connectionLoops'
-import { applyLoops, LoopChips } from './ConnectionLoops'
+import { attachCreated, LoopChips } from './ConnectionLoops'
 
 // The create form for a connection, kind first and then that kind's fields
 // (#506). On the Connections page, and in a loop's Add connection dialog,
@@ -37,15 +37,21 @@ export function ConnectionForm({
   submitLabel = 'Create connection',
   cloud = false,
   fleet,
+  teams = [],
   connections = [],
 }: {
-  onCreated: (created: Connection) => unknown
+  // Told what was created, and whether any team or loop refused it: the
+  // form then still shows why, so a dialog around it stays open.
+  onCreated: (created: Connection, refused: boolean) => unknown
   submitLabel?: string
   cloud?: boolean
   // The fleet's loops, on the Connections page: the form ends with the
   // loops to attach the new connection to (#1321). The loop page's dialog
   // attaches to its own loop instead, and passes none.
   fleet?: LoopView[]
+  // The hub's teams, beside the fleet's loops: picking one attaches the
+  // new connection to the whole team, as a row's team chip does (#1747).
+  teams?: string[]
   connections?: Connection[]
 }) {
   const [draft, setDraft] = useState<ConnectionDraft>(EMPTY_DRAFT)
@@ -56,6 +62,7 @@ export function ConnectionForm({
   const [busy, setBusy] = useState(false)
   const set = (patch: Partial<ConnectionDraft>) => setDraft((d) => ({ ...d, ...patch }))
   const [picked, setPicked] = useState<string[]>([])
+  const [pickedTeams, setPickedTeams] = useState<string[]>([])
   const request = connectionRequest(draft)
   const options = fleet ? loopOptions({ name: request.name ?? '', ...request }, fleet, connections) : []
   // A loop the kind picked can't take is dropped from the pick, not sent.
@@ -69,12 +76,12 @@ export function ConnectionForm({
       setDraft(EMPTY_DRAFT)
       setKeyFile('')
       setPicked([])
-      // Created, then attached: a loop that refuses it leaves the
+      setPickedTeams([])
+      // Created, then attached: a team or loop that refuses it leaves the
       // connection created, and the form says which.
-      const refusals = await applyLoops(created.name, { attach: attachTo, detach: [] })
-      if (refusals.length > 0)
-        setError(`Created ${created.name}, but not every loop took it. ${refusals.join(' ')}`)
-      await onCreated(created)
+      const refusals = await attachCreated(created.name, { teams: pickedTeams, loops: attachTo })
+      if (refusals.length > 0) setError(`Created ${created.name}. ${refusals.join(' ')}`)
+      await onCreated(created, refusals.length > 0)
     } catch (e) {
       // The server's own sentence names the field and the rule (#568), so it
       // is shown as it came.
@@ -236,6 +243,10 @@ export function ConnectionForm({
             label="it"
             onAdd={(loop) => setPicked([...picked, loop])}
             onRemove={(loop) => setPicked(picked.filter((l) => l !== loop))}
+            teams={teams}
+            pickedTeams={pickedTeams}
+            onAddTeam={(team) => setPickedTeams([...pickedTeams, team])}
+            onRemoveTeam={(team) => setPickedTeams(pickedTeams.filter((t) => t !== team))}
           />
           <div className="hint">Optional: attach it later from its row, or from a loop's page.</div>
         </div>

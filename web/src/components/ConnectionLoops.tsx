@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { api, ApiError } from '../api'
-import { attachErrorText } from '../connections'
+import { attachErrorText, teamRefusal } from '../connections'
 import type { LoopOption } from '../connectionLoops'
 import { RemoveIcon } from './Icons'
 
@@ -115,5 +115,26 @@ export async function applyLoops(
   }
   for (const loop of attach) await run(loop, () => api.attachConnection(loop, connection))
   for (const loop of detach) await run(loop, () => api.detachConnection(loop, connection))
+  return refusals
+}
+
+// Attaches a connection just created to the teams and loops its form
+// picked: each team in one call, as its row's chip makes it, then each
+// loop. Answers what refused it, in the row's words; one refusal does not
+// stop the rest (#1747).
+export async function attachCreated(
+  connection: string,
+  { teams, loops }: { teams: string[]; loops: string[] },
+): Promise<string[]> {
+  const refusals: string[] = []
+  for (const team of teams) {
+    try {
+      await api.attachConnectionToTeam(team, connection)
+    } catch (e) {
+      refusals.push(teamRefusal(team, connection, true, e instanceof Error ? e.message : String(e)))
+    }
+  }
+  const loopRefusals = await applyLoops(connection, { attach: loops, detach: [] })
+  if (loopRefusals.length > 0) refusals.push(`Not every loop took it. ${loopRefusals.join(' ')}`)
   return refusals
 }
