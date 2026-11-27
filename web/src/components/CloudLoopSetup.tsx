@@ -371,7 +371,7 @@ function EnvironmentStep({
           Paste this as its <strong>Setup script</strong>. It connects each session to this hub and holds no
           secret; it is the same for every cloud loop.
           {scriptOutdated(setup) ? (
-            <ScriptOutdated script={setup.script} />
+            <ScriptOutdated script={setup.script} checked={!!setup.check} />
           ) : setup.script ? (
             <Copyable text={setup.script} label="the setup script" />
           ) : (
@@ -665,15 +665,19 @@ function CheckState({
 
 // The walk's setup-script line while the environment runs an older script
 // (#1412): the newer one to paste over it, and where. A warning only: the
-// hub never holds the loop for it.
-export function ScriptOutdated({ script }: { script: string }) {
+// hub never holds the loop for it. A running session never runs a pasted
+// script, so it also names the check, whose pass ends that session (#1752);
+// checked says whether the button reads Check again or Check.
+export function ScriptOutdated({ script, checked }: { script: string; checked: boolean }) {
   return (
     <div className="cloud-warning" role="status">
       The environment runs an older setup script. The loop keeps working, but paste this one over it: on{' '}
       <a href="https://claude.ai/code" target="_blank" rel="noreferrer">
         claude.ai/code
       </a>
-      , open the environment's settings and replace its <strong>Setup script</strong>.
+      , open the environment's settings and replace its <strong>Setup script</strong>. Then press{' '}
+      <strong>{checked ? 'Check again' : 'Check'}</strong> on this page: once the check passes, the loop's
+      next message starts a new session, which runs the new script.
       <Copyable text={script} label="the new setup script" />
     </div>
   )
