@@ -764,10 +764,13 @@ func (session *cliSession) startSession(text string) error {
 			// is its silence the session's word on the address. A CLI still
 			// running has created none yet (#1102).
 			if cliExited == nil && !heard {
+				session.cloud.waits.mu.Lock()
+				viewed := pending.viewed
+				session.cloud.waits.mu.Unlock()
 				if unreached := session.cloud.Unreached; unreached != nil {
-					unreached(session.loopID, within)
+					unreached(session.loopID, sessionPage(viewed), within)
 				}
-				return fmt.Errorf("cloud: the session never reached the hub within %s: %s", within, screen.String())
+				return fmt.Errorf("cloud: the session never reached the hub within %s, or claude.ai refused it: %s", within, screen.String())
 			}
 			return fmt.Errorf("cloud: no session started within %s: %s", within, screen.String())
 		}

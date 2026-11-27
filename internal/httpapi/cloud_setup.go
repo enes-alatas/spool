@@ -350,17 +350,25 @@ func (server *Server) askCloudCheck(ctx context.Context) {
 // can't, over a private route such as a tailnet's, so the session's word
 // wins: the step turns red and every cloud loop is held, until the operator
 // asks for a check (ADR-0056).
-func (server *Server) CloudSessionUnreached(loopID string, within time.Duration) {
+//
+// claude.ai may instead have refused the session after the CLI created it,
+// such as for a branch the repo doesn't have: the CLI never hears of that,
+// so the detail links the session's page, where claude.ai says why (#1750).
+func (server *Server) CloudSessionUnreached(loopID, sessionPage string, within time.Duration) {
 	server.cloudCheck.running.Lock()
 	defer server.cloudCheck.running.Unlock()
 	address, err := server.storedCloudAddress(context.Background())
 	if err != nil || address == "" {
 		return
 	}
+	refusal := "claude.ai may have refused it, such as for a branch the loop's repo doesn't have, which its page says. "
+	if sessionPage != "" {
+		refusal = "claude.ai may have refused it, such as for a branch the loop's repo doesn't have: " + sessionPage + " says why if so. "
+	}
 	result := CloudCheckResult{
 		State: CloudCheckFailed, Stage: CloudStageSession,
-		Detail: fmt.Sprintf("a cloud session was created and posted nothing to the hub within %s, "+
-			"so it can't reach the hub at this address, though this machine can: check the loop's "+
+		Detail: fmt.Sprintf("a cloud session was created and posted nothing to the hub within %s. "+refusal+
+			"Otherwise it can't reach the hub at this address, though this machine can: check the loop's "+
 			"environment's network access, and that its setup script is this hub's", within),
 		CheckedAt: time.Now().UnixMilli(),
 		address:   address,

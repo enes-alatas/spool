@@ -163,8 +163,9 @@ func TestASessionsVerdictStandsUntilACheckIsAsked(t *testing.T) {
 		t.Fatalf("a pass over loopback: %+v, want ok over a private route", result)
 	}
 
-	server.CloudSessionUnreached("l-cloud", 2*time.Minute)
-	if result := checked(t, server, public.URL); result.Stage != CloudStageSession || !strings.Contains(result.Detail, "2m0s") {
+	server.CloudSessionUnreached("l-cloud", "https://claude.ai/code/session_01Fixture", 2*time.Minute)
+	if result := checked(t, server, public.URL); result.Stage != CloudStageSession || !strings.Contains(result.Detail, "2m0s") ||
+		!strings.Contains(result.Detail, "https://claude.ai/code/session_01Fixture says why") {
 		t.Fatalf("a check the hub made by itself after the verdict: %+v, want the session's verdict to stand", result)
 	}
 	if server.CloudGate.Passed() || server.CloudGate.FailedSince() == 0 {
@@ -179,7 +180,7 @@ func TestASessionsVerdictStandsUntilACheckIsAsked(t *testing.T) {
 		t.Fatal("a check the operator asked for that passed left the gate held")
 	}
 
-	server.CloudSessionUnreached("l-cloud", 2*time.Minute)
+	server.CloudSessionUnreached("l-cloud", "", 2*time.Minute)
 	other := httptest.NewServer(server.CloudHandler(noRedaction))
 	t.Cleanup(other.Close)
 	server = withAddress(t, server, other.URL)

@@ -5,6 +5,7 @@ package itest
 import (
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -101,7 +102,8 @@ func TestACloudLoopsSetupViewWalksItsStepsAndNeverShowsItsToken(t *testing.T) {
 
 // A check that fails says where it stopped: a secret that isn't the loop's
 // token reaches the hub and is refused, a hub the environment's network
-// can't reach hears nothing, and an environment the account no longer has
+// can't reach hears nothing, as does a session claude.ai refuses after
+// the CLI created it, and an environment the account no longer has
 // makes the CLI pick another, which the check catches. Each holds the
 // loop until a check passes again.
 func TestTheSetupCheckSaysWhereItStopped(t *testing.T) {
@@ -131,6 +133,20 @@ func TestTheSetupCheckSaysWhereItStopped(t *testing.T) {
 	if err := os.Remove(refused); err != nil {
 		t.Fatal(err)
 	}
+
+	// a branch the repo doesn't have: the CLI creates the session and
+	// exits, and claude.ai refuses it after, so the check hears nothing
+	// and says where claude.ai's reason is (#1750)
+	repo := filepath.Join(hub.fkState, "github", "example-org", "cirrus")
+	renameBranch := func(from, to string) {
+		t.Helper()
+		if out, err := exec.Command("git", "-C", repo, "branch", "-m", from, to).CombinedOutput(); err != nil {
+			t.Fatalf("rename %s to %s: %v: %s", from, to, err, out)
+		}
+	}
+	renameBranch("main", "trunk")
+	failsAt("unreached", "claude.ai may have refused it, such as for a branch the repo doesn't have: https://claude.ai/code/session_")
+	renameBranch("trunk", "main")
 
 	// gone between the hub's list and the start: the CLI falls back to
 	// another of the account's environments, which the check catches in

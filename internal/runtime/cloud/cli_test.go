@@ -265,7 +265,7 @@ func TestCLIStartFailsWhenNoSessionStartsInTime(t *testing.T) {
 			cloud.CLI.StartWithin = 300 * time.Millisecond
 			var told []string
 			var mu sync.Mutex
-			cloud.Unreached = func(loopID string, within time.Duration) {
+			cloud.Unreached = func(loopID, _ string, within time.Duration) {
 				mu.Lock()
 				defer mu.Unlock()
 				told = append(told, fmt.Sprintf("%s %s", loopID, within))
