@@ -1,8 +1,11 @@
 // A connection's chips on the Connections page with teams (#1611): a team
-// is one chip, and "Attach to" lists the teams ahead of the loops.
-import { describe, expect, it } from 'vitest'
+// is one chip, and "Attach to" lists the teams ahead of the loops; the
+// New connection form offers them too (#1747).
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { LoopChips } from './components/ConnectionLoops'
+import { attachCreated, LoopChips } from './components/ConnectionLoops'
+import { ConnectionForm } from './components/ConnectionForm'
+import { api, type LoopView } from './api'
 import { teamRefusal } from './connections'
 
 const render = (props: Partial<Parameters<typeof LoopChips>[0]> = {}) =>
@@ -51,5 +54,59 @@ describe('teamRefusal', () => {
     expect(teamRefusal('backend', 'github', false, 'team not found')).toBe(
       'github did not come off team backend: team not found',
     )
+  })
+})
+
+describe('attachCreated (#1747)', () => {
+  const spy = () => {
+    const calls: string[] = []
+    vi.spyOn(api, 'attachConnectionToTeam').mockImplementation(async (team, connection) => {
+      calls.push(`team ${team} ${connection}`)
+      if (team === 'refuses')
+        throw new Error('gh-bot already gives watcher its GitHub identity; detach it first')
+    })
+    vi.spyOn(api, 'attachConnection').mockImplementation(async (loop, connection) => {
+      calls.push(`loop ${loop} ${connection}`)
+    })
+    return calls
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('attaches each picked team in one call, then each loop', async () => {
+    const calls = spy()
+    expect(await attachCreated('npm-token', { teams: ['release'], loops: ['courier'] })).toEqual([])
+    expect(calls).toEqual(['team release npm-token', 'loop courier npm-token'])
+  })
+
+  it("says a refused team in the row's words, and still attaches the rest", async () => {
+    const calls = spy()
+    expect(await attachCreated('gh-second', { teams: ['refuses', 'release'], loops: ['courier'] })).toEqual([
+      'Team refuses did not take gh-second: gh-bot already gives watcher its GitHub identity; detach it first',
+    ])
+    expect(calls).toEqual(['team refuses gh-second', 'team release gh-second', 'loop courier gh-second'])
+  })
+
+  it('attaches no team when none is picked', async () => {
+    const calls = spy()
+    await attachCreated('npm-token', { teams: [], loops: ['courier'] })
+    expect(calls).toEqual(['loop courier npm-token'])
+  })
+})
+
+describe('the New connection form with teams (#1747)', () => {
+  const form = (teams?: string[]) =>
+    renderToStaticMarkup(
+      <ConnectionForm onCreated={() => undefined} fleet={[{ name: 'courier' } as LoopView]} teams={teams} />,
+    )
+
+  it("lists the hub's teams ahead of the loops in Attach to", () => {
+    const html = form(['release'])
+    expect(html).toContain('<option value="team:release">team release</option>')
+    expect(html.indexOf('value="team:release"')).toBeLessThan(html.indexOf('value="courier"'))
+  })
+
+  it('lists no team on a hub with none', () => {
+    expect(form()).not.toContain('value="team:')
+    expect(form([])).not.toContain('value="team:')
   })
 })

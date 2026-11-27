@@ -311,17 +311,19 @@ function NewConnectionDialog({
   onCreated,
   onClose,
   fleet,
+  teams,
   connections,
 }: {
   open: boolean
-  onCreated: (created: Connection) => Promise<unknown>
+  onCreated: (created: Connection, refused: boolean) => Promise<unknown>
   onClose: () => void
   fleet: LoopView[]
+  teams: string[]
   connections: Connection[]
 }) {
   return (
     <PageDialog id="new-connection-title" title="New connection" open={open} onClose={onClose}>
-      <ConnectionForm onCreated={onCreated} fleet={fleet} connections={connections} />
+      <ConnectionForm onCreated={onCreated} fleet={fleet} teams={teams} connections={connections} />
     </PageDialog>
   )
 }
@@ -450,14 +452,16 @@ export default function Connections() {
           {adding.shown && (
             <NewConnectionDialog
               open={adding.open}
-              onCreated={async (created) => {
+              onCreated={async (created, refused) => {
                 // Whether it works, said on its row as the list redraws.
                 runCheck(created.name)
                 await refresh()
-                adding.finish()
+                // A refusal stays on screen, the new row behind it.
+                if (!refused) adding.finish()
               }}
               onClose={adding.closed}
               fleet={loops ?? []}
+              teams={(teams ?? []).map((t) => t.name)}
               connections={data}
             />
           )}
