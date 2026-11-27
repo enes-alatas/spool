@@ -560,6 +560,11 @@ export interface ChatMember {
   // A not_in_chat member's Telegram startgroup link; absent on Slack and
   // for a bot whose name the hub doesn't know.
   add_link?: string
+  // Whether a not_in_chat member's Slack app can join the chat by itself
+  // (ADR-0070): `available`, `needs_scope` when it lacks channels:join, or
+  // `private` when only an invite brings it in. Absent on Telegram, and
+  // when Slack didn't answer in time.
+  join?: string
 }
 
 // A chat a member's bot is in that is no channel's chat yet, for the
@@ -1880,6 +1885,10 @@ export const api = {
   // Binds an unbound member's room for the chat.
   bindChatMember: (name: string, loop: string) =>
     req<void>(`/api/channels/${name}/chat/members/${loop}`, { method: 'PUT' }),
+  // Has the loop's Slack app join the channel's chat; the hub calls Slack
+  // only on this.
+  joinChatMember: (name: string, loop: string) =>
+    req<void>(`/api/channels/${name}/chat/members/${loop}/join`, { method: 'POST' }),
   // Both idempotent.
   addChannelLoop: (channel: string, loop: string) =>
     req<void>(`/api/channels/${channel}/loops/${loop}`, { method: 'PUT' }),

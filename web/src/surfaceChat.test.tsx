@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ApiError, type ChannelDetail, type LoopView } from './api'
+import { ApiError, type ChannelDetail, type ChatMember, type LoopView } from './api'
 import { SurfaceChat, channelDetailKey } from './components/SurfaceChat'
 import { bindRefusal, chatName, loopList, offSurface, statusText } from './surfaceChat'
 
@@ -122,6 +122,62 @@ describe('the channel page adds its chat (#1509)', () => {
     )
     expect(html).toContain('not in the channel')
     expect(html).toContain('invite its app in Slack')
+  })
+})
+
+describe("a Slack member's join offer (#1745)", () => {
+  const slackChat = (members: ChatMember[]) =>
+    detail({
+      loops: members.map((m) => m.loop),
+      chat: {
+        surface: 'slack',
+        chat_id: 'C07ABCDEF12',
+        title: 'launch-team',
+        bound_at: 0,
+        seen_at: 1,
+        members,
+      },
+    })
+  const telegramChat = (members: ChatMember[]) =>
+    detail({
+      chat: { surface: 'telegram', chat_id: '-100123', title: 'Launch', bound_at: 0, seen_at: 1, members },
+    })
+  const joinButton = />Join<\/button>/
+
+  it('offers Join to an operator when the app can join, with no hint beside it', () => {
+    const html = render(slackChat([{ loop: 'cedar', status: 'not_in_chat', join: 'available' }]))
+    expect(html).toMatch(joinButton)
+    expect(html).not.toContain('invite its app')
+  })
+
+  it('shows a member who may not manage the invite, not Join', () => {
+    const html = render(slackChat([{ loop: 'cedar', status: 'not_in_chat', join: 'available' }]), 'member')
+    expect(html).not.toMatch(joinButton)
+    expect(html).toContain('invite its app in Slack')
+  })
+
+  it('names channels:join and what it widens when the app lacks it, with no Join', () => {
+    const html = render(slackChat([{ loop: 'cedar', status: 'not_in_chat', join: 'needs_scope' }]))
+    expect(html).not.toMatch(joinButton)
+    expect(html).toContain('channels:join')
+    expect(html).toContain('join and read any public channel')
+  })
+
+  it('says a private channel takes an invite, with no Join', () => {
+    const html = render(slackChat([{ loop: 'cedar', status: 'not_in_chat', join: 'private' }]))
+    expect(html).not.toMatch(joinButton)
+    expect(html).toContain('a private channel: invite its app in Slack')
+  })
+
+  it('keeps the invite hint when Slack gave no offer in time', () => {
+    const html = render(slackChat([{ loop: 'cedar', status: 'not_in_chat' }]))
+    expect(html).not.toMatch(joinButton)
+    expect(html).toContain('invite its app in Slack')
+  })
+
+  it('offers no Join on a Telegram group', () => {
+    const html = render(telegramChat([{ loop: 'briar', status: 'not_in_chat', join: 'available' }]))
+    expect(html).not.toMatch(joinButton)
   })
 })
 
