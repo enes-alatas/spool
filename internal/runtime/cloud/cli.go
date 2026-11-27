@@ -134,6 +134,9 @@ type pendingStart struct {
 	// hub reads it; seen is closed then.
 	viewed string
 	seen   chan struct{}
+	// script is the setup script digest the session's startup post was
+	// sent under, set before its id is sent on session.
+	script string
 }
 
 // stopArrival is a Stop post as the turn in flight takes it.
@@ -232,12 +235,15 @@ func (waits *hookWaits) endedLocked(loopID string) {
 // the token, and must not rebind the loop's wakes into another session or
 // read the connections at will. A startup answer is told to HandOff, and
 // so is a refused startup post from the loop's own session, which may have
-// lost them. Each answer is logged, without its values.
-func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
+// lost them. Each answer is logged, without its values. script is the
+// digest of the setup script the post was sent under, "" for none: a
+// startup's is kept with the session it binds, and a check's supersedes a
+// session under another script (#1752).
+func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID, script string, hook []byte) ([]byte, error) {
 	sessionID = sessionAddress(sessionID)
 	source := hookSource(hook)
 	if source == sourceStartup {
-		if answer, ok := cloud.answerCheck(ctx, loopID, sessionID); ok {
+		if answer, ok := cloud.answerCheck(ctx, loopID, sessionID, script); ok {
 			slog.Default().Info("cloud: a setup check's session reached the hub", "loop", loopID, "session", sessionID)
 			return answer, nil
 		}
@@ -255,7 +261,7 @@ func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string
 		}
 		return answer, err
 	}
-	answer, err := cloud.answerSessionStart(ctx, loopID, sessionID, source)
+	answer, err := cloud.answerSessionStart(ctx, loopID, sessionID, source, script)
 	if err == nil {
 		slog.Default().Info("cloud: a session was handed its loop's connections", "loop", loopID, "source", source, "session", sessionID)
 	}
@@ -301,7 +307,7 @@ func sessionAddress(sessionID string) string {
 	return sessionID
 }
 
-func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID, source string) ([]byte, error) {
+func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID, source, script string) ([]byte, error) {
 	cloud.waits.mu.Lock()
 	start := cloud.waits.starts[loopID]
 	if start != nil {
@@ -339,6 +345,7 @@ func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID,
 		cloud.waits.binding = map[string]string{}
 	}
 	cloud.waits.binding[loopID] = sessionID
+	start.script = script
 	start.session <- sessionID
 	return start.answer, nil
 }
@@ -724,6 +731,7 @@ func (session *cliSession) startSession(text string) error {
 				s.Source = sourceKey(session.source, run.account)
 				s.Connections = session.cloud.connectionsKey(session.env)
 				s.Model = session.model
+				s.Script, s.Superseded = pending.script, false
 			})
 			session.cloud.waits.mu.Lock()
 			delete(session.cloud.waits.binding, session.loopID)

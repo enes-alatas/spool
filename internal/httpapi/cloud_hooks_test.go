@@ -50,7 +50,7 @@ type recordingHooks struct {
 	checkStage, checkDetail string
 }
 
-func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
+func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID, _ string, hook []byte) ([]byte, error) {
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
 	hooks.calls = append(hooks.calls, hookCall{event: "SessionStart", loopID: loopID, session: sessionID, hook: string(hook)})

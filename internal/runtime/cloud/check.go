@@ -237,7 +237,7 @@ func (waits *hookWaits) checkSaw(check *pendingCheck) (viewed string, refused, h
 // connection and no prompt. ok is false for any other post, which goes on
 // to a start's judging. A post that comes before the hub has read the
 // CLI's line waits for it within the check's bound, as a start's does.
-func (cloud *Runtime) answerCheck(ctx context.Context, loopID, sessionID string) (answer []byte, ok bool) {
+func (cloud *Runtime) answerCheck(ctx context.Context, loopID, sessionID, script string) (answer []byte, ok bool) {
 	cloud.waits.mu.Lock()
 	check := cloud.waits.checks[loopID]
 	if check != nil {
@@ -257,10 +257,19 @@ func (cloud *Runtime) answerCheck(ctx context.Context, loopID, sessionID string)
 		return nil, false
 	}
 	cloud.waits.mu.Lock()
-	defer cloud.waits.mu.Unlock()
-	if sessionID != check.viewed {
+	viewed := check.viewed
+	cloud.waits.mu.Unlock()
+	if sessionID != viewed {
 		return nil, false
 	}
+	answer, err := sessionStartAnswer(nil, "")
+	if err != nil {
+		return nil, false
+	}
+	// before the pass is told, so the loop's next start reads the mark
+	cloud.supersede(loopID, script)
+	cloud.waits.mu.Lock()
+	defer cloud.waits.mu.Unlock()
 	select {
 	case <-check.passed:
 	default:
@@ -270,8 +279,26 @@ func (cloud *Runtime) answerCheck(ctx context.Context, loopID, sessionID string)
 		cloud.waits.checked = map[string]string{}
 	}
 	cloud.waits.checked[loopID] = sessionID
-	answer, err := sessionStartAnswer(nil, "")
-	return answer, err == nil
+	return answer, true
+}
+
+// supersede marks the loop's session superseded when the check that just
+// passed ran under another setup script than the session started with,
+// so the loop's next start is a session of its own, which runs the
+// environment's script as it is now (#1752). Only the session there is
+// now is marked: one that starts after the check runs the script the
+// check saw.
+func (cloud *Runtime) supersede(loopID, script string) {
+	err := cloud.update(loopID, func(loopState *state) {
+		if loopState.SessionID != "" && loopState.Script != script && !loopState.Superseded {
+			loopState.Superseded = true
+			slog.Default().Info("cloud: a setup check passed under a newer setup script; the loop's next start is a session of its own",
+				"loop", loopID, "session", loopState.SessionID)
+		}
+	})
+	if err != nil {
+		slog.Default().Warn("cloud: a loop's session wasn't marked superseded", "loop", loopID, "err", err)
+	}
 }
 
 // checkSession reports whether sessionID is the session the loop's last

@@ -41,8 +41,9 @@ var cloudSessionID = regexp.MustCompile(`^(?:cse|session)_[A-Za-z0-9]{1,128}$`)
 type CloudHooks interface {
 	// SessionStart answers a SessionStart post with the loop's connections
 	// as export lines at a start of that loop, recording sessionID as its
-	// session.
-	SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error)
+	// session. script is the digest of the setup script the post was sent
+	// under, "" for none.
+	SessionStart(ctx context.Context, loopID, sessionID, script string, hook []byte) ([]byte, error)
 	// Stop ends the loop's turn in flight with what the post carries, when
 	// sessionID is the loop's session. overBound says the post ran past
 	// the route's bound, and lines holds none of it: the turn ends as an
@@ -141,7 +142,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 		}
 		// written past the redactor on purpose: the values are the answer
 		var exports []byte
-		if exports, err = server.CloudHooks.SessionStart(r.Context(), caller.ID, post.session, post.hook); err == nil {
+		if exports, err = server.CloudHooks.SessionStart(r.Context(), caller.ID, post.session, post.script, post.hook); err == nil {
 			server.recordCloudScript(r.Context(), caller, post.script)
 			handOff.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			handOff.Header().Set("Cache-Control", "no-store")

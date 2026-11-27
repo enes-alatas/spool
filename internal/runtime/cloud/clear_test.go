@@ -35,7 +35,7 @@ esac
 	answered := make(chan []byte, 1)
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if answer, err := cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", []byte(`{"source":"clear"}`)); err == nil {
+			if answer, err := cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", "", []byte(`{"source":"clear"}`)); err == nil {
 				answered <- answer
 				break
 			}
