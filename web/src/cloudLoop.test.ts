@@ -213,7 +213,21 @@ describe('checkSays', () => {
     expect(failed('environment')).toMatchObject({ text: 'fails: claude.ai refused the start', tone: 'bad' })
     expect(failed('environment').hint).toContain("on the default Claude login's account")
     expect(failed('token').hint).toContain('network secret for spool.example.com')
-    expect(failed('unreached').hint).toContain('spool.example.com is in the environment')
+    // the hub's detail carries the session's page when the CLI printed one
+    // (#1750), and the hint points at it rather than repeat it (#1756)
+    const unreached = (detail?: string) =>
+      checkSays(
+        setup({ state: 'failed', stage: 'unreached', checked_at: 1, current: true, detail }),
+        'acme/app',
+        '',
+      )
+    expect(unreached('… https://claude.ai/code/session_01Abc says why if so. …').hint).toBe(
+      "The hub heard nothing from the session. claude.ai may have refused it, and its page there says why: the line below has its address. Otherwise check that spool.example.com is in the environment's allowed domains and that its setup script is the one shown here.",
+    )
+    expect(unreached('… which its page says. …').hint).toContain(
+      'claude.ai may have refused it, and its page there says why. Otherwise',
+    )
+    expect(unreached().hint).not.toContain('the line below')
     // a loop on another login looks for its environment on that account
     const onAda = checkSays(
       setup({ state: 'failed', stage: 'environment', current: true }),
