@@ -10,6 +10,7 @@ import {
   CHAT_SURFACES,
   loopList,
   offSurface,
+  slackJoinHint,
   statusText,
   surfaceWords,
   type ChatSurface,
@@ -174,7 +175,15 @@ function MemberRow({
     mutationFn: () => api.bindChatMember(channel, member.loop),
     onSettled: () => qc.invalidateQueries({ queryKey: channelDetailKey(channel) }),
   })
+  const join = useMutation({
+    mutationFn: () => api.joinChatMember(channel, member.loop),
+    onSettled: () => qc.invalidateQueries({ queryKey: channelDetailKey(channel) }),
+  })
   const loop = loops.find((l) => l.name === member.loop)
+  const slackMiss = member.status === 'not_in_chat' && chatSurface(chat.surface) === 'slack'
+  // Join is the operator's to press: a member reads the invite instead.
+  const joinable = slackMiss && manage && member.join === 'available'
+  const hint = slackMiss ? (manage ? slackJoinHint(member.join) : 'invite its app in Slack') : undefined
   const known = ['carrying', 'not_in_chat', 'no_bot', 'unbound'].includes(member.status)
   return (
     <li className="chat-member">
@@ -183,9 +192,9 @@ function MemberRow({
         {statusText(member.status, chat.surface)}
       </span>
       <span className="chat-member-act">
-        {bind.error && (
+        {(bind.error ?? join.error) && (
           <span className="form-error" role="alert">
-            {bind.error.message}
+            {(bind.error ?? join.error)?.message}
           </span>
         )}
         {manage && member.status === 'not_in_chat' && member.add_link && (
@@ -194,9 +203,17 @@ function MemberRow({
             <ExternalIcon size={12} />
           </a>
         )}
-        {member.status === 'not_in_chat' && chatSurface(chat.surface) === 'slack' && (
-          <span className="chat-member-hint">invite its app in Slack</span>
+        {joinable && (
+          <button
+            className="btn sm"
+            disabled={join.isPending}
+            title={`Has @${member.loop}'s app join this Slack channel`}
+            onClick={() => join.mutate()}
+          >
+            Join
+          </button>
         )}
+        {hint && <span className="chat-member-hint">{hint}</span>}
         {member.status === 'no_bot' && (
           <Link className="panel-link" to={`/loops/${member.loop}`}>
             Add a {words.name} {words.bot} on its page

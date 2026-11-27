@@ -107,3 +107,19 @@ export function bindRefusal(
   }
   return err.message
 }
+
+// What a not_in_chat member of a Slack chat is told beside its status, by
+// its join offer (ADR-0070): an available join has its button instead, so
+// it is told nothing. With no offer, the hub had no answer from Slack in
+// time, and the invite is the way in.
+export function slackJoinHint(join: string | undefined): string | undefined {
+  switch (join) {
+    case 'available':
+      return undefined
+    case 'needs_scope':
+      return 'invite its app in Slack, or give it channels:join, which lets it join and read any public channel'
+    case 'private':
+      return 'a private channel: invite its app in Slack'
+  }
+  return 'invite its app in Slack'
+}
