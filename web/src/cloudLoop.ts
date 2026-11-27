@@ -142,6 +142,16 @@ export function scriptOutdated(setup: Pick<CloudLoopSetup, 'script' | 'script_st
   return setup.script_state === 'outdated' && setup.script !== ''
 }
 
+// Where claude.ai serves a cloud session's page, as the hub's check detail
+// links it.
+const SESSION_PAGES = 'https://claude.ai/code/session_'
+
+// Whether the hub's check detail gives a session page's address: one of
+// its words is that page's address.
+function namesSessionPage(detail = ''): boolean {
+  return detail.split(/\s+/).some((word) => word.startsWith(SESSION_PAGES))
+}
+
 // What a cloud loop's setup check says (ADR-0061, #1182): its state as the
 // card and the walk show it, and on a failure where it stopped and what to
 // try. A pass of an earlier setup or address holds the loop as no check
@@ -188,7 +198,14 @@ export function checkSays(
       return {
         text: 'fails: nothing reached the hub',
         tone: 'bad',
-        hint: `The hub heard nothing from the session. Check that ${host} is in the environment's allowed domains and that its setup script is the one shown here.`,
+        // claude.ai can refuse a session after the CLI made it, which the
+        // CLI never hears of, so the check waits out its bound (#1750). The
+        // hub's detail under this hint names the reasons and the address of the
+        // session's page, when the CLI printed one; the hint stays short
+        // (Enes, 2026-11-27).
+        hint: `The hub heard nothing from the session. claude.ai may have refused it, and its page there says why${
+          namesSessionPage(check.detail) ? ': the line below has its address' : ''
+        }. Otherwise check that ${host} is in the environment's allowed domains and that its setup script is the one shown here.`,
       }
     default:
       return { text: `fails: ${check.stage || 'unknown'}`, tone: 'bad' }
