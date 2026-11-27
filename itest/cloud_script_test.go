@@ -81,3 +81,83 @@ func TestACloudLoopsSetupViewSaysWhenItsScriptIsOutOfDate(t *testing.T) {
 		}
 	}
 }
+
+// A cloud loop runs a newly pasted setup script once a check passes under
+// it (#1752). A setup script runs only as a session starts, and a loop
+// carries its session on, so a session that started under an older script
+// keeps what that script set up. A check that passes under another script
+// than the loop's session started with marks that session superseded: the
+// loop's next wake starts a session of its own, which runs the script the
+// environment has now, and the loop's events say why. A check under the
+// script the session already runs leaves it alone.
+func TestACloudLoopRunsAPastedScriptOnceACheckPassesUnderIt(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "nimbus")
+	current, err := cloud.SetupScript(hub.cloudURL + "/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := cloud.ScriptDigest(hub.cloudURL + "/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupFile := filepath.Join(hub.fkState, "environments", cloudEnvironmentOf("nimbus"), "setup.sh")
+	writeSetup := func(script string) {
+		t.Helper()
+		if err := os.WriteFile(setupFile, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	converse := func(text string) {
+		t.Helper()
+		hub.waitState("nimbus", "asleep", 20*time.Second)
+		hub.message("nimbus", text)
+		got := hub.waitTurn("nimbus", 60*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, text) })
+		if got.IsError {
+			t.Fatalf("the turn %q: %+v, want it taken", text, got)
+		}
+	}
+
+	// the loop's session starts under the script from before an upgrade
+	writeSetup(strings.Replace(current, digest, strings.Repeat("0", 63)+"1", 1))
+	converse("under the old script")
+	if vms := cloudVMs(t, hub); len(vms) != 1 {
+		t.Fatalf("the first turn made %d sessions, want 1", len(vms))
+	}
+
+	// the operator pastes the current script and checks it
+	writeSetup(current)
+	if view := checkCloudLoop(t, hub, "nimbus"); view.Check == nil || view.Check.State != "ok" {
+		t.Fatalf("the check under the pasted script = %+v, want a pass", view.Check)
+	}
+	converse("after the paste")
+	vms := cloudVMs(t, hub)
+	if len(vms) != 2 {
+		t.Fatalf("after a check under the pasted script the loop has %d sessions, want a session of its own", len(vms))
+	}
+	var view cloudLoopSetup
+	hub.mustJSON("GET", "/api/loops/nimbus/cloud/setup", nil, &view)
+	if view.ScriptState != "current" {
+		t.Errorf("the loop's new session reported script_state %q, want current", view.ScriptState)
+	}
+	var events []spoolEvent
+	hub.mustJSON("GET", "/api/loops/nimbus/events?limit=200", nil, &events)
+	said := false
+	for _, event := range events {
+		said = said || (event.Subtype == "session_lost" && strings.Contains(event.Payload, "newer setup script"))
+	}
+	if !said {
+		t.Errorf("the loop's events don't say why it left its session: %+v", events)
+	}
+
+	// the new session runs the checked script: a check under it, and
+	// later turns, carry the session on
+	converse("carried on")
+	if view := checkCloudLoop(t, hub, "nimbus"); view.Check == nil || view.Check.State != "ok" {
+		t.Fatalf("a second check = %+v, want a pass", view.Check)
+	}
+	converse("after a check under the same script")
+	if got := cloudVMs(t, hub); len(got) != 2 {
+		t.Errorf("a check under the script the session runs left %d sessions, want the one carried on", len(got))
+	}
+}

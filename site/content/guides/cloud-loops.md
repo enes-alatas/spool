@@ -204,7 +204,11 @@ environment whose script predates that hook still waits two hours with
 no post on such a turn: paste the setup view's script into it again. The
 setup check stays green either way, but the setup view says the script is
 out of date once a session has started under it, and the loop keeps
-running meanwhile. Each
+running meanwhile. A setup script runs only as a session starts, so a
+loop keeps the script its session started under until you check again:
+a check that passes under a newer script ends the loop's session, and
+its next message starts a new one, which runs the script you pasted.
+The old session stays listed on claude.ai until you archive it. Each
 later wake is sent into the same session with `claude -p --cloud`.
 Anthropic idles the session's machine between turns, and the next
 message brings it back.

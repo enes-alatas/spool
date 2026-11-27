@@ -61,7 +61,7 @@ var startupHook = []byte(`{"hook_event_name":"SessionStart","source":"startup"}`
 // pending start's CLI, if there is one, has printed it created sessionID.
 func postStartup(ctx context.Context, cloud *Runtime, loopID, sessionID string) error {
 	printView(cloud, loopID, sessionID)
-	_, err := cloud.SessionStart(ctx, loopID, sessionID, startupHook)
+	_, err := cloud.SessionStart(ctx, loopID, sessionID, "", startupHook)
 	return err
 }
 
@@ -276,7 +276,7 @@ func TestCLIStartFailsWhenNoSessionStartsInTime(t *testing.T) {
 					resume := []byte(`{"hook_event_name":"SessionStart","source":"resume"}`)
 					for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 						if cloud.waits.pending("loop-1") {
-							_, _ = cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", resume)
+							_, _ = cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", "", resume)
 							return
 						}
 					}
@@ -423,7 +423,7 @@ sleep 30
 	go func() {
 		ctx := context.Background()
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			_, err := cloud.SessionStart(ctx, "loop-1", "session_01Stale", startupHook)
+			_, err := cloud.SessionStart(ctx, "loop-1", "session_01Stale", "", startupHook)
 			if !errors.Is(err, errNoHandOff) {
 				stale <- err
 				break
@@ -431,7 +431,7 @@ sleep 30
 		}
 		// the VM names its session cse_…
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01Printed", startupHook); err == nil {
+			if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01Printed", "", startupHook); err == nil {
 				break
 			}
 		}
@@ -463,7 +463,7 @@ func TestASessionStartPostWaitsForTheCLIsLine(t *testing.T) {
 	start := cloud.waits.awaitStart("loop-1", time.Minute, []byte("export A='1'\n"))
 	answered := make(chan error, 1)
 	go func() {
-		_, err := cloud.SessionStart(ctx, "loop-1", "session_01Early", startupHook)
+		_, err := cloud.SessionStart(ctx, "loop-1", "session_01Early", "", startupHook)
 		answered <- err
 	}()
 	select {
@@ -480,7 +480,7 @@ func TestASessionStartPostWaitsForTheCLIsLine(t *testing.T) {
 	}
 
 	cloud.waits.awaitStart("loop-1", 200*time.Millisecond, nil)
-	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Unprinted", startupHook); !errors.Is(err, errNoHandOff) {
+	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Unprinted", "", startupHook); !errors.Is(err, errNoHandOff) {
 		t.Errorf("a post whose start's CLI printed nothing in its bound = %v, want no hand-off", err)
 	}
 }

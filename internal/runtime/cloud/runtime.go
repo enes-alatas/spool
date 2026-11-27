@@ -124,6 +124,16 @@ type state struct {
 	// can't change it (#1281). A state written before #1281 has none, so
 	// a loop that names a model starts a session of its own on it.
 	Model string `json:"model,omitempty"`
+	// Script is the digest of the setup script SessionID's startup post
+	// was sent under, "" for none, as from a script before #1381 or a
+	// state written before #1752.
+	Script string `json:"script,omitempty"`
+	// Superseded is set when a setup check passed under another script
+	// than Script: the environment's script changed since SessionID
+	// started, and a setup script runs only as a session starts, so the
+	// session isn't carried on and the loop's next start runs the script
+	// the environment has now (#1752). A new session clears it.
+	Superseded bool `json:"superseded,omitempty"`
 	// Turn is the turn that may be running in the loop's session, nil
 	// when the hub knows of none (ADR-0059).
 	Turn *turnState `json:"turn,omitempty"`
@@ -355,6 +365,10 @@ func (cloud *Runtime) carriedOn(ctx context.Context, current state, source runti
 		// a connection detached since the session started is still
 		// exported in its shell
 		return "", "the loop's connections changed since its session started", nil
+	case current.Superseded:
+		// the session runs what the setup script it started under wrote,
+		// which a later script can't change (#1752)
+		return "", "a setup check passed under a newer setup script than its session started with", nil
 	case current.Model != model:
 		// the CLI names the model when it creates a session, and no send
 		// changes it (#1281)

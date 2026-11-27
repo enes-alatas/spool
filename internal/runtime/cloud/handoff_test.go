@@ -72,7 +72,7 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 
 	cloud.waits.awaitStart("loop-1", time.Minute, exports)
 	printView(cloud, "loop-1", "session_01First")
-	if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", startupHook); err != nil || string(answer) != string(exports) {
+	if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", "", startupHook); err != nil || string(answer) != string(exports) {
 		t.Fatalf("the start was answered %q (%v), want the exports", answer, err)
 	}
 	if err := cloud.update("loop-1", func(loaded *state) { loaded.SessionID = "session_01First" }); err != nil {
@@ -86,7 +86,7 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 		"a compaction with no turn":   []byte(`{"source":"compact"}`),
 		"a post that names no source": nil,
 	} {
-		if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", hook); err == nil {
+		if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", "", hook); err == nil {
 			t.Errorf("%s was answered %q", name, answer)
 		}
 	}
@@ -96,7 +96,7 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 
 	cloud.waits.awaitStart("loop-1", time.Minute, exports)
 	cloud.waits.starts["loop-1"].deadline = time.Now().Add(-time.Second)
-	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", startupHook); err == nil {
+	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", "", startupHook); err == nil {
 		t.Error("a start past its bound was answered")
 	}
 	if refused != 3 {
@@ -125,13 +125,13 @@ func TestACompactionsPostIsAnsweredWithThePromptAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	cloud.waits.setPrompt("loop-1", "You are cirrus.")
-	if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", compact); err == nil {
+	if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", "", compact); err == nil {
 		t.Error("a compaction's post with no turn in flight was answered")
 	}
 
 	stops := cloud.waits.awaitStop("loop-1")
 	defer cloud.waits.forgetStop("loop-1", stops)
-	answer, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", compact)
+	answer, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", "", compact)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestACompactionsPostIsAnsweredWithThePromptAlone(t *testing.T) {
 	if string(answer) != string(want) {
 		t.Errorf("the compaction was answered %q, want the prompt alone, %q", answer, want)
 	}
-	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", []byte(`{"source":"clear"}`)); err == nil {
+	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", "", []byte(`{"source":"clear"}`)); err == nil {
 		t.Error("another session's /clear was answered")
 	}
 }
