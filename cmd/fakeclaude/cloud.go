@@ -9,7 +9,9 @@ package main
 //   - `--cloud <message>` refuses without a terminal. With `--ref <branch>`
 //     it starts from that branch of the working directory's origin on
 //     github.com, cloned into the VM from $FAKECLAUDE_STATE/github/<owner>/<name>,
-//     and fails when the repo or the branch isn't there (run R on #1180).
+//     and fails when the repo isn't there (run R on #1180). A branch that
+//     isn't there creates the session all the same, which claude.ai then
+//     refuses: its VM never runs, and `-p --cloud` to it says ok (#1750).
 //     Without it, it bundles the working directory, which must be a git
 //     repo with a commit: it clones the repo into the VM, which carries
 //     only what is committed, as the bundle does, or, unless
@@ -193,6 +195,7 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 	// directory that is no git repo starts the session empty, from no
 	// source (#1712).
 	var source string
+	var refusedBranch bool
 	empty := ref == "" && exec.Command("git", "-C", cwd, "rev-parse", "--git-dir").Run() != nil
 	if empty {
 		fmt.Println("This folder is not a git repository, so the cloud session starts empty: nothing from this folder is copied into it")
@@ -204,10 +207,14 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 			return 1
 		}
 		source = filepath.Join(filepath.Dir(cloudRoot()), "github", repo)
-		if err := exec.Command("git", "-C", source, "rev-parse", "--verify", "refs/heads/"+ref).Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: github.com/%s has no branch %s\n", repo, ref)
+		if _, err := os.Stat(source); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: github.com/%s isn't there\n", repo)
 			return 1
 		}
+		// CLI 2.1.332 doesn't check the branch: it creates the session and
+		// exits, and claude.ai refuses it after, out of the CLI's sight
+		// (#1750)
+		refusedBranch = exec.Command("git", "-C", source, "rev-parse", "--verify", "refs/heads/"+ref).Run() != nil
 	} else if out, err := exec.Command("git", "-C", cwd, "rev-parse", "--verify", "HEAD").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Repository has no local branch, tag, or checkout to seed from yet: %s\n", out)
 		return 1
@@ -256,6 +263,12 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 		"hook_event_name": "SessionStart", "source": "startup", "cwd": cwd,
 	}, filepath.Join(vm, "local-session-starts"))
 	switch {
+	case refusedBranch:
+		// claude.ai's error stays on the session's page; the VM never runs
+		if err := os.WriteFile(filepath.Join(vm, "refused"), []byte("The requested branch or commit was not found in the repository\n"), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	case source != "":
 		if out, err := exec.Command("git", "clone", "-q", "--branch", ref, source, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cloning the repository: %v: %s\n", err, out)
@@ -284,9 +297,11 @@ func cloudStart(message, settings, ref, debugFile, model string) int {
 			return 1
 		}
 	}
-	if err := startVMTurn(id, message, true); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	if !refusedBranch {
+		if err := startVMTurn(id, message, true); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	// CLI 2.1.310's lines once it has created the session (#1180, comment
 	// 6483144237); the hub binds the start to the session they name
@@ -319,7 +334,9 @@ func cloudSend(session, message string) int {
 		fmt.Println(`{"ok":false,"error":"no such session"}`)
 		return 1
 	}
-	if _, err := os.Stat(filepath.Join(cloudRoot(), session, "repo")); err != nil {
+	_, statErr := os.Stat(filepath.Join(cloudRoot(), session, "refused"))
+	refused := statErr == nil
+	if _, err := os.Stat(filepath.Join(cloudRoot(), session, "repo")); err != nil && !refused {
 		fmt.Println(`{"ok":false,"error":"no such session"}`)
 		return 1
 	}
@@ -327,9 +344,13 @@ func cloudSend(session, message string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if err := startVMTurn(session, message, false); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	// a session claude.ai refused takes the message and says ok, and
+	// nothing runs (#1750)
+	if !refused {
+		if err := startVMTurn(session, message, false); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	ack, _ := json.Marshal(map[string]any{"ok": true, "session_id": session, "url": "https://claude.ai/code/" + session})
 	fmt.Println(string(ack))

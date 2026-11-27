@@ -82,8 +82,11 @@ type Runtime struct {
 	// the hub: the CLI exited cleanly, so the session was created, and no
 	// SessionStart post of its session came within the start's bound,
 	// answered or refused. The session posts to the public address, so
-	// this is its word that it can't reach the hub there (ADR-0056).
-	Unreached func(loopID string, within time.Duration)
+	// this is its word that it can't reach the hub there (ADR-0056), unless
+	// claude.ai refused the session after the CLI created it, which the CLI
+	// never hears (#1750). sessionPage is the claude.ai page of the session
+	// the CLI printed, where claude.ai says so, "" if it printed none.
+	Unreached func(loopID, sessionPage string, within time.Duration)
 	// Misplaced, when set, is told of a start the runtime failed because
 	// the CLI picked an environment other than the loop's, with what to
 	// say: every later start would do the same, so the loop must hold
@@ -426,6 +429,15 @@ func (cloud *Runtime) Destroy(_ context.Context, loopID string) error {
 // comes from a hook post, which is untrusted, so a link anywhere else is
 // never served.
 const sessionPages = "https://claude.ai/code/"
+
+// sessionPage is the claude.ai page of the session sessionID, as the CLI
+// printed it, "" for none.
+func sessionPage(sessionID string) string {
+	if !strings.HasPrefix(sessionID, "session_") {
+		return ""
+	}
+	return sessionPages + sessionID
+}
 
 // SessionURL is the claude.ai page of the loop's current cloud session,
 // "" while it has none.

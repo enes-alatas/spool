@@ -38,7 +38,8 @@ const (
 	CheckStageToken = "token"
 	// CheckStageUnreached: nothing of the session reached the hub within
 	// the start's bound: the hub's public host isn't on the environment's
-	// allowed hosts, or the setup script isn't the hub's.
+	// allowed hosts, or the setup script isn't the hub's, or claude.ai
+	// refused the session after the CLI created it (#1750).
 	CheckStageUnreached = "unreached"
 	// CheckStageHub: the hub couldn't run the check at all, such as with no
 	// account signed in.
@@ -174,6 +175,13 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 					"set this loop's token as the environment's network secret for the hub's host", viewed)
 			case viewed == "":
 				return CheckStageEnvironment, fmt.Sprintf("the CLI started no session within %s: %s", within, screen.String())
+			case !heard:
+				// The CLI says only that it created the session: claude.ai
+				// may refuse it after, such as for a branch the repo doesn't
+				// have, and its reason is on the session's page alone (#1750).
+				return CheckStageUnreached, fmt.Sprintf("session %s posted nothing the hub heard within %s. claude.ai may have refused "+
+					"it, such as for a branch the repo doesn't have: %s says why if so. Otherwise check that the environment's "+
+					"allowed hosts carry the hub's host, and that its setup script is the one this hub shows", viewed, within, sessionPage(viewed))
 			}
 			return CheckStageUnreached, fmt.Sprintf("session %s posted nothing the hub heard within %s: check that the environment's "+
 				"allowed hosts carry the hub's host, and that its setup script is the one this hub shows", viewed, within)

@@ -107,7 +107,10 @@ recreate a loop's environment, stop the loop and name the new ID.
    its last line; `token`, the session reached the hub without the loop's
    token, so the network secret is missing or wrong; `unreached`, the hub
    heard nothing, so the public host isn't in the allowed domains or the
-   setup script isn't the hub's. The session is never the loop's, gets
+   setup script isn't the hub's, or claude.ai refused the session after
+   the CLI created it, as for a branch the repo doesn't have. The CLI
+   never hears of that refusal, so the check waits out its bound; its
+   detail links the session's page, where claude.ai says why. The session is never the loop's, gets
    none of its connections, and stays on claude.ai, where you can
    archive it.
 
