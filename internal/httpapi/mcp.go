@@ -19,26 +19,29 @@ import (
 // request authenticates with the loop's hub MCP bearer token; the endpoint
 // is stateless, so every POST stands alone and no session state accrues.
 
-type sendMessageIn struct {
+// SendMessageIn is send_message's input, and SendMessageOut its result:
+// what a loop's claude is shown, schema and field descriptions both. They
+// are exported so spool-eval can offer a replayed turn the same tool.
+type SendMessageIn struct {
 	Destination string  `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), dm:<name> (a private chat with anyone else allowed who has messaged you privately, named as your system prompt lists them), channel:<name> (a channel you are in; @mention recipients in the text), or control_room (your thread in the Spool web UI, which every user of this hub reads). Your system prompt says which of these you have"`
 	ReplyTo     string  `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in a channel, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
 	Text        string  `json:"text,omitempty" jsonschema:"the message text, or a poll's question; in a channel, @mentions name the recipients. Omit only with react, vote, close_poll or dismiss."`
 	Resends     string  `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
 	Attach      string  `json:"attach,omitempty" jsonschema:"path of one file in your workspace, or in your session for a cloud loop, to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
 	React       string  `json:"react,omitempty" jsonschema:"one emoji to react with to the message reply_to names, instead of answering it in words; send no text with it. It wakes nobody, and counts as a send. Omit to send a message."`
-	Poll        *pollIn `json:"poll,omitempty" jsonschema:"makes this message a poll: its text is the question, at most 300 characters. Votes in it reach you ahead of your next turn, and so does the result once it closes. Omit for a plain message."`
+	Poll        *PollIn `json:"poll,omitempty" jsonschema:"makes this message a poll: its text is the question, at most 300 characters. Votes in it reach you ahead of your next turn, and so does the result once it closes. Omit for a plain message."`
 	Vote        *[]int  `json:"vote,omitempty" jsonschema:"your vote in the poll reply_to names: the numbers of the options you pick, as the poll listed them, or [] to take your vote back; send no text with it. It wakes nobody, and counts as a send. Omit unless voting."`
 	ClosePoll   string  `json:"close_poll,omitempty" jsonschema:"reference of your own poll to close (\"ref:42\"); send no text with it. It stops taking votes, and its result reaches you ahead of your next turn. Omit unless closing a poll."`
 	Dismiss     string  `json:"dismiss,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when it is no longer worth saying; send no text with it, and the destination it was lost going to. That failure stops being the operator's to deal with, and you are not reminded of it again. Omit unless dismissing a message you were told never arrived."`
 }
 
-type pollIn struct {
+type PollIn struct {
 	Options  []string `json:"options" jsonschema:"the answers to choose from, 2 to 10, each at most 100 characters"`
 	Multiple bool     `json:"multiple,omitempty" jsonschema:"true lets a voter pick more than one option; omit for one each"`
 	ClosesIn string   `json:"closes_in,omitempty" jsonschema:"how long the poll stays open, up to 7 days, such as 90m, 4h or 2d; omit to keep it open until you close it"`
 }
 
-type sendMessageOut struct {
+type SendMessageOut struct {
 	MessageID int64 `json:"message_id,omitempty"`
 	// Ref is the sent message's reply reference, in the same form every
 	// envelope header uses — so a loop can reply to its own message with
@@ -56,6 +59,15 @@ type sendMessageOut struct {
 	Dismissed string `json:"dismissed,omitempty"`
 }
 
+// SendMessageName and SendMessageDescription are the tool's name and the
+// description a loop's claude reads for it.
+const (
+	SendMessageName        = "send_message"
+	SendMessageDescription = "Send one explicitly addressed message. Each call is one message to one " +
+		"destination; call again for another destination or recipient set. Errors are " +
+		"correctable: fix what the message names and retry."
+)
+
 // mcpHandler serves /mcp to a caller whose loop admits lets onto this
 // listener. One it refuses is answered as an unknown token is, so a
 // refusal says nothing about whose token it was. One it admits with a
@@ -69,12 +81,7 @@ func (server *Server) mcpHandler(admits func(*http.Request, *store.Loop) (admitt
 		}
 		held, _ := r.Context().Value(mcpHeldKey{}).(error)
 		mcpServer := mcp.NewServer(&mcp.Implementation{Name: "spool", Version: server.ClaudeVer}, nil)
-		mcp.AddTool(mcpServer, &mcp.Tool{
-			Name: "send_message",
-			Description: "Send one explicitly addressed message. Each call is one message to one " +
-				"destination; call again for another destination or recipient set. Errors are " +
-				"correctable: fix what the message names and retry.",
-		}, server.sendMessageTool(caller, held))
+		mcp.AddTool(mcpServer, &mcp.Tool{Name: SendMessageName, Description: SendMessageDescription}, server.sendMessageTool(caller, held))
 		return mcpServer
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true,
@@ -160,11 +167,11 @@ type mcpHeldKey struct{}
 
 // sendMessageTool is the send_message tool for caller. A held one refuses
 // every call, as a tool error the model reads, and logs it with the loop.
-func (server *Server) sendMessageTool(caller *store.Loop, held error) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
-	return func(ctx context.Context, call *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+func (server *Server) sendMessageTool(caller *store.Loop, held error) func(context.Context, *mcp.CallToolRequest, SendMessageIn) (*mcp.CallToolResult, SendMessageOut, error) {
+	return func(ctx context.Context, call *mcp.CallToolRequest, in SendMessageIn) (*mcp.CallToolResult, SendMessageOut, error) {
 		if held != nil {
 			server.Log.Warn("cloud mcp call refused", "loop", caller.Name, "tool", "send_message", "reason", held.Error())
-			return nil, sendMessageOut{}, fmt.Errorf("refused: %v; this loop's sends reach the hub only during its turns", held)
+			return nil, SendMessageOut{}, fmt.Errorf("refused: %v; this loop's sends reach the hub only during its turns", held)
 		}
 		req := route.SendRequest{
 			From:        caller,
@@ -189,7 +196,7 @@ func (server *Server) sendMessageTool(caller *store.Loop, held error) func(conte
 		}
 		kind, serr := req.Kind()
 		if serr != nil {
-			return nil, sendMessageOut{}, serr
+			return nil, SendMessageOut{}, serr
 		}
 		send := server.Router.Send
 		switch kind {
@@ -206,23 +213,23 @@ func (server *Server) sendMessageTool(caller *store.Loop, held error) func(conte
 		if serr != nil {
 			// A typed refusal: the SDK renders a returned error as an
 			// isError tool result, which is what lets the model correct.
-			return nil, sendMessageOut{}, serr
+			return nil, SendMessageOut{}, serr
 		}
 		if err != nil {
 			server.Log.Error("send_message", "loop", caller.Name, "err", err)
-			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
+			return nil, SendMessageOut{}, fmt.Errorf("internal error; try again")
 		}
 		switch kind {
 		case "react":
-			return nil, sendMessageOut{ReactedTo: loop.MessageRef(msg.ID)}, nil
+			return nil, SendMessageOut{ReactedTo: loop.MessageRef(msg.ID)}, nil
 		case "vote":
-			return nil, sendMessageOut{VotedIn: loop.MessageRef(msg.ID)}, nil
+			return nil, SendMessageOut{VotedIn: loop.MessageRef(msg.ID)}, nil
 		case "close_poll":
-			return nil, sendMessageOut{Closed: loop.MessageRef(msg.ID)}, nil
+			return nil, SendMessageOut{Closed: loop.MessageRef(msg.ID)}, nil
 		case "dismiss":
-			return nil, sendMessageOut{Dismissed: loop.MessageRef(msg.ID)}, nil
+			return nil, SendMessageOut{Dismissed: loop.MessageRef(msg.ID)}, nil
 		}
-		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
+		return nil, SendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}
 }
 

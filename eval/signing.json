@@ -1,0 +1,6 @@
+{
+  "terra": ["commit", "issue create", "issue comment", "pr create", "pr comment", "pr review"],
+  "iris": ["commit", "issue create", "issue comment", "pr comment", "pr review"],
+  "milo": ["issue create", "issue comment", "pr comment"],
+  "quinn": ["pr review", "pr comment"]
+}

@@ -1,0 +1,28 @@
+{
+  "loop": "terra",
+  "trigger": "message",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "milo",
+    "quinn",
+    "enesalatas"
+  ],
+  "shown_refs": [
+    "ref:100"
+  ],
+  "sends": [],
+  "github_writes": [
+    {
+      "command": "gh issue comment 9 --body \"Taking this.\""
+    }
+  ],
+  "final_text": "PR is up.\n\n[next-wake: 45m]",
+  "id": "synthetic-unsigned-comment",
+  "slip": "a GitHub comment without the signature line",
+  "input": [
+    "[message from @milo (loop) · group · ref:100 · 2026-09-29 10:00 UTC]\n\n@terra claim #9."
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "loop": "terra",
+  "trigger": "message",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "milo",
+    "quinn",
+    "enesalatas"
+  ],
+  "shown_refs": [
+    "ref:100"
+  ],
+  "sends": [
+    {
+      "destination": "group",
+      "text": "PR #9 is green: https://github.com/enes-alatas/spool/pull/9",
+      "reply_to": "ref:100"
+    }
+  ],
+  "github_writes": [
+    {
+      "command": "gh pr comment 9 --body \"Rebased onto main.\n\n— Terra · Backend Engineer\""
+    }
+  ],
+  "final_text": "PR is up.\n\n[next-wake: 45m]",
+  "id": "synthetic-clean",
+  "slip": "a turn that keeps every rule",
+  "input": [
+    "[message from @milo (loop) · group · ref:100 · 2026-09-29 10:00 UTC]\n\n@terra PR status?"
+  ]
+}
