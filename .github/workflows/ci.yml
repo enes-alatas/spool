@@ -290,7 +290,7 @@ jobs:
           exit 1
 
       # The browser smoke needs Go too: it builds the binary and seeds its hub.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.smoke == 'true'
         with:
           go-version-file: go.mod
@@ -623,7 +623,7 @@ jobs:
           HEAD_SHA: ${{ inputs.head }}
           BASE_SHA: ${{ inputs.base }}
         run: bash scripts/queue-tree.sh "$PR" "$HEAD_SHA" "$BASE_SHA"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - name: integration tests (tier 2, vs fakeclaude)
@@ -658,7 +658,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - name: unit tests under the race detector
